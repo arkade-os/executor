@@ -12,23 +12,18 @@ import (
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 )
 
-const (
-	format = "template/v1"
-	// MaxSlots bounds inputs, outputs, variables and every list of rules.
-	MaxSlots = 255
-)
+const format = "template/v1"
 
 var (
 	// Name matches an identifier: slot, variable and secret names.
-	Name       = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+	Name       = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	idHex      = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	assetHex   = regexp.MustCompile(`^[0-9a-f]{68}$`)
-	namedVar   = regexp.MustCompile(`^<([a-z][a-z0-9_]{0,63})>$`)
+	namedVar   = regexp.MustCompile(`^<([a-z][a-z0-9_]*)>$`)
 	types      = []string{"proof", "virtual", "onchain"}
 	slotTypes  = []string{"offchain", "onchain"}
 	actions    = []string{"copy", "drop", "emit"}
 	unmatcheds = []string{"reject", "drop"}
-	decodes    = []string{"tlv", "raw"}
+	decodes    = []string{"tlv", "records", "raw"}
 )
 
 // Template is a whole document. Presence and null rules are specified by the typed readers.
@@ -36,9 +31,12 @@ type Template struct {
 	Format     string            `json:"format"`
 	Type       string            `json:"type"`                // proof, virtual or onchain
 	Variables  map[string]string `json:"variables,omitempty"` // name → scalar type
-	Inputs     []Input           `json:"inputs"`              // 1..MaxSlots
-	Outputs    []Output          `json:"outputs"`             // 1..MaxSlots
+	Inputs     []Input           `json:"inputs"`              // at least one
+	Outputs    []Output          `json:"outputs"`             // at least one
 	Fees       *Fees             `json:"fees,omitempty"`
+	Issues     []Issue           `json:"issues,omitempty"`
+	Burns      []AssetRoute      `json:"burns,omitempty"`
+	Locktime   *IntOrVar         `json:"locktime,omitempty"`
 	Packets    *Packets          `json:"packets,omitempty"`
 	Delegation *Delegation       `json:"delegation,omitempty"`
 }
@@ -46,13 +44,21 @@ type Template struct {
 // Delegation is how a service runs the spend unattended; it never changes the transaction.
 type Delegation struct {
 	Schedule map[string]Schedule `json:"schedule,omitempty"` // input → when it becomes eligible
-	Sealed   []string            `json:"sealed,omitempty"`   // variables given encrypted to the service
+	Sealed   []Sealed            `json:"sealed,omitempty"`   // variables given encrypted to the service
 	Trigger  map[string]Trigger  `json:"trigger,omitempty"`  // input → stream rule
+}
+
+// Sealed is a sealed variable and its scheme, "" for the default one.
+type Sealed struct {
+	Name   string
+	Scheme string
 }
 
 type Input struct {
 	Name     string       `json:"name"`
 	Type     string       `json:"type,omitempty"` // offchain or onchain; defaults to the template's kind
+	Index    *int64       `json:"index,omitempty"`
+	Sequence *IntOrVar    `json:"sequence,omitempty"`
 	Contract Construction `json:"contract"`
 	Spend    Spend        `json:"spend"`
 }
@@ -60,8 +66,8 @@ type Input struct {
 // Schedule is when an input becomes eligible; exactly one field is set.
 type Schedule struct {
 	Immediate        *bool     `json:"immediate,omitempty"`             // true
-	BeforeExpiry     *IntOrVar `json:"before_expiry_seconds,omitempty"` // 1..MaxUint32 or an int variable
-	MinConfirmations *int64    `json:"min_confirmations,omitempty"`     // 1..MaxUint32
+	BeforeExpiry     *IntOrVar `json:"before_expiry_seconds,omitempty"` // positive or an int variable
+	MinConfirmations *int64    `json:"min_confirmations,omitempty"`     // positive
 }
 
 type Construction struct {
@@ -81,22 +87,44 @@ type Spend struct {
 type Output struct {
 	Name    string       `json:"name"`
 	Type    string       `json:"type,omitempty"` // offchain or onchain; defaults to the template's kind
-	Index   int64        `json:"index"`          // 0..MaxUint16
+	Index   *int64       `json:"index,omitempty"`
+	Each    string       `json:"each,omitempty"` // an input
 	Value   Value        `json:"value"`
 	Locking Locking      `json:"locking"`
-	Assets  []AssetRoute `json:"assets,omitempty"` // at most MaxSlots
+	Assets  []AssetRoute `json:"assets,omitempty"`
 }
 
+// Value is one draw, or a list of draws when List.
 type Value struct {
+	Draws []Draw
+	List  bool
+}
+
+type Draw struct {
 	From   string   `json:"from"`             // an input name
 	Amount *Binding `json:"amount,omitempty"` // an int; absent takes the remainder
 }
 
-// AssetRoute moves an asset of an input into the output.
+// AssetRoute moves an asset of an input into an output, or units an issue mints when Issue is set.
 type AssetRoute struct {
-	From   string   `json:"from"`             // an input name
-	Asset  string   `json:"asset,omitempty"`  // 68 hex; absent routes every asset
-	Amount *Binding `json:"amount,omitempty"` // an int, only with Asset; absent takes the remainder
+	From   string   `json:"from,omitempty"`   // an input name
+	Issue  string   `json:"issue,omitempty"`  // an issue name
+	Asset  string   `json:"asset,omitempty"`  // byte template of an asset id; absent routes every asset
+	Amount *Binding `json:"amount,omitempty"` // an int, only with Asset or Issue; absent takes the remainder
+}
+
+// Issue is an asset the transaction mints: new, or more of Asset.
+type Issue struct {
+	Name     string            `json:"name"`
+	Asset    string            `json:"asset,omitempty"`   // byte template
+	Control  *Control          `json:"control,omitempty"` // new assets only
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// Control is an asset id byte template, or another issue of the transaction.
+type Control struct {
+	Asset string
+	Issue string
 }
 
 type Fees struct {
@@ -106,10 +134,10 @@ type Fees struct {
 
 // Packets is the extension output and how source packets are handled.
 type Packets struct {
-	OutputIndex int64    `json:"output_index"`        // 0..MaxUint16
-	Unmatched   string   `json:"unmatched,omitempty"` // reject (default) or drop
-	Rules       []Rule   `json:"rules,omitempty"`     // at most MaxSlots
-	Advertise   []Advert `json:"advertise,omitempty"` // at most MaxSlots
+	OutputIndex *int64   `json:"output_index,omitempty"` // only with indexed outputs
+	Unmatched   string   `json:"unmatched,omitempty"`    // reject (default) or drop
+	Rules       []Rule   `json:"rules,omitempty"`
+	Advertise   []Advert `json:"advertise,omitempty"`
 }
 
 // Rule handles one packet type of one input.
@@ -130,12 +158,13 @@ type Advert struct {
 // variables.
 type Trigger struct {
 	Packet       int64             `json:"packet"`                // 0..255
-	Decode       string            `json:"decode"`                // tlv or raw
-	MinValue     int64             `json:"min_value,omitempty"`   // 0..MaxScriptNum; 0 is the default
+	Decode       string            `json:"decode,omitempty"`      // tlv (default), records or raw
+	MinValue     int64             `json:"min_value,omitempty"`   // 0 is the default
+	AllOutputs   bool              `json:"all_outputs,omitempty"` // true only
 	Require      map[string]string `json:"require"`               // source → literal, key, <variable> or $(expression); non-empty
 	Capture      map[string]string `json:"capture"`               // variable → source, output:taptree or $(expression); non-empty
 	Group        string            `json:"group,omitempty"`       // a source; exactly when there are several rules
-	ExpiresAfter int64             `json:"expires_after_seconds"` // 1..MaxInt32
+	ExpiresAfter int64             `json:"expires_after_seconds"` // positive
 }
 
 func (t *Template) check() error {
@@ -154,14 +183,14 @@ func (t *Template) check() error {
 			return bad("variable %q has unsupported type %q", n, typ)
 		}
 	}
-	if len(t.Variables) > MaxSlots {
-		return bad("more than %d variables", MaxSlots)
+	if len(t.Inputs) == 0 || len(t.Outputs) == 0 {
+		return bad("a template has at least one input and one output")
 	}
-	if n := len(t.Inputs); n == 0 || n > MaxSlots {
-		return bad("a template has 1 to %d inputs", MaxSlots)
+	if err := allOrNone("input", t.Inputs, func(in Input) *int64 { return in.Index }); err != nil {
+		return err
 	}
-	if n := len(t.Outputs); n == 0 || n > MaxSlots {
-		return bad("a template has 1 to %d outputs", MaxSlots)
+	if err := allOrNone("output", t.Outputs, func(o Output) *int64 { return o.Index }); err != nil {
+		return err
 	}
 	for _, in := range t.Inputs {
 		if err := in.check(); err != nil {
@@ -173,8 +202,26 @@ func (t *Template) check() error {
 			return err
 		}
 	}
+	for _, is := range t.Issues {
+		if err := is.check(); err != nil {
+			return err
+		}
+	}
+	for _, b := range t.Burns {
+		if err := b.check(); err != nil {
+			return err
+		}
+		if b.Issue != "" {
+			return bad("a burn takes from an input")
+		}
+	}
+	if t.Locktime != nil {
+		if err := t.Locktime.check("locktime", 0, math.MaxUint32); err != nil {
+			return err
+		}
+	}
 	if t.Fees != nil {
-		if err := t.Fees.Max.check("fees max", 0, asm.MaxScriptNum); err != nil {
+		if err := t.Fees.Max.check("fees max", 0, math.MaxInt64); err != nil {
 			return err
 		}
 	}
@@ -185,6 +232,23 @@ func (t *Template) check() error {
 	}
 	if t.Delegation != nil {
 		return t.Delegation.check(t.Inputs)
+	}
+	return nil
+}
+
+// allOrNone: every entry of a list states an index, or none does.
+func allOrNone[T any](what string, list []T, index func(T) *int64) error {
+	n := 0
+	for _, x := range list {
+		if i := index(x); i != nil {
+			if *i < 0 {
+				return bad("%s index must not be negative", what)
+			}
+			n++
+		}
+	}
+	if n != 0 && n != len(list) {
+		return bad("every %s states an index or none does", what)
 	}
 	return nil
 }
@@ -202,12 +266,12 @@ func (d *Delegation) check(inputs []Input) error {
 			return err
 		}
 	}
-	for i, n := range d.Sealed {
-		if !Name.MatchString(n) {
-			return bad("bad sealed name %q", n)
+	for i, x := range d.Sealed {
+		if !Name.MatchString(x.Name) {
+			return bad("bad sealed name %q", x.Name)
 		}
-		if slices.Contains(d.Sealed[:i], n) {
-			return bad("%q is sealed twice", n)
+		if slices.ContainsFunc(d.Sealed[:i], func(o Sealed) bool { return o.Name == x.Name }) {
+			return bad("%q is sealed twice", x.Name)
 		}
 	}
 	for _, n := range sortedKeys(d.Trigger) {
@@ -229,6 +293,11 @@ func (in *Input) check() error {
 	if in.Type != "" && !slices.Contains(slotTypes, in.Type) {
 		return bad("unknown slot type %q", in.Type)
 	}
+	if in.Sequence != nil {
+		if err := in.Sequence.check("sequence", 0, math.MaxUint32); err != nil {
+			return err
+		}
+	}
 	return in.Contract.check()
 }
 
@@ -245,9 +314,9 @@ func (s *Schedule) check() error {
 	case s.Immediate != nil && !*s.Immediate:
 		return bad("immediate must be true")
 	case s.BeforeExpiry != nil:
-		return s.BeforeExpiry.check("before_expiry_seconds", 1, math.MaxUint32)
+		return s.BeforeExpiry.check("before_expiry_seconds", 1, math.MaxInt64)
 	case s.MinConfirmations != nil:
-		return integer(*s.MinConfirmations, "min_confirmations", 1, math.MaxUint32)
+		return integer(*s.MinConfirmations, "min_confirmations", 1, math.MaxInt64)
 	}
 	return nil
 }
@@ -266,37 +335,52 @@ func (o *Output) check() error {
 	if o.Type != "" && !slices.Contains(slotTypes, o.Type) {
 		return bad("unknown slot type %q", o.Type)
 	}
-	if err := integer(o.Index, "index", 0, math.MaxUint16); err != nil {
-		return err
+	if len(o.Value.Draws) == 0 {
+		return bad("output %q draws from no input", o.Name)
 	}
 	if o.Locking.Contract != nil {
 		if err := o.Locking.Contract.check(); err != nil {
 			return err
 		}
 	}
-	if len(o.Assets) > MaxSlots {
-		return bad("output %q has more than %d asset routes", o.Name, MaxSlots)
-	}
 	for _, r := range o.Assets {
-		if r.Asset != "" && !assetHex.MatchString(r.Asset) {
-			return bad("bad asset id %q", r.Asset)
-		}
-		if r.Amount != nil && r.Asset == "" {
-			return bad("an asset amount needs an asset")
+		if err := r.check(); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
+func (r *AssetRoute) check() error {
+	switch {
+	case (r.From == "") == (r.Issue == ""):
+		return bad("an asset route takes from an input or an issue")
+	case r.Issue != "" && (r.Amount == nil || r.Asset != ""):
+		return bad("an issue route has an amount and no asset")
+	case r.From != "" && r.Amount != nil && r.Asset == "":
+		return bad("an asset amount needs an asset")
+	}
+	return nil
+}
+
+func (is *Issue) check() error {
+	if !Name.MatchString(is.Name) {
+		return bad("bad issue name %q", is.Name)
+	}
+	if is.Asset != "" && (is.Control != nil || len(is.Metadata) > 0) {
+		return bad("issue %q: control and metadata go with a new asset only", is.Name)
+	}
+	return nil
+}
+
 func (p *Packets) check() error {
-	if err := integer(p.OutputIndex, "output_index", 0, math.MaxUint16); err != nil {
-		return err
+	if p.OutputIndex != nil {
+		if err := integer(*p.OutputIndex, "output_index", 0, math.MaxInt64); err != nil {
+			return err
+		}
 	}
 	if p.Unmatched != "" && !slices.Contains(unmatcheds, p.Unmatched) {
 		return bad("unmatched must be reject or drop")
-	}
-	if len(p.Rules) > MaxSlots {
-		return bad("more than %d packet rules", MaxSlots)
 	}
 	for _, r := range p.Rules {
 		if err := integer(r.Type, "rule type", 2, math.MaxUint8); err != nil {
@@ -311,9 +395,6 @@ func (p *Packets) check() error {
 		if (r.Data != nil) != (r.Action == "emit") {
 			return bad("data goes with emit and only with emit")
 		}
-	}
-	if len(p.Advertise) > MaxSlots {
-		return bad("more than %d advertisements", MaxSlots)
 	}
 	for _, a := range p.Advertise {
 		if a.Template != "self" && !idHex.MatchString(a.Template) {
@@ -330,13 +411,13 @@ func (tr *Trigger) check() error {
 	if err := integer(tr.Packet, "trigger packet", 0, math.MaxUint8); err != nil {
 		return err
 	}
-	if !slices.Contains(decodes, tr.Decode) {
-		return bad("trigger decode must be tlv or raw")
+	if tr.Decode != "" && !slices.Contains(decodes, tr.Decode) {
+		return bad("trigger decode must be tlv, records or raw")
 	}
-	if err := integer(tr.ExpiresAfter, "expires_after_seconds", 1, math.MaxInt32); err != nil {
+	if err := integer(tr.ExpiresAfter, "expires_after_seconds", 1, math.MaxInt64); err != nil {
 		return err
 	}
-	if err := integer(tr.MinValue, "trigger min_value", 0, asm.MaxScriptNum); err != nil {
+	if err := integer(tr.MinValue, "trigger min_value", 0, math.MaxInt64); err != nil {
 		return err
 	}
 	if len(tr.Require) == 0 {

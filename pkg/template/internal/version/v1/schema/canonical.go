@@ -28,6 +28,12 @@ func (t *Template) Normalize() {
 		t.Packets.Unmatched = ""
 	}
 	if d := t.Delegation; d != nil {
+		for n, tr := range d.Trigger {
+			if tr.Decode == "tlv" {
+				tr.Decode = ""
+				d.Trigger[n] = tr
+			}
+		}
 		for n, s := range d.Schedule {
 			if s.Immediate != nil {
 				delete(d.Schedule, n)

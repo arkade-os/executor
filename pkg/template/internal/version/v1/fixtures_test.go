@@ -432,7 +432,7 @@ func TestNonInteractiveClaimTrigger(t *testing.T) {
 		ptx, TriggerKeys{Encryption: enc.PubKey()}, nil, nil,
 	)
 	require.NoError(t, err)
-	require.Equal(t, []Capture{{Output: 0, Variables: map[string]string{
+	require.Equal(t, []Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
 		"preimage": "010203", "receiver_program": v.ReceiverProgram,
 		"taptree": hex.EncodeToString(tree),
 	}}}, got)

@@ -64,13 +64,12 @@
   "outputs": [
     {
       "name": "payout",
-      "index": 0,
       "value": {"from": "htlc"},
       "locking": "5120<receiver_program>",
       "assets": [{"from": "htlc"}]
     }
   ],
-  "packets": {"output_index": 1, "unmatched": "drop"},
+  "packets": {"unmatched": "drop"},
   "delegation": {
     "sealed": ["preimage"],
     "trigger": {

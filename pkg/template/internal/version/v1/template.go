@@ -31,7 +31,11 @@ type Template struct {
 	sealed       map[string]bool // variables a service receives encrypted
 	inputs       []input
 	outputs      []output
+	issues       []issue
+	burns        []assetRoute
+	groups       [][]int // in an instance, the coin slots of each input
 	fee          *fee
+	locktime     *lockSpec // stated nLockTime, nil to derive it from the leaves
 	packets      *packetSpec
 	triggers     []*Trigger
 	artifacts    []string
@@ -56,7 +60,12 @@ func (t *Template) Variables() []Field {
 func (t *Template) Inputs() []Slot {
 	out := make([]Slot, 0, len(t.inputs))
 	for _, in := range t.inputs {
-		out = append(out, Slot{Name: in.name, Onchain: in.onchain, Schedule: in.schedule})
+		out = append(out, Slot{
+			Name:       in.name,
+			Onchain:    in.onchain,
+			Schedule:   in.schedule,
+			AllOutputs: t.allOutputs(len(out)),
+		})
 	}
 	return out
 }

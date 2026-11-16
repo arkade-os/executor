@@ -95,6 +95,27 @@ func (l Locking) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]string{"from": l.From})
 }
 
+func (v Value) MarshalJSON() ([]byte, error) {
+	if v.List {
+		return json.Marshal(v.Draws)
+	}
+	return json.Marshal(v.Draws[0])
+}
+
+func (s Sealed) MarshalJSON() ([]byte, error) {
+	if s.Scheme == "" {
+		return json.Marshal(s.Name)
+	}
+	return json.Marshal(map[string]string{"name": s.Name, "scheme": s.Scheme})
+}
+
+func (c Control) MarshalJSON() ([]byte, error) {
+	if c.Issue != "" {
+		return json.Marshal(map[string]string{"issue": c.Issue})
+	}
+	return json.Marshal(c.Asset)
+}
+
 func (r DefinitionRef) MarshalJSON() ([]byte, error) {
 	if r.Def == nil {
 		return json.Marshal(map[string]string{"artifact": r.Artifact})

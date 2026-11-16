@@ -11,7 +11,9 @@ import (
 const MaxScriptNum = 1<<53 - 1
 
 // ScalarTypes are the types a variable, a constructor field or a witness item can have.
-var ScalarTypes = []string{"pubkey", "bytes", "bytes20", "bytes32", "asset", "int", "bool"}
+var ScalarTypes = []string{
+	"pubkey", "signature", "bytes", "bytes20", "bytes32", "asset", "int", "bool",
+}
 
 var (
 	DecimalTok  = regexp.MustCompile(`^(0|-?[1-9][0-9]*)$`)
@@ -27,17 +29,22 @@ func CanonicalBytes(typ string, raw []byte) error {
 		if _, e := btcec.ParsePubKey(raw); len(raw) != 33 || e != nil {
 			err = fmt.Errorf("pubkey must be a valid 33-byte key")
 		}
-	case "bytes":
-		if len(raw) > maxPushSize {
-			err = fmt.Errorf("bytes longer than %d", maxPushSize)
+	case "signature":
+		if len(raw) != 0 && len(raw) != 64 {
+			err = fmt.Errorf("signature must be 64 bytes or empty")
 		}
+	case "bytes":
 	case "bytes20":
 		if len(raw) != 20 {
 			err = fmt.Errorf("bytes20 must be 20 bytes")
 		}
-	case "bytes32", "asset":
+	case "bytes32":
 		if len(raw) != 32 {
-			err = fmt.Errorf("%s must be 32 bytes", typ)
+			err = fmt.Errorf("bytes32 must be 32 bytes")
+		}
+	case "asset":
+		if len(raw) != 34 {
+			err = fmt.Errorf("asset must be 34 bytes")
 		}
 	case "int":
 		_, err = ParseScriptNum(raw)

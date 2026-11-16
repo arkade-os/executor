@@ -66,16 +66,25 @@ func TestDecodeRejects(t *testing.T) {
 		"schedule two keys": func(m map[string]any) {
 			m["delegation"] = schedule(map[string]any{"immediate": true, "min_confirmations": 1})
 		},
-		"bad sealed name": func(m map[string]any) { m["delegation"] = map[string]any{"sealed": []any{"X"}} },
-		"format":          func(m map[string]any) { m["format"] = "template/v2" },
-		"type":            func(m map[string]any) { m["type"] = "batch" },
-		"no input":        func(m map[string]any) { m["inputs"] = []any{} },
-		"bad name":        func(m map[string]any) { in(m)["name"] = "Funds" },
-		"sequence":        func(m map[string]any) { in(m)["sequence"] = 4294967295 },
+		"bad sealed name":            func(m map[string]any) { m["delegation"] = map[string]any{"sealed": []any{"X"}} },
+		"format":                     func(m map[string]any) { m["format"] = "template/v2" },
+		"type":                       func(m map[string]any) { m["type"] = "batch" },
+		"no input":                   func(m map[string]any) { m["inputs"] = []any{} },
+		"bad name":                   func(m map[string]any) { in(m)["name"] = "Funds" },
+		"sequence too big":           func(m map[string]any) { in(m)["sequence"] = 4294967296 },
+		"negative locktime":          func(m map[string]any) { m["locktime"] = -1 },
+		"issue route without amount": func(m map[string]any) { out(m)["assets"] = []any{map[string]any{"issue": "x"}} },
+		"route from input and issue": func(m map[string]any) {
+			out(m)["assets"] = []any{map[string]any{"issue": "x", "from": "funds", "amount": 1}}
+		},
+		"control on existing asset": func(m map[string]any) {
+			m["issues"] = []any{map[string]any{"name": "x", "asset": "<a>", "control": "<b>"}}
+		},
+		"empty value list": func(m map[string]any) { out(m)["value"] = []any{} },
 		"rule on reserved type": func(m map[string]any) {
 			m["packets"] = map[string]any{"output_index": 1, "rules": []any{map[string]any{"type": 5, "action": "drop", "from": "funds"}}}
 		},
-		"index too big":              func(m map[string]any) { out(m)["index"] = 65536 },
+		"negative index":             func(m map[string]any) { out(m)["index"] = -1 },
 		"asset amount without asset": func(m map[string]any) { out(m)["assets"] = []any{map[string]any{"from": "funds", "amount": 5}} },
 		"unmatched typo":             func(m map[string]any) { m["packets"] = map[string]any{"output_index": 1, "unmatched": "ignore"} },
 		"program in a locking":       func(m map[string]any) { out(m)["locking"] = map[string]any{"program": "x"} },

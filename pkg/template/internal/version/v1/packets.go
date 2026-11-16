@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -28,7 +29,7 @@ type advert struct {
 }
 
 type packetSpec struct {
-	index   uint16
+	index   int  // -1: placed after the offchain outputs in a proof, after every output otherwise
 	drop    bool // unmatched source packets are dropped, not rejected
 	rules   []rule
 	adverts []advert
@@ -42,14 +43,25 @@ type handledKey struct {
 func (c *compiler) packets() error {
 	s := c.doc.Packets
 	if s == nil {
-		for _, in := range c.t.inputs {
-			if f := in.contract.def.FindFunction(in.function); f.Arkade != nil {
-				return bad("input %q runs a covenant and needs packets", in.name)
-			}
+		s = &schema.Packets{}
+	}
+	indexed := c.doc.Outputs[0].Index != nil
+	switch {
+	case s.OutputIndex != nil && !indexed:
+		return bad("output_index goes with indexed outputs only")
+	case s.OutputIndex == nil && indexed:
+		if c.t.Arkade() || len(s.Rules) > 0 || len(s.Advertise) > 0 {
+			return bad("indexed outputs place the extension with packets.output_index")
 		}
 		return nil
 	}
-	ps := &packetSpec{index: uint16(s.OutputIndex), drop: s.Unmatched == "drop"}
+	ps := &packetSpec{index: -1, drop: s.Unmatched == "drop"}
+	if s.OutputIndex != nil {
+		if *s.OutputIndex > math.MaxUint16 {
+			return bad("output_index out of range")
+		}
+		ps.index = int(*s.OutputIndex)
+	}
 	for i := range s.Rules {
 		x, err := c.rule(&s.Rules[i])
 		if err != nil {
@@ -164,7 +176,7 @@ func (i *Instance) extension(
 ) (extension.Extension, error) {
 	t := i.tmpl
 	var ext extension.Extension
-	assets, err := assetPacket(t, sources, a)
+	assets, err := assetPacket(i, d, sources, a)
 	if err != nil {
 		return nil, err
 	}

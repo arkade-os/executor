@@ -2,6 +2,7 @@ package v1
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -42,11 +43,12 @@ func (t *Template) Bind(b model.Bindings) (*BoundTemplate, error) {
 	}, nil
 }
 func (b *BoundTemplate) Build(r model.BuildRequest) (*Action, error) {
-	if err := checkSources(r.Sources, len(b.tmpl.inputs)); err != nil {
-		return nil, err
+	if r.Sources == nil {
+		return nil, fmt.Errorf("%w: no sources", ErrIneligible)
 	}
 	i, err := b.tmpl.Instantiate(
-		Context{Keys: b.keys, Variables: b.vars, Decrypt: r.Runtime.Decrypt, Sources: r.Sources},
+		Context{Keys: b.keys, Variables: b.vars, Decrypt: r.Runtime.Decrypt, Sources: r.Sources,
+			Coins: r.Coins},
 	)
 	if err != nil {
 		return nil, err

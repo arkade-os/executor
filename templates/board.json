@@ -27,7 +27,6 @@
   "outputs": [
     {
       "name": "funds",
-      "index": 0,
       "value": {"from": "deposit"},
       "locking": {
         "contract": {
@@ -43,6 +42,5 @@
     }
   ],
   "fees": {"from": "deposit", "max": "<max_fee>"},
-  "packets": {"output_index": 1},
   "delegation": {"schedule": {"deposit": {"min_confirmations": 1}}}
 }

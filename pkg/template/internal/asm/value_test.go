@@ -24,8 +24,9 @@ func TestCanonicalBytes(t *testing.T) {
 		{"bytes20", "bytes20", make([]byte, 20), true},
 		{"bytes any", "bytes", []byte{1, 2, 3}, true},
 		{"bytes of a push", "bytes", make([]byte, 520), true},
-		{"bytes over a push", "bytes", make([]byte, 521), false},
-		{"asset", "asset", make([]byte, 32), true},
+		{"bytes over a push", "bytes", make([]byte, 521), true},
+		{"asset", "asset", make([]byte, 34), true},
+		{"asset of 32 bytes", "asset", make([]byte, 32), false},
 		{"int zero is empty", "int", nil, true},
 		{"int 1024", "int", []byte{0x00, 0x04}, true},
 		{"int with a padding byte", "int", []byte{0x01, 0x00}, false},
@@ -33,7 +34,9 @@ func TestCanonicalBytes(t *testing.T) {
 		{"bool true", "bool", []byte{1}, true},
 		{"bool false", "bool", nil, true},
 		{"bool two", "bool", []byte{2}, false},
-		{"signature", "signature", make([]byte, 64), false},
+		{"signature", "signature", make([]byte, 64), true},
+		{"no signature", "signature", nil, true},
+		{"short signature", "signature", make([]byte, 63), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := CanonicalBytes(tc.typ, tc.raw)

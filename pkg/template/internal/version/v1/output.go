@@ -2,10 +2,12 @@ package v1
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"math/bits"
 	"slices"
 
@@ -24,12 +26,19 @@ type locking struct {
 
 type output struct {
 	name    string
-	index   uint16
+	index   uint16 // its position; with an automatic extension, before the extension is placed
 	onchain bool
-	from    int          // the input it draws from
-	amount  byteTemplate // nil: the remainder
+	from    int // the input of its first draw, the context of its expressions
+	draws   []draw
 	locking locking
 	assets  []assetRoute
+	each    int // the input it repeats for, -1 without each
+	coin    int // in an instance, the coin slot of a copy of an each output, else -1
+}
+
+type draw struct {
+	from   int
+	amount byteTemplate // nil: the remainder
 }
 
 // 21 million bitcoin in satoshis
@@ -37,7 +46,8 @@ const maxAmount = 21e14
 
 type allocation struct {
 	sats   []uint64            // per output, template order
-	assets []map[string]uint64 // per output: hex asset id → amount
+	assets []map[string]uint64 // per output then burn: hex asset id → amount
+	minted [][]uint64          // per issue, per output: units of a new asset
 	fee    uint64
 }
 
@@ -45,23 +55,37 @@ func (c *compiler) output(s *schema.Output) error {
 	if slices.ContainsFunc(c.t.outputs, func(x output) bool { return x.name == s.Name }) {
 		return bad("duplicate output %q", s.Name)
 	}
-	o := output{name: s.Name, index: uint16(s.Index)}
+	o := output{name: s.Name, index: uint16(len(c.t.outputs)), each: -1, coin: -1}
+	if s.Index != nil {
+		if *s.Index > math.MaxUint16 {
+			return bad("output %q index out of range", s.Name)
+		}
+		o.index = uint16(*s.Index)
+	}
 	var err error
 	if o.onchain, err = c.slotType(s.Type); err != nil {
 		return err
 	}
-	if o.from, err = c.inputIndex(s.Value.From, "value"); err != nil {
-		return err
-	}
-	if s.Value.Amount != nil {
-		if o.amount, err = c.amount(*s.Value.Amount); err != nil {
+	for _, sd := range s.Value.Draws {
+		var dr draw
+		if dr.from, err = c.inputIndex(sd.From, "value"); err != nil {
 			return err
 		}
+		if slices.ContainsFunc(o.draws, func(x draw) bool { return x.from == dr.from }) {
+			return bad("output %q draws from input %q twice", o.name, sd.From)
+		}
+		if sd.Amount != nil {
+			if dr.amount, err = c.amount(*sd.Amount); err != nil {
+				return err
+			}
+		}
+		o.draws = append(o.draws, dr)
 	}
+	o.from = o.draws[0].from
 	if o.locking, err = c.locking(s.Locking); err != nil {
 		return err
 	}
-	if len(s.Assets) > 0 && (o.onchain || c.t.inputs[o.from].onchain) {
+	if len(s.Assets) > 0 && o.onchain {
 		return bad("output %q cannot carry assets", o.name)
 	}
 	for i := range s.Assets {
@@ -73,6 +97,15 @@ func (c *compiler) output(s *schema.Output) error {
 			return bad("output %q routes an asset of an input twice", o.name)
 		}
 		o.assets = append(o.assets, r)
+	}
+	if s.Each != "" {
+		if o.each, err = c.inputIndex(s.Each, "each"); err != nil {
+			return err
+		}
+		if slices.ContainsFunc(o.draws, func(d draw) bool { return d.from != o.each }) ||
+			slices.ContainsFunc(o.assets, func(r assetRoute) bool { return r.from != o.each }) {
+			return bad("output %q repeats per coin of %q and takes from it alone", o.name, s.Each)
+		}
 	}
 	c.t.outputs = append(c.t.outputs, o)
 	return nil
@@ -118,22 +151,28 @@ func (t *Template) checkPrograms() error {
 	return nil
 }
 
-// checkBalances: one remainder output per input, one remainder route per input and asset.
+// checkBalances: one remainder draw per input, one remainder route per input and asset.
 func (t *Template) checkBalances() error {
 	for i, in := range t.inputs {
 		n := 0
 		for _, o := range t.outputs {
-			if o.from == i && o.amount == nil {
-				n++
+			for _, dr := range o.draws {
+				if dr.from == i && dr.amount == nil {
+					n++
+				}
 			}
 		}
 		if n != 1 {
-			return bad("input %q needs exactly one remainder output, has %d", in.name, n)
+			return bad("input %q needs exactly one remainder draw, has %d", in.name, n)
 		}
 	}
 	var remainders []assetRoute
-	for _, o := range t.outputs {
-		for _, r := range o.assets {
+	routed := make([]bool, len(t.issues))
+	for _, o := range t.sinks() {
+		for _, r := range o.routes {
+			if r.issue >= 0 {
+				routed[r.issue] = true
+			}
 			if r.amount != nil {
 				continue
 			}
@@ -143,12 +182,23 @@ func (t *Template) checkBalances() error {
 			remainders = append(remainders, r)
 		}
 	}
+	if k := slices.Index(routed, false); k >= 0 {
+		return bad("issue %q is routed to no output", t.issues[k].name)
+	}
 	return nil
 }
 
 // checkPlacement requires indexes 0..n-1 once, laid out as offchain outputs, extension, onchain
-// outputs.
+// outputs. Unindexed outputs take list order and the extension is placed when built.
 func (t *Template) checkPlacement() error {
+	if t.packets != nil && t.packets.index < 0 {
+		if t.typ == Proof && !slices.IsSortedFunc(t.outputs, func(a, b output) int {
+			return cmp.Compare(btoi(a.onchain), btoi(b.onchain))
+		}) {
+			return bad("a proof template lists its offchain outputs before its onchain ones")
+		}
+		return nil
+	}
 	var idx []int
 	offchain := 0
 	for _, o := range t.outputs {
@@ -205,38 +255,59 @@ func (i *Instance) allocate(
 		return nil, fmt.Errorf("%w: input %q has no source", ErrIneligible, t.inputs[k].name)
 	}
 	a := &allocation{
-		sats: make([]uint64, len(t.outputs)), assets: make([]map[string]uint64, len(t.outputs)),
-		fee: fee,
+		sats:   make([]uint64, len(t.outputs)),
+		assets: make([]map[string]uint64, len(t.outputs)+len(t.burns)),
+		fee:    fee,
 	}
 	for k := range a.assets {
 		a.assets[k] = map[string]uint64{}
 	}
-	for slot, s := range sources {
-		name := t.inputs[slot].name
-		if s.Amount > maxAmount {
-			return nil, fmt.Errorf(
-				"%w: input %q holds more than 21e14 satoshis", ErrIneligible, name,
-			)
-		}
-		held := map[string]uint64{}
-		for _, as := range s.Assets {
-			if len(as.ID) != 34 {
+	for _, coins := range t.groups {
+		name := t.inputs[coins[0]].name
+		pool, pooled := uint64(0), map[string]uint64{}
+		for _, c := range coins {
+			s := sources[c]
+			if s.Amount > maxAmount {
 				return nil, fmt.Errorf(
-					"%w: input %q holds an asset id of %d bytes", ErrIneligible, name, len(as.ID),
+					"%w: input %q holds more than 21e14 satoshis", ErrIneligible, name,
 				)
 			}
-			if err := credit(held, hex.EncodeToString(as.ID), as.Amount); err != nil {
-				return nil, fmt.Errorf("input %q: %w", name, err)
+			held := map[string]uint64{}
+			for _, as := range s.Assets {
+				if len(as.ID) != 34 {
+					return nil, fmt.Errorf(
+						"%w: input %q holds an asset id of %d bytes",
+						ErrIneligible,
+						name,
+						len(as.ID),
+					)
+				}
+				if err := credit(held, hex.EncodeToString(as.ID), as.Amount); err != nil {
+					return nil, fmt.Errorf("input %q: %w", name, err)
+				}
+			}
+			// the copies of an each output take from their own coin first
+			left, err := i.routeSats(d, c, s.Amount, true, a)
+			if err != nil {
+				return nil, err
+			}
+			if err := i.routeAssets(d, c, held, a, true); err != nil {
+				return nil, err
+			}
+			pool += left
+			for key, n := range held {
+				if err := credit(pooled, key, n); err != nil {
+					return nil, fmt.Errorf("input %q: %w", name, err)
+				}
 			}
 		}
-
-		if err := i.routeSats(d, slot, s.Amount, dust, a); err != nil {
+		if _, err := i.routeSats(d, coins[0], pool, false, a); err != nil {
 			return nil, err
 		}
-		if err := i.routeAssets(d, slot, held, a); err != nil {
+		if err := i.routeAssets(d, coins[0], pooled, a, false); err != nil {
 			return nil, err
 		}
-		for key, n := range held {
+		for key, n := range pooled {
 			if n > 0 {
 				return nil, fmt.Errorf(
 					"%w: input %q has %d of asset %s without a route", ErrIneligible, name, n, key,
@@ -244,52 +315,82 @@ func (i *Instance) allocate(
 			}
 		}
 	}
+	if err := i.mint(d, a); err != nil {
+		return nil, err
+	}
+	if err := i.checkDust(a, dust); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
-func (i *Instance) routeSats(d *draft, slot int, amount, dust uint64, a *allocation) error {
+// routeSats serves the draws on slot of the copies of each outputs, or of the other outputs and
+// the fee, and returns what is left.
+func (i *Instance) routeSats(
+	d *draft, slot int, amount uint64, copies bool, a *allocation,
+) (uint64, error) {
 	t := i.tmpl
 	left := amount
+	mine := func(o output, dr draw) bool { return dr.from == slot && (o.coin >= 0) == copies }
 	for k, o := range t.outputs {
-		if o.from != slot || o.amount == nil {
-			continue
+		for _, dr := range o.draws {
+			if !mine(o, dr) || dr.amount == nil {
+				continue
+			}
+			n, err := i.fixedAmount(dr.amount, d, o.from)
+			if err != nil {
+				return 0, fmt.Errorf("output %q: %w", o.name, err)
+			}
+			if n > left {
+				return 0, fmt.Errorf(
+					"%w: output %q draws %d of %d left",
+					ErrIneligible,
+					o.name,
+					n,
+					left,
+				)
+			}
+			left -= n
+			a.sats[k] += n
 		}
-		n, err := i.fixedAmount(o.amount, d, o.from)
-		if err != nil {
-			return fmt.Errorf("output %q: %w", o.name, err)
-		}
-		if n < dust {
-			return fmt.Errorf(
-				"%w: %w: output %q draws %d, minimum %d", ErrIneligible, ErrUnaffordable, o.name, n,
-				dust,
-			)
-		}
-		if n > left {
-			return fmt.Errorf("%w: output %q draws %d of %d left", ErrIneligible, o.name, n, left)
-		}
-		left -= n
-		a.sats[k] = n
 	}
-	if t.fee != nil && t.fee.from == slot {
+	if !copies && t.fee != nil && t.fee.from == slot {
 		if a.fee > left {
-			return fmt.Errorf(
+			return 0, fmt.Errorf(
 				"%w: input %q cannot pay fee %d", ErrIneligible, t.inputs[t.fee.from].name, a.fee,
 			)
 		}
 		left -= a.fee
 	}
 	for k, o := range t.outputs {
-		if o.from == slot && o.amount == nil {
-			if left < dust {
-				return fmt.Errorf(
-					"%w: %w: output %q remainder %d below %d", ErrIneligible, ErrUnaffordable,
-					o.name, left, dust,
-				)
+		for _, dr := range o.draws {
+			if mine(o, dr) && dr.amount == nil {
+				a.sats[k] += left
+				left = 0
 			}
-			a.sats[k] = left
+		}
+	}
+	return left, nil
+}
+
+// checkDust runs once every input has drawn: an output's value is the sum of its draws.
+func (i *Instance) checkDust(a *allocation, dust uint64) error {
+	for k, o := range i.tmpl.outputs {
+		if a.sats[k] < dust {
+			return fmt.Errorf(
+				"%w: %w: output %q holds %d, minimum %d", ErrIneligible, ErrUnaffordable, o.name,
+				a.sats[k], dust,
+			)
 		}
 	}
 	return nil
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // fixedAmount requires a positive amount.

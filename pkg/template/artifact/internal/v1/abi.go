@@ -225,7 +225,10 @@ func (d *Definition) Canonical() map[string]any {
 }
 
 // FlatConstructor lists the scalar constructor fields: arrays as name.0, structs as name.field.
-func (d *Definition) FlatConstructor() ([]Field, error) {
+func (d *Definition) FlatConstructor() ([]Field, error) { return d.Flatten(d.ConstructorInputs) }
+
+// Flatten lists the scalars of fields in place: arrays by index, structs in field order.
+func (d *Definition) Flatten(fields []Field) ([]Field, error) {
 	var out []Field
 	steps := 0
 	var walk func(name, typ string) error
@@ -265,7 +268,7 @@ func (d *Definition) FlatConstructor() ([]Field, error) {
 		}
 		return nil
 	}
-	for _, f := range d.ConstructorInputs {
+	for _, f := range fields {
 		if err := walk(f.Name, f.Type); err != nil {
 			return nil, err
 		}

@@ -26,6 +26,18 @@ type spending struct {
 
 // Build builds the unsigned transaction spending sources, one per input in slot order.
 func (i *Instance) Build(sources []*Source, fee Fee) (*Action, error) {
+	return i.BuildCoins(sources, nil, fee)
+}
+
+// BuildCoins builds over coins[k] sources per input k, in slot order; nil keeps the instance's
+// layout. Only a watch, whose contracts are the same for every coin, takes a new layout.
+func (i *Instance) BuildCoins(sources []*Source, coins []int, fee Fee) (*Action, error) {
+	if coins != nil {
+		var err error
+		if i, err = i.relayout(coins); err != nil {
+			return nil, err
+		}
+	}
 	t := i.tmpl
 	if err := checkSources(sources, len(t.inputs)); err != nil {
 		return nil, err
@@ -63,30 +75,30 @@ func (i *Instance) Build(sources []*Source, fee Fee) (*Action, error) {
 		tx.AddTxIn(&wire.TxIn{PreviousOutPoint: s.Outpoint, Sequence: wire.MaxTxInSequenceNum})
 	}
 	i.lock(tx, 0)
-	n := len(t.outputs)
-	if t.packets != nil {
-		n++
-	}
-	tx.TxOut = make([]*wire.TxOut, n)
-	for k, o := range t.outputs {
-		tx.TxOut[o.index] = &wire.TxOut{Value: int64(a.sats[k]), PkScript: scripts[k]}
-	}
 
 	act := &Action{Extension: -1, Fee: charged}
 	ext, err := i.extension(d, sources, a, spends)
 	if err != nil {
 		return nil, err
 	}
+	var extOut *wire.TxOut
 	if len(ext) > 0 {
-		out, err := ext.TxOut()
-		if err != nil {
+		if extOut, err = ext.TxOut(); err != nil {
 			return nil, fmt.Errorf("%w: extension: %v", ErrIneligible, err)
 		}
-		act.Extension = int(t.packets.index)
-		tx.TxOut[act.Extension] = out
-	} else if t.packets != nil {
+		act.Extension = i.extensionIndex()
+	} else if t.packets != nil && t.packets.index >= 0 {
 		return nil, fmt.Errorf("%w: nothing to write in the extension", ErrIneligible)
 	}
+	pos := i.positions(act.Extension)
+	tx.TxOut = make([]*wire.TxOut, len(t.outputs))
+	for k := range t.outputs {
+		tx.TxOut[k] = &wire.TxOut{Value: int64(a.sats[k]), PkScript: scripts[k]}
+	}
+	if extOut != nil {
+		tx.TxOut = append(tx.TxOut, extOut)
+	}
+	tx.TxOut = place(tx.TxOut, pos, act.Extension)
 
 	if t.typ == Onchain {
 		if fee.Onchain == nil {
@@ -96,8 +108,8 @@ func (i *Instance) Build(sources []*Source, fee Fee) (*Action, error) {
 		if a, err = i.allocate(d, sources, act.Fee, fee.Dust); err != nil {
 			return nil, err
 		}
-		for k, o := range t.outputs {
-			tx.TxOut[o.index].Value = int64(a.sats[k])
+		for k := range t.outputs {
+			tx.TxOut[pos[k]].Value = int64(a.sats[k])
 		}
 	}
 	if act.Tx, err = i.packet(tx, sources, spends); err != nil {
@@ -106,15 +118,54 @@ func (i *Instance) Build(sources []*Source, fee Fee) (*Action, error) {
 	return act, nil
 }
 
-// lock matches offchain.BuildTxs: the highest locktime, and a non-final sequence on its inputs,
-// which start at first in tx
+// lock sets the resolved nLockTime and nSequences; the template's inputs start at first in tx.
 func (i *Instance) lock(tx *wire.MsgTx, first int) {
-	for slot, lt := range i.locktimes {
-		if lt != nil {
-			tx.LockTime = max(tx.LockTime, uint32(*lt))
-			tx.TxIn[first+slot].Sequence = wire.MaxTxInSequenceNum - 1
+	tx.LockTime = i.locktime
+	for slot, seq := range i.sequences {
+		tx.TxIn[first+slot].Sequence = seq
+	}
+}
+
+// extensionIndex is the stated output_index, else after the offchain outputs of a proof, else
+// last.
+func (i *Instance) extensionIndex() int {
+	t := i.tmpl
+	if t.packets.index >= 0 {
+		return t.packets.index
+	}
+	n := 0
+	for _, o := range t.outputs {
+		if t.typ != Proof || !o.onchain {
+			n++
 		}
 	}
+	return n
+}
+
+// positions maps each output to its place in the transaction; an automatic extension shifts
+// what follows it.
+func (i *Instance) positions(ext int) []int {
+	auto := i.tmpl.packets != nil && i.tmpl.packets.index < 0 && ext >= 0
+	out := make([]int, len(i.tmpl.outputs))
+	for k, o := range i.tmpl.outputs {
+		out[k] = int(o.index)
+		if auto && out[k] >= ext {
+			out[k]++
+		}
+	}
+	return out
+}
+
+// place orders outs, the template outputs then the extension, by pos and ext.
+func place(outs []*wire.TxOut, pos []int, ext int) []*wire.TxOut {
+	placed := make([]*wire.TxOut, len(outs))
+	for k, p := range pos {
+		placed[p] = outs[k]
+	}
+	if ext >= 0 {
+		placed[ext] = outs[len(pos)]
+	}
+	return placed
 }
 
 func (i *Instance) spends(d *draft) ([]spending, error) {

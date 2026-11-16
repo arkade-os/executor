@@ -78,6 +78,12 @@ func (i *Instance) Build(s []*Source, f Fee) (*Action, error) {
 	return a, wrap("build", err)
 }
 
+// BuildCoins builds a watch over coins[k] sources per input k, as all_outputs allows.
+func (i *Instance) BuildCoins(s []*Source, coins []int, f Fee) (*Action, error) {
+	a, err := i.v1.BuildCoins(s, coins, f)
+	return a, wrap("build", err)
+}
+
 func (i *Instance) PkScript(slot int) []byte     { return i.v1.PkScript(slot) }
 func (i *Instance) Tapscripts(slot int) []string { return i.v1.Tapscripts(slot) }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"maps"
+	"slices"
 	"testing"
 	"time"
 
@@ -34,7 +35,7 @@ func TestTriggerMatch(t *testing.T) {
 	ptx, tree := streamed(t, tlv(1, []byte("hi"), 2, push, 3, server, 9, []byte{1}))
 	got, err := tr.Match(ptx, keys, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, []Capture{{Output: 0, Variables: map[string]string{
+	require.Equal(t, []Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
 		"note": hex.EncodeToString(
 			[]byte("hi"),
 		),
@@ -127,6 +128,45 @@ func TestTriggerMinValue(t *testing.T) {
 	)
 }
 
+// TestTriggerRecords: each record is matched on its own and one that fails is skipped.
+func TestTriggerRecords(t *testing.T) {
+	keys := TriggerKeys{Keys: testKeys(t)}
+	server := keys.Server.SerializeCompressed()
+	to := bytes.Repeat([]byte{7}, 32)
+	push := pushScript(t, to)
+	trig := baseTrigger()
+	trig["decode"] = "records"
+	tr := parseDoc(t, triggerDoc(t, trig)).Triggers()[0]
+	record := func(fields []byte) []byte {
+		return append(binary.BigEndian.AppendUint16(nil, uint16(len(fields))), fields...)
+	}
+	body := slices.Concat(
+		record(tlv(1, []byte("a"), 2, push, 3, server)),
+		record(tlv(1, []byte("b"), 2, push, 3, testKey(t, 2).SerializeCompressed())),
+		record(tlv(1, []byte("c"), 2, push, 3, server)),
+	)
+	ptx, _ := streamed(t, body)
+	got, err := tr.Match(ptx, keys, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, hex.EncodeToString([]byte("a")), got[0].Variables["note"])
+	require.Equal(t, hex.EncodeToString([]byte("c")), got[1].Variables["note"])
+
+	bad, _ := streamed(
+		t,
+		record(tlv(1, []byte("b"), 2, push, 3, testKey(t, 2).SerializeCompressed())),
+	)
+	_, err = tr.Match(bad, keys, nil, nil)
+	require.ErrorIs(t, err, ErrNoMatch)
+	trunc, _ := streamed(t, append(record(tlv(1, []byte("a"), 2, push, 3, server)), 0, 9))
+	_, err = tr.Match(trunc, keys, nil, nil)
+	require.ErrorIs(t, err, ErrNoMatch, "a truncated record")
+
+	trig["require"] = map[string]any{"tlv:3": "<COSIGNER_KEY>"}
+	_, err = Parse(triggerDoc(t, trig), nil)
+	require.Error(t, err, "COSIGNER_KEY is no service key a rule requires")
+}
+
 func TestTriggerRequiresAndRaw(t *testing.T) {
 	encryption, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
@@ -135,7 +175,6 @@ func TestTriggerRequiresAndRaw(t *testing.T) {
 	for name, want := range map[string][]byte{
 		"<ENCRYPTION_KEY>": encryption.PubKey().SerializeCompressed(),
 		"<EMULATOR_KEY>":   keys.Emulator.SerializeCompressed(),
-		"<COSIGNER_KEY>":   keys.Cosigner.SerializeCompressed(),
 	} {
 		trig := baseTrigger()
 		trig["require"] = map[string]any{"tlv:3": name}

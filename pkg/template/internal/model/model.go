@@ -30,6 +30,9 @@ type Slot struct {
 	Name     string
 	Onchain  bool
 	Schedule Schedule
+	// AllOutputs: the input's trigger rule takes every output sharing a script, so it holds every
+	// coin at its address.
+	AllOutputs bool
 }
 
 // Keys are the service keys a contract is resolved under; Cosigner is the daemon's cosigner.
@@ -41,9 +44,12 @@ type Context struct {
 	// Decrypt opens sealed variables: with it their values are ciphertexts, without it plaintexts.
 	// It is called concurrently and its errors must not contain plaintext.
 	Decrypt func(ciphertext []byte) ([]byte, error)
-	// Sources are the outputs to spend, one per input; nil asks for a watch, built from the
-	// variables alone.
+	// Sources are the outputs to spend, the coins of each input in turn; nil asks for a watch,
+	// built from the variables alone.
 	Sources []*Source
+	// Coins is the number of coins per input, nil for one each. Only an input whose trigger rule
+	// sets all_outputs holds several.
+	Coins []int
 }
 
 type Asset struct {
@@ -82,7 +88,8 @@ type TriggerKeys struct {
 
 // Capture is a candidate output of a matched transaction and the variables captured for it, in hex.
 type Capture struct {
-	Output    int
+	Output    int    // the first coin
+	Outputs   []int  // every coin, in output order: several with all_outputs
 	Group     string // the rule's group bytes in hex, "" without a group
 	Variables map[string]string
 }
@@ -98,6 +105,7 @@ type Runtime struct{ Decrypt func([]byte) ([]byte, error) }
 // BuildRequest is the complete context of one spend. Sources must not be mutated during a call.
 type BuildRequest struct {
 	Sources []*Source
+	Coins   []int // as in Context
 	Fee     Fee
 	Runtime Runtime
 }

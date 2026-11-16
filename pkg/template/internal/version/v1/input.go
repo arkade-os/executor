@@ -31,12 +31,20 @@ type input struct {
 	leadVariable   string // an int variable holding before_expiry_seconds
 	contract       construction
 	function, leaf string
-	arguments      []byteTemplate          // covenant inputs, ABI order
+	arguments      []byteTemplate          // flattened covenant inputs, ABI order
 	witness        map[string]byteTemplate // non-signature witness items
+	sequence       *lockSpec               // stated nSequence, nil to derive it from the leaf
+}
+
+// lockSpec is a literal or an int variable.
+type lockSpec struct {
+	n        int64
+	variable string
 }
 
 // Locktime is the absolute locktime of slot's spend leaf, which arkd compares with its chain tip.
 func (i *Instance) Locktime(slot int) (arklib.AbsoluteLocktime, bool) {
+	slot = i.firstCoin(slot)
 	if lt := i.locktimes[slot]; lt != nil {
 		return *lt, true
 	}
@@ -46,21 +54,33 @@ func (i *Instance) Locktime(slot int) (arklib.AbsoluteLocktime, bool) {
 func (i *Instance) Tapscripts(
 	slot int,
 ) []string {
-	return slices.Clone(i.contracts[slot].Tapscripts)
+	return slices.Clone(i.contracts[i.firstCoin(slot)].Tapscripts)
 }
 
-func (i *Instance) PkScript(slot int) []byte { return bytes.Clone(i.contracts[slot].PkScript) }
+func (i *Instance) PkScript(slot int) []byte {
+	return bytes.Clone(i.contracts[i.firstCoin(slot)].PkScript)
+}
 
-// DueAt is the schedule's due time, no earlier than a timestamp locktime; a height is the caller's
-// to check.
+// DueAt is the schedule's due time, no earlier than a timestamp locktime or a relative lock in
+// seconds; heights are the caller's to check.
 func (i *Instance) DueAt(slot int, s *Source, now time.Time) time.Time {
+	slot = i.firstCoin(slot)
 	due := i.scheduleDue(slot, s, now)
-	if lt := i.locktimes[slot]; lt != nil && lt.IsSeconds() {
-		if at := time.Unix(int64(*lt), 0); at.After(due) {
-			return at
-		}
+	if i.locktime >= locktimeThreshold {
+		due = later(due, time.Unix(int64(i.locktime), 0))
+	}
+	if seq := i.sequences[slot]; seq&seqDisabled == 0 && seq&seqSeconds != 0 &&
+		!s.CreatedAt.IsZero() {
+		due = later(due, s.CreatedAt.Add(time.Duration(seq&seqMask)*512*time.Second))
 	}
 	return due
+}
+
+func later(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
 
 func (c *compiler) input(s *schema.Input) error {
@@ -173,10 +193,10 @@ func (c *compiler) spend(in *input, s *schema.Spend) error {
 	if l == nil {
 		return bad("unknown leaf %q", s.Leaf)
 	}
-	// arkd sets an absolute locktime only when it builds an offchain spend
-	if slices.ContainsFunc(l.Asm, isCLTV) && c.t.typ != Virtual {
+	// an intent proof carries no locktime
+	if slices.ContainsFunc(l.Asm, isCLTV) && c.t.typ == Proof {
 		return fmt.Errorf(
-			"%w: leaf %q needs an absolute locktime, which only an offchain template sets",
+			"%w: leaf %q needs an absolute locktime, which a proof does not set",
 			ErrUnsupported, l.Name,
 		)
 	}
@@ -184,14 +204,9 @@ func (c *compiler) spend(in *input, s *schema.Spend) error {
 	in.selected, in.selectedLeaf = f, l
 	var want []Field
 	if f.Arkade != nil {
-		want = f.Arkade.Inputs
-	}
-	for _, w := range want {
-		if artifact.IsArrayType(w.Type) {
-			return fmt.Errorf(
-				"%w: function %q takes the array input %q, which a template cannot fill",
-				ErrUnsupported, f.Name, w.Name,
-			)
+		var err error
+		if want, err = in.contract.def.Flatten(f.Arkade.Inputs); err != nil {
+			return err
 		}
 	}
 	if len(s.Arguments) != len(want) {
@@ -308,16 +323,16 @@ func contractErr(err error) error {
 
 func isCLTV(tok string) bool { return tok == "OP_CHECKLOCKTIMEVERIFY" || tok == "OP_NOP2" }
 
-// checkClosure returns the spend leaf's absolute locktime, nil without one. The emulator accepts
-// only ark-lib closures on a leaf naming its key, and arkd builds a locktime only from a CLTV
-// multisig.
-func checkClosure(in input, ct *contract.Contract) (*arklib.AbsoluteLocktime, error) {
+// checkClosure returns a virtual spend leaf's absolute locktime, nil without one. The emulator
+// accepts only ark-lib closures on a leaf naming its key, and arkd builds a locktime only from a
+// CLTV multisig.
+func checkClosure(in input, ct *contract.Contract, typ Type) (*arklib.AbsoluteLocktime, error) {
 	f := in.contract.def.FindFunction(in.function)
 	l := f.FindLeaf(in.leaf)
 	emulated := slices.ContainsFunc(l.Asm, func(tok string) bool {
 		return strings.HasPrefix(tok, "<EMULATOR_KEY:") || strings.HasPrefix(tok, "<TWEAK:")
 	})
-	cltv := slices.ContainsFunc(l.Asm, isCLTV)
+	cltv := typ == Virtual && slices.ContainsFunc(l.Asm, isCLTV)
 	if !emulated && !cltv {
 		return nil, nil
 	}

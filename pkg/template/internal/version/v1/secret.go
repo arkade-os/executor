@@ -11,11 +11,11 @@ import (
 func (c *compiler) declarations() error {
 	maps.Copy(c.t.variables, c.doc.Variables)
 	if d := c.doc.Delegation; d != nil {
-		for _, n := range d.Sealed {
-			if _, ok := c.t.variables[n]; !ok {
-				return bad("sealed %q is not a declared variable", n)
+		for _, x := range d.Sealed {
+			if _, ok := c.t.variables[x.Name]; !ok {
+				return bad("sealed %q is not a declared variable", x.Name)
 			}
-			c.t.sealed[n] = true
+			c.t.sealed[x.Name] = true
 		}
 	}
 	return nil

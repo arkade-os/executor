@@ -29,11 +29,13 @@ type Trigger struct {
 	tmpl     *Template
 	input    int
 	packet   uint8
-	raw      bool // the body is one source, else tlv records
+	raw      bool // the body is one source, else tlv fields
+	records  bool // the body is length-prefixed records of tlv fields, each matched on its own
 	minValue int64
 	require  []requirement // sorted by source
 	captures []captureRule // sorted by variable
 	group    string        // a source, "" with a single rule
+	all      bool          // all_outputs: candidates sharing a script are one match
 	ttl      time.Duration
 }
 
@@ -58,7 +60,6 @@ var serviceKeys = map[string]func(TriggerKeys) *btcec.PublicKey{
 	"ENCRYPTION_KEY": func(k TriggerKeys) *btcec.PublicKey { return k.Encryption },
 	"SERVER_KEY":     func(k TriggerKeys) *btcec.PublicKey { return k.Server },
 	"EMULATOR_KEY":   func(k TriggerKeys) *btcec.PublicKey { return k.Emulator },
-	"COSIGNER_KEY":   func(k TriggerKeys) *btcec.PublicKey { return k.Cosigner },
 }
 
 type valueOf func(name string) (asm.Value, bool, error)
@@ -88,13 +89,40 @@ func (tr *Trigger) Match(
 	if !ok {
 		return nil, fmt.Errorf("%w: no packet %d", ErrNoMatch, tr.packet)
 	}
-	fields := map[string][]byte{"raw": body}
-	if !tr.raw {
-		var err error
-		if fields, err = decodeTLV(body); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrNoMatch, err)
+	if !tr.records {
+		fields := map[string][]byte{"raw": body}
+		if !tr.raw {
+			var err error
+			if fields, err = decodeTLV(body); err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrNoMatch, err)
+			}
 		}
+		return tr.match(tx, fields, keys, given, decrypt)
 	}
+	records, err := decodeRecords(body)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrNoMatch, err)
+	}
+	var out []Capture
+	err = fmt.Errorf("%w: no record", ErrNoMatch)
+	for _, fields := range records {
+		c, e := tr.match(tx, fields, keys, given, decrypt)
+		if e != nil {
+			err = e
+			continue
+		}
+		out = append(out, c...)
+	}
+	if len(out) == 0 {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (tr *Trigger) match(
+	tx *psbt.Packet, fields map[string][]byte, keys TriggerKeys, given map[string][]byte,
+	decrypt func([]byte) ([]byte, error),
+) ([]Capture, error) {
 	vars := map[string][]byte{}
 	var tree string
 	for _, c := range tr.captures {
@@ -169,7 +197,13 @@ func (tr *Trigger) Match(
 			}
 			v[tree] = hex.EncodeToString(raw)
 		}
-		out = append(out, Capture{Output: i, Group: group, Variables: v})
+		if k := slices.IndexFunc(out, func(c Capture) bool {
+			return tr.all && bytes.Equal(tx.UnsignedTx.TxOut[c.Output].PkScript, o.PkScript)
+		}); k >= 0 {
+			out[k].Outputs = append(out[k].Outputs, i)
+			continue
+		}
+		out = append(out, Capture{Output: i, Outputs: []int{i}, Group: group, Variables: v})
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("%w: no candidate output", ErrNoMatch)
@@ -205,6 +239,7 @@ func (c *compiler) triggers() error {
 		}
 		tr := &Trigger{
 			tmpl: c.t, input: slot, packet: uint8(s.Packet), raw: s.Decode == "raw",
+			records: s.Decode == "records", all: s.AllOutputs,
 			minValue: s.MinValue, group: s.Group, ttl: time.Duration(s.ExpiresAfter) * time.Second,
 		}
 		if tr.group != "" && !tr.isSource(tr.group) {
@@ -406,6 +441,27 @@ func evalFree(tokens []string, lookup asm.Lookup) ([]byte, error) {
 	d := newDraft(Virtual, []*Source{{}})
 	d.contextFree = true
 	return d.eval(tokens, 0, lookup)
+}
+
+// decodeRecords reads length[2, big-endian] || fields records, each a list of tlv fields.
+func decodeRecords(body []byte) ([]map[string][]byte, error) {
+	var out []map[string][]byte
+	for len(body) > 0 {
+		if len(body) < 2 {
+			return nil, errors.New("truncated record length")
+		}
+		n := int(binary.BigEndian.Uint16(body[:2]))
+		if len(body) < 2+n {
+			return nil, fmt.Errorf("record wants %d bytes, %d left", n, len(body)-2)
+		}
+		fields, err := decodeTLV(body[2 : 2+n])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, fields)
+		body = body[2+n:]
+	}
+	return out, nil
 }
 
 // decodeTLV reads tag[1] || length[2, big-endian] || value records; a repeated tag keeps the last

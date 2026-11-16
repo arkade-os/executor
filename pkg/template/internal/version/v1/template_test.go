@@ -93,7 +93,6 @@ func TestParseRejects(t *testing.T) {
 			in(m)["spend"].(map[string]any)["witness"] = map[string]any{"delegateSig": "00"}
 		},
 		"spend argument": func(m map[string]any) { in(m)["spend"].(map[string]any)["arguments"] = []any{"00"} },
-		"sequence":       func(m map[string]any) { in(m)["sequence"] = 4294967295 },
 		"integer for pubkey": func(m map[string]any) {
 			in(m)["contract"].(map[string]any)["arguments"].(map[string]any)["delegate"] = 5
 		},
@@ -224,13 +223,6 @@ func TestParseProof(t *testing.T) {
 		"self feeds an onchain slot from an offchain output": func(m map[string]any) {
 			m["inputs"].([]any)[0].(map[string]any)["type"] = "onchain"
 			delete(m["outputs"].([]any)[0].(map[string]any), "assets")
-		},
-		"too many rules": func(m map[string]any) {
-			rules := []any{}
-			for range 256 {
-				rules = append(rules, rule(3, "drop"))
-			}
-			pk(m)["rules"] = rules
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -776,8 +768,13 @@ func TestArrayInputs(t *testing.T) {
 	require.NoError(t, err, "an array input on a function the template does not spend")
 
 	_, err = Parse(withInput("release"), nil)
-	require.ErrorIs(t, err, ErrUnsupported)
-	require.ErrorContains(t, err, `array input "sigs"`)
+	require.ErrorIs(t, err, ErrInvalidTemplate)
+	require.ErrorContains(
+		t,
+		err,
+		"takes 3 arguments",
+		"an array input flattens to one binding per element",
+	)
 }
 
 func fnOf(m map[string]any, i int) map[string]any {

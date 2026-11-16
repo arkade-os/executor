@@ -107,6 +107,13 @@ func readBool(v any, path string) (bool, error) {
 	return b, nil
 }
 
+func readTrue(v any, path string) (bool, error) {
+	if b, ok := v.(bool); !ok || !b {
+		return false, bad("%s must be true", path)
+	}
+	return true, nil
+}
+
 func readInt(v any, path string) (int64, error) {
 	n, ok := v.(json.Number)
 	if !ok {
@@ -196,8 +203,8 @@ func readDefinitionRef(v any, path string) (DefinitionRef, error) {
 func readTemplate(v any, path string) (Template, error) {
 	var out Template
 	r := newObject(
-		v, path, "format", "type", "variables", "inputs", "outputs", "fees", "packets",
-		"delegation",
+		v, path, "format", "type", "variables", "inputs", "outputs", "fees", "issues", "burns",
+		"locktime", "packets", "delegation",
 	)
 	field(r, "format", &out.Format, required, readString)
 	field(r, "type", &out.Type, required, readString)
@@ -205,6 +212,9 @@ func readTemplate(v any, path string) (Template, error) {
 	field(r, "inputs", &out.Inputs, required, list(readInput))
 	field(r, "outputs", &out.Outputs, required, list(readOutput))
 	field(r, "fees", &out.Fees, optional, pointer(readFees))
+	field(r, "issues", &out.Issues, optional, list(readIssue))
+	field(r, "burns", &out.Burns, optional, list(readAssetRoute))
+	field(r, "locktime", &out.Locktime, optional, pointer(readIntOrVar))
 	field(r, "packets", &out.Packets, optional, pointer(readPackets))
 	field(r, "delegation", &out.Delegation, optional, pointer(readDelegation))
 	return out, r.err
@@ -214,16 +224,18 @@ func readDelegation(v any, path string) (Delegation, error) {
 	var out Delegation
 	r := newObject(v, path, "schedule", "sealed", "trigger")
 	field(r, "schedule", &out.Schedule, optional, dictionary(readSchedule))
-	field(r, "sealed", &out.Sealed, optional, list(readString))
+	field(r, "sealed", &out.Sealed, optional, list(readSealed))
 	field(r, "trigger", &out.Trigger, optional, dictionary(readTrigger))
 	return out, r.err
 }
 
 func readInput(v any, path string) (Input, error) {
 	var out Input
-	r := newObject(v, path, "name", "type", "contract", "spend")
+	r := newObject(v, path, "name", "type", "index", "sequence", "contract", "spend")
 	field(r, "name", &out.Name, required, readString)
 	field(r, "type", &out.Type, optional, readString)
+	field(r, "index", &out.Index, optional, pointer(readInt))
+	field(r, "sequence", &out.Sequence, optional, pointer(readIntOrVar))
 	field(r, "contract", &out.Contract, required, readConstruction)
 	field(r, "spend", &out.Spend, required, readSpend)
 	return out, r.err
@@ -259,10 +271,11 @@ func readSpend(v any, path string) (Spend, error) {
 
 func readOutput(v any, path string) (Output, error) {
 	var out Output
-	r := newObject(v, path, "name", "type", "index", "value", "locking", "assets")
+	r := newObject(v, path, "name", "type", "index", "each", "value", "locking", "assets")
 	field(r, "name", &out.Name, required, readString)
 	field(r, "type", &out.Type, optional, readString)
-	field(r, "index", &out.Index, required, readInt)
+	field(r, "index", &out.Index, optional, pointer(readInt))
+	field(r, "each", &out.Each, optional, readString)
 	field(r, "value", &out.Value, required, readValue)
 	field(r, "locking", &out.Locking, required, readLocking)
 	field(r, "assets", &out.Assets, optional, list(readAssetRoute))
@@ -270,7 +283,16 @@ func readOutput(v any, path string) (Output, error) {
 }
 
 func readValue(v any, path string) (Value, error) {
-	var out Value
+	if _, ok := v.([]any); ok {
+		draws, err := list(readDraw)(v, path)
+		return Value{Draws: draws, List: true}, err
+	}
+	d, err := readDraw(v, path)
+	return Value{Draws: []Draw{d}}, err
+}
+
+func readDraw(v any, path string) (Draw, error) {
+	var out Draw
 	r := newObject(v, path, "from", "amount")
 	field(r, "from", &out.From, required, readString)
 	field(r, "amount", &out.Amount, optional, pointer(readBinding))
@@ -279,10 +301,42 @@ func readValue(v any, path string) (Value, error) {
 
 func readAssetRoute(v any, path string) (AssetRoute, error) {
 	var out AssetRoute
-	r := newObject(v, path, "from", "asset", "amount")
-	field(r, "from", &out.From, required, readString)
+	r := newObject(v, path, "from", "issue", "asset", "amount")
+	field(r, "from", &out.From, optional, readString)
+	field(r, "issue", &out.Issue, optional, readString)
 	field(r, "asset", &out.Asset, optional, readString)
 	field(r, "amount", &out.Amount, optional, pointer(readBinding))
+	return out, r.err
+}
+
+func readIssue(v any, path string) (Issue, error) {
+	var out Issue
+	r := newObject(v, path, "name", "asset", "control", "metadata")
+	field(r, "name", &out.Name, required, readString)
+	field(r, "asset", &out.Asset, optional, readString)
+	field(r, "control", &out.Control, optional, pointer(readControl))
+	field(r, "metadata", &out.Metadata, optional, dictionary(readString))
+	return out, r.err
+}
+
+func readControl(v any, path string) (Control, error) {
+	if s, ok := v.(string); ok {
+		return Control{Asset: s}, nil
+	}
+	var out Control
+	r := newObject(v, path, "issue")
+	field(r, "issue", &out.Issue, required, readString)
+	return out, r.err
+}
+
+func readSealed(v any, path string) (Sealed, error) {
+	if s, ok := v.(string); ok {
+		return Sealed{Name: s}, nil
+	}
+	var out Sealed
+	r := newObject(v, path, "name", "scheme")
+	field(r, "name", &out.Name, required, readString)
+	field(r, "scheme", &out.Scheme, required, readString)
 	return out, r.err
 }
 
@@ -297,7 +351,7 @@ func readFees(v any, path string) (Fees, error) {
 func readPackets(v any, path string) (Packets, error) {
 	var out Packets
 	r := newObject(v, path, "output_index", "unmatched", "rules", "advertise")
-	field(r, "output_index", &out.OutputIndex, required, readInt)
+	field(r, "output_index", &out.OutputIndex, optional, pointer(readInt))
 	field(r, "unmatched", &out.Unmatched, optional, readString)
 	field(r, "rules", &out.Rules, optional, list(readRule))
 	field(r, "advertise", &out.Advertise, optional, list(readAdvert))
@@ -326,10 +380,11 @@ func readTrigger(v any, path string) (Trigger, error) {
 	var out Trigger
 	r := newObject(
 		v, path, "packet", "decode", "require", "capture", "group", "expires_after_seconds",
-		"min_value",
+		"min_value", "all_outputs",
 	)
 	field(r, "packet", &out.Packet, required, readInt)
-	field(r, "decode", &out.Decode, required, readString)
+	field(r, "decode", &out.Decode, optional, readString)
+	field(r, "all_outputs", &out.AllOutputs, optional, readTrue)
 	field(r, "require", &out.Require, required, dictionary(readString))
 	field(r, "capture", &out.Capture, required, dictionary(readString))
 	field(r, "group", &out.Group, optional, readString)

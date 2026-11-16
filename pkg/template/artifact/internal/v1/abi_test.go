@@ -314,10 +314,12 @@ func TestParseArtifactArrayInput(t *testing.T) {
 		"leaves":[{"name":"l","witness":[{"name":"s","type":"signature","encoding":"schnorr-64","injected":true}],
 		"asm":["<SERVER_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:f>","OP_CHECKSIG"]}]}]}`
 	}
-	a, err := Parse([]byte(doc("bytes[3]")))
-	require.NoError(t, err)
-	require.Equal(t, "bytes[3]", a.Definition.Functions[0].Arkade.Inputs[0].Type)
-	for _, typ := range []string{"float[3]", "bytes[0]", "bytes[]", "bytes[3][2]", "signature[3]"} {
+	for _, typ := range []string{"bytes[3]", "signature[3]"} {
+		a, err := Parse([]byte(doc(typ)))
+		require.NoError(t, err)
+		require.Equal(t, typ, a.Definition.Functions[0].Arkade.Inputs[0].Type)
+	}
+	for _, typ := range []string{"float[3]", "bytes[0]", "bytes[]", "bytes[3][2]"} {
 		_, err := Parse([]byte(doc(typ)))
 		require.ErrorIs(t, err, ErrInvalid, typ)
 	}

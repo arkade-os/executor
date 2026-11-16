@@ -20,13 +20,11 @@
   "outputs": [
     {
       "name": "renewed",
-      "index": 0,
       "value": {"from": "funds"},
       "locking": {"from": "funds"},
       "assets": [{"from": "funds"}]
     }
   ],
   "fees": {"from": "funds", "max": "<max_fee>"},
-  "packets": {"output_index": 1},
   "delegation": {"schedule": {"funds": {"before_expiry_seconds": "<renewal_window>"}}}
 }
