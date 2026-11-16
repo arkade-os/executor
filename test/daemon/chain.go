@@ -29,6 +29,8 @@ type chain struct {
 	down         bool
 	sub          *chainSub
 	funded       int
+	broadcasts   []*wire.MsgTx
+	refuse       error
 	unspentCalls map[string]int
 }
 
@@ -181,6 +183,37 @@ func (c *chain) Transaction(_ context.Context, txid string) (*wire.MsgTx, error)
 		return nil, errors.New("transaction not found")
 	}
 	return tx, nil
+}
+
+// Broadcast takes the transaction into the mempool: what it spends leaves the utxos.
+func (c *chain) Broadcast(_ context.Context, tx *wire.MsgTx) (string, error) {
+	c.mu.Lock()
+	if c.refuse != nil {
+		defer c.mu.Unlock()
+		return "", c.refuse
+	}
+	c.broadcasts = append(c.broadcasts, tx)
+	c.mu.Unlock()
+	for _, in := range tx.TxIn {
+		c.spend(in.PreviousOutPoint.String())
+	}
+	return tx.TxHash().String(), nil
+}
+
+// FeeRate is one satoshi per virtual byte.
+func (c *chain) FeeRate(context.Context) (float64, error) { return 1, nil }
+
+// RefuseBroadcast makes Broadcast fail with err, nil taking transactions again.
+func (c *chain) RefuseBroadcast(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.refuse = err
+}
+
+func (c *chain) Broadcasts() []*wire.MsgTx {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.broadcasts)
 }
 
 func (s *chainSub) Events() <-chan ports.ChainEvent { return s.events }

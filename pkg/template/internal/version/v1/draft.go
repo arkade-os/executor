@@ -9,19 +9,17 @@ import (
 
 	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 )
-
-type Asset = model.Asset
-type Source = model.Source
 
 // draft is the transaction expressions see: inputs at their final position, no output; not safe for
 // concurrent use.
 type draft struct {
 	tx          *wire.MsgTx
-	sources     []*Source // aligned with tx.TxIn; nil for a proof's message input
-	bound       []bool    // aligned with tx.TxIn; false for a source whose Tx is not its outpoint's
+	sources     []*model.Source // aligned with tx.TxIn; nil for a proof's message input
+	bound       []bool          // aligned with tx.TxIn; false for a source whose Tx is not its outpoint's
 	contextFree bool
 }
 
@@ -66,10 +64,14 @@ func (d *draft) eval(tokens []string, input int, lookup asm.Lookup) ([]byte, err
 		err = asm.CheckScript(script, d.contextFree)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%w: expression: %v", ErrIneligible, err)
+		return nil, fmt.Errorf("%w: expression: %v", failure.ErrIneligible, err)
 	}
 	if input < 0 || input >= len(d.sources) {
-		return nil, fmt.Errorf("%w: expression: input %d out of range", ErrIneligible, input)
+		return nil, fmt.Errorf(
+			"%w: expression: input %d out of range",
+			failure.ErrIneligible,
+			input,
+		)
 	}
 	var amount int64
 	src := d.sources[input]
@@ -78,25 +80,29 @@ func (d *draft) eval(tokens []string, input int, lookup asm.Lookup) ([]byte, err
 	}
 	vm, err := arkade.NewEngine(script, d.tx, input, nil, nil, amount, d)
 	if err != nil {
-		return nil, fmt.Errorf("%w: expression: %s", ErrIneligible, vmError(err))
+		return nil, fmt.Errorf("%w: expression: %s", failure.ErrIneligible, vmError(err))
 	}
 	if src != nil && !src.Expiry.IsZero() {
 		arkade.WithExpiry(src.Expiry.Unix())(vm)
 	}
 	for done := false; !done; {
 		if done, err = vm.Step(); err != nil {
-			return nil, fmt.Errorf("%w: expression: %s", ErrIneligible, vmError(err))
+			return nil, fmt.Errorf("%w: expression: %s", failure.ErrIneligible, vmError(err))
 		}
 	}
 	stack := vm.GetStack()
 	if len(stack) != 1 {
-		return nil, fmt.Errorf("%w: expression: stack holds %d elements", ErrIneligible, len(stack))
+		return nil, fmt.Errorf(
+			"%w: expression: stack holds %d elements",
+			failure.ErrIneligible,
+			len(stack),
+		)
 	}
 	return stack[0], nil
 }
 
 // source is nil for an intent's message input; false when op is unknown or refused.
-func (d *draft) source(op wire.OutPoint) (*Source, bool) {
+func (d *draft) source(op wire.OutPoint) (*model.Source, bool) {
 	i := slices.IndexFunc(d.tx.TxIn, func(in *wire.TxIn) bool { return in.PreviousOutPoint == op })
 	if i < 0 || !d.bound[i] {
 		return nil, false
@@ -104,13 +110,13 @@ func (d *draft) source(op wire.OutPoint) (*Source, bool) {
 	return d.sources[i], true
 }
 
-func newDraft(typ Type, sources []*Source) *draft {
+func newDraft(typ model.Type, sources []*model.Source) *draft {
 	version := int32(2)
-	if typ == Virtual {
+	if typ == model.Virtual {
 		version = 3
 	}
 	d := &draft{tx: wire.NewMsgTx(version)}
-	if typ == Proof {
+	if typ == model.Proof {
 		d.tx.AddTxIn(&wire.TxIn{Sequence: wire.MaxTxInSequenceNum})
 		d.sources = append(d.sources, nil)
 		d.bound = append(d.bound, true)
@@ -133,7 +139,7 @@ func vmError(err error) string {
 }
 
 // isBound reports whether s.Tx, when set, created s.Outpoint holding s.Amount.
-func isBound(s *Source) bool {
+func isBound(s *model.Source) bool {
 	if s.Tx == nil {
 		return true
 	}
@@ -142,7 +148,7 @@ func isBound(s *Source) bool {
 		s.Tx.TxOut[i].Value == int64(s.Amount)
 }
 
-func pkScript(s *Source) []byte {
+func pkScript(s *model.Source) []byte {
 	if s.Tx == nil {
 		return nil
 	}

@@ -9,13 +9,20 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 )
 
 func TestParse(t *testing.T) {
 	doc, err := os.ReadFile("../../../testdata/artifacts/single_sig.compiler.json")
 	require.NoError(t, err)
 	a, err := Parse(doc)
-	require.ErrorIs(t, err, ErrInvalid, "a covenant input of type signature cannot be bound")
+	require.ErrorIs(
+		t,
+		err,
+		failure.ErrInvalidArtifact,
+		"a covenant input of type signature cannot be bound",
+	)
 	require.Nil(t, a)
 
 	bare := `{"contractName":"Exit","constructorInputs":[{"name":"user","type":"pubkey"},{"name":"exit","type":"int"}],
@@ -55,7 +62,7 @@ func TestParseArtifactCovenant(t *testing.T) {
 	require.Equal(t, "f", a.Definition.Canonical()["functions"].([]any)[0].(map[string]any)["name"])
 
 	_, err = Parse([]byte(doc(`"<amount>","OP_DROP"`)))
-	require.ErrorIs(t, err, ErrInvalid, "covenant inputs are never placeholders")
+	require.ErrorIs(t, err, failure.ErrInvalidArtifact, "covenant inputs are never placeholders")
 }
 
 func TestParseArtifactRejects(t *testing.T) {
@@ -83,7 +90,7 @@ func TestParseArtifactRejects(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Parse([]byte(doc))
-			require.ErrorIs(t, err, ErrInvalid)
+			require.ErrorIs(t, err, failure.ErrInvalidArtifact)
 		})
 	}
 }
@@ -163,7 +170,7 @@ func TestArtifactUnknownFieldAtEachLevel(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			doc := edited(t, []byte(idDoc), func(m map[string]any) { get(m)["extra"] = 1 })
 			_, err := Parse(doc)
-			require.ErrorIs(t, err, ErrInvalid)
+			require.ErrorIs(t, err, failure.ErrInvalidArtifact)
 		})
 	}
 }
@@ -187,7 +194,7 @@ func TestArtifactPlaceholders(t *testing.T) {
 			if ok {
 				require.NoError(t, err)
 			} else {
-				require.ErrorIs(t, err, ErrInvalid)
+				require.ErrorIs(t, err, failure.ErrInvalidArtifact)
 			}
 		})
 	}
@@ -219,7 +226,7 @@ func TestArtifactTypes(t *testing.T) {
 				fnOf(m, 0)["arkade"].(map[string]any)["asm"] = []any{"OP_1"}
 			})
 			_, err := Parse(doc)
-			require.ErrorIs(t, err, ErrInvalid)
+			require.ErrorIs(t, err, failure.ErrInvalidArtifact)
 		})
 	}
 }
@@ -275,7 +282,7 @@ func TestFlatConstructorCap(t *testing.T) {
 			require.Less(t, len(doc), 4096)
 			start := time.Now()
 			_, err := Parse(doc)
-			require.ErrorIs(t, err, ErrInvalid)
+			require.ErrorIs(t, err, failure.ErrInvalidArtifact)
 			require.Less(t, time.Since(start), time.Second)
 		})
 	}
@@ -321,7 +328,7 @@ func TestParseArtifactArrayInput(t *testing.T) {
 	}
 	for _, typ := range []string{"float[3]", "bytes[0]", "bytes[]", "bytes[3][2]"} {
 		_, err := Parse([]byte(doc(typ)))
-		require.ErrorIs(t, err, ErrInvalid, typ)
+		require.ErrorIs(t, err, failure.ErrInvalidArtifact, typ)
 	}
 }
 

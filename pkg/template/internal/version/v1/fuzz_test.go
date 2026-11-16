@@ -9,7 +9,9 @@ import (
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/internal/jcs"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/packets"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
@@ -27,7 +29,13 @@ func FuzzParse(f *testing.F) {
 	f.Fuzz(func(t *testing.T, doc []byte) {
 		tmpl, err := Parse(doc, docs)
 		if err != nil {
-			requireSentinel(t, err, ErrInvalidTemplate, ErrInvalidArtifact, ErrUnsupported)
+			requireSentinel(
+				t,
+				err,
+				failure.ErrInvalidTemplate,
+				failure.ErrInvalidArtifact,
+				failure.ErrUnsupported,
+			)
 			return
 		}
 		v, err := jcs.Decode(doc)
@@ -51,7 +59,7 @@ func FuzzParseArtifact(f *testing.F) {
 	f.Fuzz(func(t *testing.T, doc []byte) {
 		a, err := ParseArtifact(doc)
 		if err != nil {
-			requireSentinel(t, err, ErrInvalidArtifact)
+			requireSentinel(t, err, failure.ErrInvalidArtifact)
 			return
 		}
 		canon, err := jcs.Canonical(a.Definition.Canonical())
@@ -81,7 +89,7 @@ func FuzzEval(f *testing.F) {
 	f.Fuzz(func(t *testing.T, binding string, rawTx, v []byte) {
 		b, err := parseByteTemplate(binding)
 		if err != nil {
-			requireSentinel(t, err, ErrInvalidTemplate)
+			requireSentinel(t, err, failure.ErrInvalidTemplate)
 			return
 		}
 		tx := wire.NewMsgTx(3)
@@ -93,15 +101,15 @@ func FuzzEval(f *testing.F) {
 			if pc.expr == nil || asm.CheckExpression(pc.expr) != nil {
 				continue
 			}
-			src := &Source{
+			src := &model.Source{
 				Outpoint: wire.OutPoint{Hash: tx.TxHash()},
 				Tx:       tx,
 				Amount:   uint64(tx.TxOut[0].Value),
 			}
-			d := newDraft(Proof, []*Source{src})
+			d := newDraft(model.Proof, []*model.Source{src})
 			lookup := func(string) (asm.Value, error) { return asm.Value{Type: "bytes", Raw: v}, nil }
 			if _, err := d.eval(pc.expr, 1, lookup); err != nil {
-				requireSentinel(t, err, ErrIneligible)
+				requireSentinel(t, err, failure.ErrIneligible)
 			}
 		}
 	})

@@ -22,6 +22,9 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/emulator/pkg/arkade"
+	"github.com/arkade-os/executor/pkg/template/artifact"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/packets"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
@@ -45,11 +48,11 @@ func TestFixtures(t *testing.T) {
 
 func TestDefaults(t *testing.T) {
 	renewal := parseFixture(t, "renew.json")
-	require.Equal(t, Proof, renewal.Type())
-	require.Equal(t, []Slot{{Name: "funds"}}, renewal.Inputs())
+	require.Equal(t, model.Proof, renewal.Type())
+	require.Equal(t, []model.Slot{{Name: "funds"}}, renewal.Inputs())
 	require.Equal(
 		t,
-		[]Field{
+		[]artifact.Field{
 			{Name: "exit_delay", Type: "int"},
 			{Name: "max_fee", Type: "int"},
 			{Name: "owner", Type: "pubkey"},
@@ -61,10 +64,13 @@ func TestDefaults(t *testing.T) {
 
 	boarding := parseFixture(t, "board.json")
 	require.Equal(
-		t, []Slot{{Name: "deposit", Onchain: true, Schedule: Schedule{MinConfirmations: 1}}},
+		t,
+		[]model.Slot{
+			{Name: "deposit", Onchain: true, Schedule: model.Schedule{MinConfirmations: 1}},
+		},
 		boarding.Inputs(),
 	)
-	require.Equal(t, []Field{
+	require.Equal(t, []artifact.Field{
 		{
 			Name: "boarding_exit_delay", Type: "int",
 		},
@@ -98,17 +104,17 @@ func TestProgramBinding(t *testing.T) {
 		},
 	} {
 		_, err := Parse(edited(t, doc, edit), artifacts(t))
-		require.ErrorIs(t, err, ErrInvalidTemplate, name)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, name)
 	}
 }
 
 func TestFixtureShapes(t *testing.T) {
 	claim := parseFixture(t, "vhtlc_claim.json")
-	require.Equal(t, Virtual, claim.Type())
+	require.Equal(t, model.Virtual, claim.Type())
 	require.Equal(t, []string{"preimage"}, claim.Sealed())
 	require.Len(t, claim.Variables(), 9)
 
-	watch, err := parseFixture(t, "counter.json").Instantiate(Context{Keys: testKeys(t)})
+	watch, err := parseFixture(t, "counter.json").Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err, "a watch on two slots")
 	require.NotEqual(t, watch.PkScript(0), watch.PkScript(1))
 }
@@ -121,7 +127,7 @@ func TestRenewalAddress(t *testing.T) {
 	} {
 		inst, err := parseFixture(
 			t, "renew.json",
-		).Instantiate(Context{Keys: testKeys(t), Variables: p.vars(t)})
+		).Instantiate(model.Context{Keys: testKeys(t), Variables: p.vars(t)})
 		require.NoError(t, err)
 		require.Equal(t, masterPkScript(t, testKeys(t), p), inst.PkScript(0))
 	}
@@ -131,28 +137,28 @@ func TestRenewalDueAt(t *testing.T) {
 	p := defaultParams(t)
 	inst, err := parseFixture(
 		t, "renew.json",
-	).Instantiate(Context{Keys: testKeys(t), Variables: p.vars(t)})
+	).Instantiate(model.Context{Keys: testKeys(t), Variables: p.vars(t)})
 	require.NoError(t, err)
 	now := time.Now()
 	expiry := now.Add(time.Hour)
 	require.Equal(
 		t, expiry.Add(-1024*time.Second),
-		inst.DueAt(0, &Source{Expiry: expiry, CreatedAt: now.Add(-time.Hour)}, now),
+		inst.DueAt(0, &model.Source{Expiry: expiry, CreatedAt: now.Add(-time.Hour)}, now),
 	)
 	// a window over half the life would pay a fee every batch
 	require.Equal(
 		t, expiry.Add(-5*time.Minute),
-		inst.DueAt(0, &Source{Expiry: expiry, CreatedAt: expiry.Add(-10 * time.Minute)}, now),
+		inst.DueAt(0, &model.Source{Expiry: expiry, CreatedAt: expiry.Add(-10 * time.Minute)}, now),
 	)
 
 	p.maxFee = 0
 	free, err := parseFixture(
 		t, "renew.json",
-	).Instantiate(Context{Keys: testKeys(t), Variables: p.vars(t)})
+	).Instantiate(model.Context{Keys: testKeys(t), Variables: p.vars(t)})
 	require.NoError(t, err)
 	require.Equal(
 		t, expiry.Add(-1024*time.Second),
-		free.DueAt(0, &Source{Expiry: expiry, CreatedAt: expiry.Add(-10 * time.Minute)}, now),
+		free.DueAt(0, &model.Source{Expiry: expiry, CreatedAt: expiry.Add(-10 * time.Minute)}, now),
 	)
 }
 
@@ -166,26 +172,26 @@ func TestRenewalVariableRanges(t *testing.T) {
 	} {
 		vars := defaultParams(t).vars(t)
 		edit(vars)
-		_, err := renewal.Instantiate(Context{Keys: testKeys(t), Variables: vars})
-		require.ErrorIs(t, err, ErrInvalidVariables, name)
+		_, err := renewal.Instantiate(model.Context{Keys: testKeys(t), Variables: vars})
+		require.ErrorIs(t, err, failure.ErrInvalidVariables, name)
 	}
 }
 
 func TestRenewalCovenant(t *testing.T) {
 	p := defaultParams(t)
 	renewal := parseFixture(t, "renew.json")
-	watch, err := renewal.Instantiate(Context{Keys: testKeys(t), Variables: p.vars(t)})
+	watch, err := renewal.Instantiate(model.Context{Keys: testKeys(t), Variables: p.vars(t)})
 	require.NoError(t, err)
 	vtxo := sourceWith(t, 100_000)
 	lockTo(vtxo, watch.PkScript(0))
 	vtxo.Expiry = time.Now().Add(time.Minute)
-	vtxo.Assets = []Asset{{ID: assetID(9), Amount: 21}}
-	sources := []*Source{vtxo}
+	vtxo.Assets = []model.Asset{{ID: assetID(9), Amount: 21}}
+	sources := []*model.Source{vtxo}
 	inst, err := renewal.Instantiate(
-		Context{Keys: testKeys(t), Variables: p.vars(t), Sources: sources},
+		model.Context{Keys: testKeys(t), Variables: p.vars(t), Sources: sources},
 	)
 	require.NoError(t, err)
-	act, err := inst.Build(sources, Fee{Dust: 330})
+	act, err := inst.Build(sources, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	require.Equal(
 		t, watch.PkScript(0), act.Tx.UnsignedTx.TxOut[0].PkScript,
@@ -205,9 +211,9 @@ func TestRenewalCovenant(t *testing.T) {
 		require.ErrorContains(t, runIntent(t, act, sources, 0, tp.edit), tp.reason, tp.name)
 	}
 
-	charged := func(fee string) (*Action, error) {
+	charged := func(fee string) (*model.Action, error) {
 		return inst.Build(
-			sources, Fee{Dust: 330, Intent: arkfee.Config{IntentOffchainInputProgram: fee}},
+			sources, model.Fee{Dust: 330, Intent: arkfee.Config{IntentOffchainInputProgram: fee}},
 		)
 	}
 	paid, err := charged("1000.0")
@@ -215,7 +221,7 @@ func TestRenewalCovenant(t *testing.T) {
 	require.EqualValues(t, 99_000, paid.Tx.UnsignedTx.TxOut[0].Value)
 	require.NoError(t, runIntent(t, paid, sources, 0, nil))
 	_, err = charged("1001.0")
-	require.ErrorIs(t, err, ErrIneligible, "the template refuses a fee over max_fee")
+	require.ErrorIs(t, err, failure.ErrIneligible, "the template refuses a fee over max_fee")
 }
 
 func TestBoardingCovenant(t *testing.T) {
@@ -252,7 +258,7 @@ func TestBoardingThenRenewal(t *testing.T) {
 	tx := board.act.Tx.UnsignedTx
 	// the settlement leaf keeps output 0: the renewal watch finds it, renewal after renewal
 	for generation := range 2 {
-		vtxo := &Source{
+		vtxo := &model.Source{
 			Outpoint: wire.OutPoint{Hash: tx.TxHash()},
 			Tx:       tx,
 			Amount:   uint64(tx.TxOut[0].Value),
@@ -260,11 +266,16 @@ func TestBoardingThenRenewal(t *testing.T) {
 		}
 		inst, err := parseFixture(
 			t, "renew.json",
-		).Instantiate(Context{Keys: testKeys(t), Variables: p.vars(t), Sources: []*Source{vtxo}})
+		).Instantiate(model.Context{Keys: testKeys(t), Variables: p.vars(t), Sources: []*model.Source{vtxo}})
 		require.NoError(t, err, "generation %d", generation)
-		act, err := inst.Build([]*Source{vtxo}, Fee{Dust: 330})
+		act, err := inst.Build([]*model.Source{vtxo}, model.Fee{Dust: 330})
 		require.NoError(t, err)
-		require.NoError(t, runIntent(t, act, []*Source{vtxo}, 0, nil), "generation %d", generation)
+		require.NoError(
+			t,
+			runIntent(t, act, []*model.Source{vtxo}, 0, nil),
+			"generation %d",
+			generation,
+		)
 		require.Equal(t, tx.TxOut[0].PkScript, act.Tx.UnsignedTx.TxOut[0].PkScript)
 		tx = act.Tx.UnsignedTx
 	}
@@ -276,7 +287,7 @@ func TestCounterIncrements(t *testing.T) {
 	watch := instantiateBound(
 		t, counter, 5,
 	) // both coins from one transaction with packet 2 = 05 00 .. 00
-	act, err := watch.inst.Build(watch.sources, Fee{Dust: 330})
+	act, err := watch.inst.Build(watch.sources, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	state, ok := packets.Find(act.Tx.UnsignedTx, packets.TypeState)
 	require.True(t, ok)
@@ -297,7 +308,7 @@ func TestVHTLCAddress(t *testing.T) {
 
 func TestCounterCovenant(t *testing.T) {
 	counter := instantiateBound(t, parseFixture(t, "counter.json"), 5)
-	act, err := counter.inst.Build(counter.sources, Fee{Dust: 330})
+	act, err := counter.inst.Build(counter.sources, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	for slot, name := range []string{"counter", "reserve"} {
 		require.NoError(t, runIntent(t, act, counter.sources, slot, nil), name)
@@ -324,7 +335,7 @@ func TestVHTLCClaimCovenant(t *testing.T) {
 	htlc := sourceWith(t, 100_000)
 	lockTo(htlc, instantiateVHTLC(t, v.Server, v.Vars).PkScript(0))
 	inst := instantiateVHTLC(t, v.Server, v.Vars, htlc)
-	act, err := inst.Build([]*Source{htlc}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{htlc}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 
 	claim := func(edit func(*wire.TxOut)) error {
@@ -369,12 +380,17 @@ func TestNonInteractiveClaimNeedsTheClaimLeaf(t *testing.T) {
 	// nonInteractiveClaim is the seventh leaf of vhtlc_claim.json
 	without := append(slices.Clone(v.Tapscripts[:6]), v.Tapscripts[7:]...)
 	_, err := instantiateNonInteractiveClaim(t, v, without)
-	require.ErrorIs(t, err, ErrIneligible)
+	require.ErrorIs(t, err, failure.ErrIneligible)
 
 	other := v
 	other.Preimage = strings.Repeat("08", 32)
 	_, err = instantiateNonInteractiveClaim(t, other, v.Tapscripts)
-	require.ErrorIs(t, err, ErrIneligible, "another preimage hashes to a leaf the tree lacks")
+	require.ErrorIs(
+		t,
+		err,
+		failure.ErrIneligible,
+		"another preimage hashes to a leaf the tree lacks",
+	)
 }
 
 func TestNonInteractiveClaimCovenant(t *testing.T) {
@@ -385,7 +401,7 @@ func TestNonInteractiveClaimCovenant(t *testing.T) {
 	lockTo(htlc, watch.PkScript(0))
 	inst, err := instantiateNonInteractiveClaim(t, v, v.Tapscripts, htlc)
 	require.NoError(t, err)
-	act, err := inst.Build([]*Source{htlc}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{htlc}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 
 	claim := func(edit func(*wire.TxOut)) error {
@@ -429,19 +445,19 @@ func TestNonInteractiveClaimTrigger(t *testing.T) {
 	ptx.UnsignedTx.TxOut[0].PkScript = pkScript
 	ptx.Outputs[0].TaprootTapTree = tree
 	got, err := parseFixture(t, "claim.json").Triggers()[0].Match(
-		ptx, TriggerKeys{Encryption: enc.PubKey()}, nil, nil,
+		ptx, model.TriggerKeys{Encryption: enc.PubKey()}, nil, nil,
 	)
 	require.NoError(t, err)
-	require.Equal(t, []Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
+	require.Equal(t, []model.Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
 		"preimage": "010203", "receiver_program": v.ReceiverProgram,
 		"taptree": hex.EncodeToString(tree),
 	}}}, got)
 
 	ptx.UnsignedTx.TxOut[0].Value = 999
 	_, err = parseFixture(t, "claim.json").Triggers()[0].Match(
-		ptx, TriggerKeys{Encryption: enc.PubKey()}, nil, nil,
+		ptx, model.TriggerKeys{Encryption: enc.PubKey()}, nil, nil,
 	)
-	require.ErrorIs(t, err, ErrNoMatch, "a coin below 1000 sats is not claimed")
+	require.ErrorIs(t, err, failure.ErrNoMatch, "a coin below 1000 sats is not claimed")
 }
 
 func TestCounterSeedCovenant(t *testing.T) {
@@ -455,14 +471,16 @@ func TestCounterSeedCovenant(t *testing.T) {
 	}
 	vars := map[string][]byte{"counter_program": programs[0], "reserve_program": programs[1]}
 	seed := parseFixture(t, "counter_seed.json")
-	watch, err := seed.Instantiate(Context{Keys: keys, Variables: vars})
+	watch, err := seed.Instantiate(model.Context{Keys: keys, Variables: vars})
 	require.NoError(t, err)
 	deposit := sourceWith(t, 20_000)
 	lockTo(deposit, watch.PkScript(0))
 	deposit.Confirms = 1
-	inst, err := seed.Instantiate(Context{Keys: keys, Variables: vars, Sources: []*Source{deposit}})
+	inst, err := seed.Instantiate(
+		model.Context{Keys: keys, Variables: vars, Sources: []*model.Source{deposit}},
+	)
 	require.NoError(t, err)
-	act, err := inst.Build([]*Source{deposit}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{deposit}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 
 	out := act.Tx.UnsignedTx.TxOut
@@ -475,7 +493,7 @@ func TestCounterSeedCovenant(t *testing.T) {
 	ad, _ := packets.Find(act.Tx.UnsignedTx, packets.TypeAdvertisement)
 	require.Equal(t, append(append([]byte{0x01, 0x24, 0x00}, id...), 0, 0, 1, 0), ad)
 
-	sources := []*Source{deposit}
+	sources := []*model.Source{deposit}
 	require.NoError(t, runIntent(t, act, sources, 0, nil))
 	swap := tamper{
 		"outputs swapped",
@@ -556,7 +574,7 @@ func masterCovenant(t *testing.T, window, maxFee int64) []byte {
 
 // masterPkScript is master's tree around the cosigner leaf, with the forfeit leaf of ark's default
 // vtxo script first.
-func masterPkScript(t *testing.T, keys Keys, p renewalParams) []byte {
+func masterPkScript(t *testing.T, keys model.Keys, p renewalParams) []byte {
 	t.Helper()
 	cov := masterCovenant(t, p.window, p.maxFee)
 	tweaked := arkade.ComputeArkadeScriptPublicKey(keys.Emulator, arkade.ArkadeScriptHash(cov))
@@ -598,8 +616,8 @@ func artifacts(t testing.TB) map[string][]byte {
 
 type boundInstance struct {
 	inst    *Instance
-	sources []*Source
-	act     *Action
+	sources []*model.Source
+	act     *model.Action
 }
 
 // instantiateBound's source holds counter in packet 2 and advertises tmpl for outputs 0 and 1.
@@ -626,9 +644,9 @@ func instantiateBound(t *testing.T, tmpl *Template, counter uint64) boundInstanc
 	require.NoError(t, err)
 	tx.AddTxOut(ext)
 
-	var sources []*Source
+	var sources []*model.Source
 	for i := range tmpl.inputs {
-		sources = append(sources, &Source{
+		sources = append(sources, &model.Source{
 			Outpoint: wire.OutPoint{
 				Hash: tx.TxHash(), Index: uint32(i),
 			},
@@ -637,14 +655,14 @@ func instantiateBound(t *testing.T, tmpl *Template, counter uint64) boundInstanc
 			Expiry: time.Now().Add(time.Minute),
 		})
 	}
-	inst, err := tmpl.Instantiate(Context{Keys: keys, Sources: sources})
+	inst, err := tmpl.Instantiate(model.Context{Keys: keys, Sources: sources})
 	require.NoError(t, err)
 	return boundInstance{inst: inst, sources: sources}
 }
 
 // the sealed preimage is its own ciphertext, opened by an identity decryption
 func instantiateVHTLC(
-	t *testing.T, server string, vars map[string]string, sources ...*Source,
+	t *testing.T, server string, vars map[string]string, sources ...*model.Source,
 ) *Instance {
 	t.Helper()
 	raw, err := hex.DecodeString(server)
@@ -656,8 +674,8 @@ func instantiateVHTLC(
 		values[n], err = hex.DecodeString(h)
 		require.NoError(t, err)
 	}
-	c := Context{
-		Keys:      Keys{Server: key, Emulator: testKey(t, 3)},
+	c := model.Context{
+		Keys:      model.Keys{Server: key, Emulator: testKey(t, 3)},
 		Variables: values,
 		Decrypt:   func(ciphertext []byte) ([]byte, error) { return ciphertext, nil },
 	}
@@ -676,18 +694,18 @@ func boarded(t *testing.T) boundInstance {
 	vars := defaultParams(t).vars(t)
 	vars["boarding_exit_delay"] = asm.ScriptNum(1<<22 | 2) // 1024 seconds, in BIP 68
 	boarding := parseFixture(t, "board.json")
-	watch, err := boarding.Instantiate(Context{Keys: keys, Variables: vars})
+	watch, err := boarding.Instantiate(model.Context{Keys: keys, Variables: vars})
 	require.NoError(t, err)
 	deposit := sourceWith(t, 100_000)
 	lockTo(deposit, watch.PkScript(0))
 	deposit.Confirms = 1
 	inst, err := boarding.Instantiate(
-		Context{Keys: keys, Variables: vars, Sources: []*Source{deposit}},
+		model.Context{Keys: keys, Variables: vars, Sources: []*model.Source{deposit}},
 	)
 	require.NoError(t, err)
-	act, err := inst.Build([]*Source{deposit}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{deposit}, model.Fee{Dust: 330})
 	require.NoError(t, err)
-	return boundInstance{inst: inst, sources: []*Source{deposit}, act: act}
+	return boundInstance{inst: inst, sources: []*model.Source{deposit}, act: act}
 }
 
 // intentCheck is what the emulator executes an intent covenant against.
@@ -788,7 +806,7 @@ func tampers(t *testing.T, out int, tunnel bool) []tamper {
 // runIntent shifts template inputs and extension input references by one, as the emulator sees the
 // proof.
 func runIntent(
-	t *testing.T, act *Action, sources []*Source, slot int, edit func(*intentCheck),
+	t *testing.T, act *model.Action, sources []*model.Source, slot int, edit func(*intentCheck),
 ) error {
 	t.Helper()
 	c := &intentCheck{
@@ -957,7 +975,7 @@ func vhtlcVector(t *testing.T) vhtlcVec {
 // instantiateNonInteractiveClaim builds claim.json for a funding output whose tree is leaves; the
 // sealed preimage is its own ciphertext.
 func instantiateNonInteractiveClaim(
-	t *testing.T, v vhtlcVec, leaves []string, sources ...*Source,
+	t *testing.T, v vhtlcVec, leaves []string, sources ...*model.Source,
 ) (*Instance, error) {
 	t.Helper()
 	tree, err := txutils.TapTree(leaves).Encode()
@@ -969,8 +987,8 @@ func instantiateNonInteractiveClaim(
 	}
 	server, err := btcec.ParsePubKey(unhex(v.Server))
 	require.NoError(t, err)
-	return parseFixture(t, "claim.json").Instantiate(Context{
-		Keys: Keys{Server: server, Emulator: testKey(t, 3)},
+	return parseFixture(t, "claim.json").Instantiate(model.Context{
+		Keys: model.Keys{Server: server, Emulator: testKey(t, 3)},
 		Variables: map[string][]byte{
 			"taptree": tree, "receiver_program": unhex(v.ReceiverProgram),
 			"preimage": unhex(v.Preimage),

@@ -28,9 +28,9 @@ type refused struct{ error }
 func (r refused) Unwrap() error      { return r.error }
 func (refused) Is(target error) bool { return target == errRefused }
 
-// spendOffchain spends coins as an offchain transaction of their own; the deadline covers building
-// and the emulator, not arkd once the transaction is persisted. An intent delegation's coins go to
-// the queue.
+// spendOffchain spends coins as an offchain or onchain transaction of their own; the deadline
+// covers building and the emulator, not arkd once the transaction is persisted. An intent
+// delegation's coins go to the queue.
 func (s *Service) spendOffchain(coins []delegation.Coin) {
 	select {
 	case s.slots <- struct{}{}:
@@ -50,7 +50,7 @@ func (s *Service) spendOffchain(coins []delegation.Coin) {
 		return
 	}
 	switch {
-	case inst.Disabled || inst.Type != template.Virtual && inst.Type != template.Proof:
+	case inst.Disabled:
 		s.send(skipped{coins: outpoints})
 		return
 	case inst.Type == template.Proof:
@@ -61,6 +61,10 @@ func (s *Service) spendOffchain(coins []delegation.Coin) {
 	if err != nil {
 		log.WithError(err).WithField("delegation", coins[0].DelegationID).Warn("no attempt")
 		s.send(skipped{coins: outpoints})
+		return
+	}
+	if inst.Type == template.Onchain {
+		s.spendOnchain(ctx, inst, a, coins)
 		return
 	}
 	fail := func(err error) { s.send(attemptFailed{attempt: a, err: err, retryIn: s.limits.RetryDelay}) }

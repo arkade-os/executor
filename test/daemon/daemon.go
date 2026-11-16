@@ -52,7 +52,7 @@ func Start(t *testing.T, opts ...func(*config.Config)) *Daemon {
 	standin.chain = chain
 	return boot(
 		t, dsn, ResetDatabase(t, dsn), standin, chain,
-		&emulator{signer: newKey(3).PubKey(), ark: standin}, opts,
+		&emulator{signer: newKey(3).PubKey(), key: newKey(3), ark: standin}, opts,
 	)
 }
 

@@ -42,18 +42,6 @@ type TemplateRepository interface {
 	Delete(ctx context.Context, id string) error
 }
 
-// NewTemplate parses a document against the documents of its artifacts, keyed by id.
-func NewTemplate(document []byte, maxBytes int, artifacts map[string][]byte) (*Template, error) {
-	if maxBytes > 0 && len(document) > maxBytes {
-		return nil, fmt.Errorf("%w: document exceeds %d bytes", ErrInvalidDocument, maxBytes)
-	}
-	decoded, err := template.Decode(document)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidDocument, err)
-	}
-	return NewDecodedTemplate(decoded, artifacts)
-}
-
 func NewDecodedTemplate(
 	document *template.Document, artifacts map[string][]byte,
 ) (*Template, error) {
@@ -61,11 +49,14 @@ func NewDecodedTemplate(
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidDocument, err)
 	}
-	if parsed.Type() == template.Onchain {
-		return nil, fmt.Errorf("%w: onchain templates are not served", ErrUnsupported)
+	if (parsed.Type() == template.Virtual || parsed.Type() == template.Onchain) &&
+		!parsed.Arkade() {
+		return nil, fmt.Errorf(
+			"%w: %s templates must carry an arkade packet", ErrUnsupported, parsed.Type(),
+		)
 	}
-	if parsed.Type() == template.Virtual && !parsed.Arkade() {
-		return nil, fmt.Errorf("%w: virtual templates must carry an arkade packet", ErrUnsupported)
+	if parsed.Type() == template.Onchain && !parsed.PaysFees() {
+		return nil, fmt.Errorf("%w: onchain templates must pay their fee", ErrUnsupported)
 	}
 	if len(parsed.Triggers()) > 1 {
 		return nil, fmt.Errorf("%w: a trigger of several rules is not served", ErrUnsupported)

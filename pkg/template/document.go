@@ -93,11 +93,3 @@ func CompileDocuments(d *Document, artifacts map[string][]byte) (*Template, erro
 	}
 	return Compile(d, parsed)
 }
-
-func ArtifactIDs(raw []byte) ([]string, error) {
-	d, err := Decode(raw)
-	if err != nil {
-		return nil, err
-	}
-	return d.ArtifactIDs(), nil
-}

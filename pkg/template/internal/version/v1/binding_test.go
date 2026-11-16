@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
 
 	"github.com/stretchr/testify/require"
@@ -50,7 +51,7 @@ func TestParseByteTemplate(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := parseByteTemplate(in)
-			require.ErrorIs(t, err, ErrInvalidTemplate)
+			require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 		})
 	}
 }
@@ -98,7 +99,7 @@ func TestBind(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := c.bind(tc.in, tc.typ)
-			require.ErrorIs(t, err, ErrInvalidTemplate)
+			require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 		})
 	}
 }

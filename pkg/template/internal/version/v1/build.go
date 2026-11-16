@@ -9,29 +9,32 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/emulator/pkg/arkade"
+	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 )
 
-type Fee = model.Fee
-type Action = model.Action
-
 type spending struct {
 	entry   *arkade.EmulatorEntry
 	witness wire.TxWitness
-	leaf    *Leaf
+	leaf    *artifact.Leaf
 	proof   *psbt.TaprootTapLeafScript
 }
 
 // Build builds the unsigned transaction spending sources, one per input in slot order.
-func (i *Instance) Build(sources []*Source, fee Fee) (*Action, error) {
+func (i *Instance) Build(sources []*model.Source, fee model.Fee) (*model.Action, error) {
 	return i.BuildCoins(sources, nil, fee)
 }
 
 // BuildCoins builds over coins[k] sources per input k, in slot order; nil keeps the instance's
 // layout. Only a watch, whose contracts are the same for every coin, takes a new layout.
-func (i *Instance) BuildCoins(sources []*Source, coins []int, fee Fee) (*Action, error) {
+func (i *Instance) BuildCoins(
+	sources []*model.Source,
+	coins []int,
+	fee model.Fee,
+) (*model.Action, error) {
 	if coins != nil {
 		var err error
 		if i, err = i.relayout(coins); err != nil {
@@ -60,7 +63,7 @@ func (i *Instance) BuildCoins(sources []*Source, coins []int, fee Fee) (*Action,
 	}
 
 	charged := uint64(0)
-	if t.typ == Proof {
+	if t.typ == model.Proof {
 		if charged, err = i.intentFee(d, sources, scripts, fee); err != nil {
 			return nil, err
 		}
@@ -76,7 +79,7 @@ func (i *Instance) BuildCoins(sources []*Source, coins []int, fee Fee) (*Action,
 	}
 	i.lock(tx, 0)
 
-	act := &Action{Extension: -1, Fee: charged}
+	act := &model.Action{Extension: -1, Fee: charged}
 	ext, err := i.extension(d, sources, a, spends)
 	if err != nil {
 		return nil, err
@@ -84,13 +87,19 @@ func (i *Instance) BuildCoins(sources []*Source, coins []int, fee Fee) (*Action,
 	var extOut *wire.TxOut
 	if len(ext) > 0 {
 		if extOut, err = ext.TxOut(); err != nil {
-			return nil, fmt.Errorf("%w: extension: %v", ErrIneligible, err)
+			return nil, fmt.Errorf("%w: extension: %v", failure.ErrIneligible, err)
 		}
 		act.Extension = i.extensionIndex()
 	} else if t.packets != nil && t.packets.index >= 0 {
-		return nil, fmt.Errorf("%w: nothing to write in the extension", ErrIneligible)
+		return nil, fmt.Errorf("%w: nothing to write in the extension", failure.ErrIneligible)
 	}
 	pos := i.positions(act.Extension)
+	for k, o := range t.outputs {
+		if t.typ == model.Proof && o.onchain {
+			act.Onchain = append(act.Onchain, pos[k])
+		}
+	}
+	slices.Sort(act.Onchain)
 	tx.TxOut = make([]*wire.TxOut, len(t.outputs))
 	for k := range t.outputs {
 		tx.TxOut[k] = &wire.TxOut{Value: int64(a.sats[k]), PkScript: scripts[k]}
@@ -100,9 +109,9 @@ func (i *Instance) BuildCoins(sources []*Source, coins []int, fee Fee) (*Action,
 	}
 	tx.TxOut = place(tx.TxOut, pos, act.Extension)
 
-	if t.typ == Onchain {
+	if t.typ == model.Onchain {
 		if fee.Onchain == nil {
-			return nil, fmt.Errorf("%w: no on-chain fee estimate", ErrIneligible)
+			return nil, fmt.Errorf("%w: no on-chain fee estimate", failure.ErrIneligible)
 		}
 		act.Fee = fee.Onchain(vsize(tx, spends))
 		if a, err = i.allocate(d, sources, act.Fee, fee.Dust); err != nil {
@@ -135,7 +144,7 @@ func (i *Instance) extensionIndex() int {
 	}
 	n := 0
 	for _, o := range t.outputs {
-		if t.typ != Proof || !o.onchain {
+		if t.typ != model.Proof || !o.onchain {
 			n++
 		}
 	}
@@ -212,17 +221,17 @@ func (i *Instance) decoded(b byteTemplate, typ string, d *draft, slot int) ([]by
 		return nil, err
 	}
 	if err := asm.CanonicalBytes(typ, raw); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrIneligible, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrIneligible, err)
 	}
 	return raw, nil
 }
 
 func (i *Instance) packet(
-	tx *wire.MsgTx, sources []*Source, spends []spending,
+	tx *wire.MsgTx, sources []*model.Source, spends []spending,
 ) (*psbt.Packet, error) {
 	ptx, err := psbt.NewFromUnsignedTx(tx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrIneligible, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrIneligible, err)
 	}
 	for slot, s := range sources {
 		c := i.contracts[slot]

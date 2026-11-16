@@ -16,6 +16,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/arkade-os/executor/internal/core/domain/execution"
 	"github.com/arkade-os/executor/internal/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -62,6 +63,7 @@ type subscription struct {
 // transactions it signs at arkd, and returns the other messages as they came.
 type emulator struct {
 	signer        *btcec.PublicKey
+	key           *btcec.PrivateKey
 	ark           *ark
 	mu            sync.Mutex
 	refuse        error
@@ -398,6 +400,47 @@ func (e *emulator) SubmitTx(
 	defer e.mu.Unlock()
 	e.Signed++
 	return signed, signedCheckpoints, nil
+}
+
+// SubmitOnchainTx signs the first input with the signer key tweaked by its arkade script.
+func (e *emulator) SubmitOnchainTx(_ context.Context, raw string) (string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.refuse != nil {
+		return "", e.refuse
+	}
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(raw), true)
+	if err != nil {
+		return "", err
+	}
+	packet, err := arkade.FindEmulatorPacket(ptx.UnsignedTx)
+	if err != nil {
+		return "", err
+	}
+	key := arkade.ComputeArkadeScriptPrivateKey(
+		e.key, arkade.ArkadeScriptHash(packet[0].Script),
+	)
+	in := &ptx.Inputs[0]
+	leaf := txscript.NewBaseTapLeaf(in.TaprootLeafScript[0].Script)
+	fetcher := txscript.NewCannedPrevOutputFetcher(in.WitnessUtxo.PkScript, in.WitnessUtxo.Value)
+	sighash, err := txscript.CalcTapscriptSignaturehash(
+		txscript.NewTxSigHashes(ptx.UnsignedTx, fetcher), txscript.SigHashDefault, ptx.UnsignedTx,
+		0, fetcher, leaf,
+	)
+	if err != nil {
+		return "", err
+	}
+	sig, err := schnorr.Sign(key, sighash)
+	if err != nil {
+		return "", err
+	}
+	hash := leaf.TapHash()
+	in.TaprootScriptSpendSig = append(in.TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
+		XOnlyPubKey: schnorr.SerializePubKey(key.PubKey()), LeafHash: hash[:],
+		Signature: sig.Serialize(), SigHash: txscript.SigHashDefault,
+	})
+	e.Signed++
+	return ptx.B64Encode()
 }
 
 func (e *emulator) SubmitIntent(_ context.Context, in execution.Intent) (string, error) {

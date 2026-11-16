@@ -16,6 +16,8 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/emulator/pkg/arkade"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/packets"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -28,9 +30,9 @@ func TestBuildRenewal(t *testing.T) {
 	owner := testKey(t, 2).SerializeCompressed()
 	src := ownedSource(t, tmpl, testKey(t, 2), testKey(t, 2))
 	src.Expiry = time.Now().Add(time.Hour)
-	inst, err := tmpl.Instantiate(Context{Keys: testKeys(t), Sources: []*Source{src}})
+	inst, err := tmpl.Instantiate(model.Context{Keys: testKeys(t), Sources: []*model.Source{src}})
 	require.NoError(t, err)
-	act, err := inst.Build([]*Source{src}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 
 	tx := act.Tx.UnsignedTx
@@ -73,15 +75,15 @@ func TestBuildRenewal(t *testing.T) {
 func TestBuildCopyNeedsThePacket(t *testing.T) {
 	tmpl := parseDoc(t, keepScript(t))
 	src := sourceWith(t, 100_000)
-	inst, err := tmpl.Instantiate(Context{Keys: testKeys(t)})
+	inst, err := tmpl.Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
 	lockTo(src, inst.PkScript(0))
-	_, err = inst.Build([]*Source{src}, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrIneligible)
+	_, err = inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
+	require.ErrorIs(t, err, failure.ErrIneligible)
 
 	src = sourceWith(t, 100_000, packets.Raw(packets.TypeState, []byte{9}))
 	lockTo(src, inst.PkScript(0))
-	act, err := inst.Build([]*Source{src}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	state, ok := packets.Find(act.Tx.UnsignedTx, packets.TypeState)
 	require.True(t, ok)
@@ -92,12 +94,12 @@ func TestBuildUnmatchedPackets(t *testing.T) {
 	src := sourceWith(t, 100_000, packets.Raw(9, []byte{1}))
 	for unmatched, wantErr := range map[string]bool{"reject": true, "drop": false} {
 		tmpl := parseDoc(t, withUnmatched(t, unmatched))
-		inst, err := tmpl.Instantiate(Context{Keys: testKeys(t)})
+		inst, err := tmpl.Instantiate(model.Context{Keys: testKeys(t)})
 		require.NoError(t, err)
 		lockTo(src, inst.PkScript(0))
-		act, err := inst.Build([]*Source{src}, Fee{Dust: 330})
+		act, err := inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
 		if wantErr {
-			require.ErrorIs(t, err, ErrIneligible)
+			require.ErrorIs(t, err, failure.ErrIneligible)
 			continue
 		}
 		require.NoError(t, err)
@@ -111,13 +113,13 @@ func TestBuildUnmatchedPackets(t *testing.T) {
 		fn := m["inputs"].([]any)[0].(map[string]any)["spend"].(map[string]any)
 		fn["function"], fn["leaf"] = "spend", "spend"
 	}), sourceWith(t, 100_000, packets.Raw(9, []byte{1})))
-	_, err := inst.Build(srcs, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrIneligible, "no packets object and a source packet")
+	_, err := inst.Build(srcs, model.Fee{Dust: 330})
+	require.ErrorIs(t, err, failure.ErrIneligible, "no packets object and a source packet")
 }
 
 func TestBuildMixedPayment(t *testing.T) {
 	inst, _, src := mixedPayment(t, 100_000, nil)
-	act, err := inst.Build(src, Fee{Dust: 330})
+	act, err := inst.Build(src, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	tx := act.Tx.UnsignedTx
 	require.Len(t, tx.TxOut, 3)
@@ -128,13 +130,39 @@ func TestBuildMixedPayment(t *testing.T) {
 	require.False(t, found, "no asset moves")
 }
 
+func TestBuildExposesTheProofOnchainOutputs(t *testing.T) {
+	inst, _, srcs := mixedPaymentNoFees(t, 100_000)
+	act, err := inst.Build(srcs, model.Fee{Dust: 330})
+	require.NoError(t, err)
+	require.Equal(t, []int{2}, act.Onchain)
+
+	inst, _, srcs = instanceOf(t, edited(t, mixedPaymentDoc(t, false), func(m map[string]any) {
+		delete(m, "packets")
+		for _, o := range m["outputs"].([]any) {
+			delete(o.(map[string]any), "index")
+		}
+		fn := m["inputs"].([]any)[0].(map[string]any)["spend"].(map[string]any)
+		fn["function"], fn["leaf"] = "spend", "spend"
+	}), coin(t, 100_000))
+	act, err = inst.Build(srcs, model.Fee{Dust: 330})
+	require.NoError(t, err)
+	require.Equal(t, -1, act.Extension)
+	require.Equal(t, []int{1}, act.Onchain)
+}
+
 func TestBuildAssets(t *testing.T) {
 	inst, _, src := instanceOf(
-		t, twoFunds(t),
-		coin(t, 50_000, Asset{ID: assetID(1), Amount: 7}, Asset{ID: assetID(2), Amount: 3}),
-		coin(t, 60_000, Asset{ID: assetID(1), Amount: 5}),
+		t,
+		twoFunds(t),
+		coin(
+			t,
+			50_000,
+			model.Asset{ID: assetID(1), Amount: 7},
+			model.Asset{ID: assetID(2), Amount: 3},
+		),
+		coin(t, 60_000, model.Asset{ID: assetID(1), Amount: 5}),
 	)
-	act, err := inst.Build(src, Fee{Dust: 330})
+	act, err := inst.Build(src, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	ext, err := extension.NewExtensionFromTx(act.Tx.UnsignedTx)
 	require.NoError(t, err)
@@ -163,7 +191,7 @@ func TestBuildAssets(t *testing.T) {
 func TestBuildWitnessAndArguments(t *testing.T) {
 	tmpl := parseDoc(t, hashLockWithCovenant(t))
 	preimage := bytes.Repeat([]byte{7}, 32)
-	c := Context{
+	c := model.Context{
 		Keys:      testKeys(t),
 		Variables: map[string][]byte{"preimage": {1}},
 		Decrypt:   func([]byte) ([]byte, error) { return preimage, nil },
@@ -172,7 +200,7 @@ func TestBuildWitnessAndArguments(t *testing.T) {
 	require.NoError(t, err)
 	src := sourceWith(t, 100_000)
 	lockTo(src, inst.PkScript(0))
-	act, err := inst.Build([]*Source{src}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	require.EqualValues(t, 3, act.Tx.UnsignedTx.Version)
 	require.Equal(t, 1, act.Extension)
@@ -189,11 +217,11 @@ func TestBuildWitnessAndArguments(t *testing.T) {
 }
 
 func TestBuildConditionWitnessOrder(t *testing.T) {
-	inst, err := parseDoc(t, twoItemCondition(t)).Instantiate(Context{Keys: testKeys(t)})
+	inst, err := parseDoc(t, twoItemCondition(t)).Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
 	src := sourceWith(t, 100_000)
 	lockTo(src, inst.PkScript(0))
-	act, err := inst.Build([]*Source{src}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 
 	w, err := txutils.GetArkPsbtFields(act.Tx, 0, txutils.ConditionWitnessField)
@@ -209,15 +237,15 @@ func TestBuildConditionWitnessOrder(t *testing.T) {
 
 func TestBuildOnchain(t *testing.T) {
 	tmpl := parseFixture(t, "minimal.json")
-	inst, err := tmpl.Instantiate(Context{Keys: testKeys(t)})
+	inst, err := tmpl.Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
 	src := sourceWith(t, 100_000)
 	lockTo(src, inst.PkScript(0))
 	src.Confirms = 1
 	var measured int
 	act, err := inst.Build(
-		[]*Source{src},
-		Fee{Dust: 330, Onchain: func(vsize int) uint64 { measured = vsize; return 600 }},
+		[]*model.Source{src},
+		model.Fee{Dust: 330, Onchain: func(vsize int) uint64 { measured = vsize; return 600 }},
 	)
 	require.NoError(t, err)
 	require.EqualValues(t, 600, act.Fee)
@@ -228,16 +256,19 @@ func TestBuildOnchain(t *testing.T) {
 	// 33
 	require.Equal(t, (94*4+2+1+65+35+34+3)/4, measured)
 
-	_, err = inst.Build([]*Source{src}, Fee{Dust: 330, Onchain: func(int) uint64 { return 1001 }})
-	require.ErrorIs(t, err, ErrIneligible)
-	_, err = inst.Build([]*Source{src}, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrIneligible, "no on-chain fee estimate")
+	_, err = inst.Build(
+		[]*model.Source{src},
+		model.Fee{Dust: 330, Onchain: func(int) uint64 { return 1001 }},
+	)
+	require.ErrorIs(t, err, failure.ErrIneligible)
+	_, err = inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
+	require.ErrorIs(t, err, failure.ErrIneligible, "no on-chain fee estimate")
 }
 
 func TestBuildIntentFee(t *testing.T) {
 	inst, _, src := mixedPayment(t, 100_000, nil) // fees max 1000
 	charge := arkfee.Config{IntentOffchainInputProgram: "200.0"}
-	act, err := inst.Build(src, Fee{Dust: 330, Intent: charge})
+	act, err := inst.Build(src, model.Fee{Dust: 330, Intent: charge})
 	require.NoError(t, err)
 	require.EqualValues(t, 200, act.Fee)
 	require.EqualValues(t, 74_800, act.Tx.UnsignedTx.TxOut[0].Value)
@@ -247,7 +278,7 @@ func TestBuildIntentFee(t *testing.T) {
 	perOutput := arkfee.Config{
 		IntentOffchainOutputProgram: "amount * 0.001", IntentOnchainOutputProgram: "1.0",
 	}
-	act, err = inst.Build(src, Fee{Dust: 330, Intent: perOutput})
+	act, err = inst.Build(src, model.Fee{Dust: 330, Intent: perOutput})
 	require.NoError(t, err)
 	require.EqualValues(t, 76, act.Fee)
 	require.EqualValues(t, 74_924, act.Tx.UnsignedTx.TxOut[0].Value)
@@ -255,7 +286,7 @@ func TestBuildIntentFee(t *testing.T) {
 	src[0].Swept = true
 	act, err = inst.Build(
 		src,
-		Fee{
+		model.Fee{
 			Dust: 330,
 			Intent: arkfee.Config{
 				IntentOffchainInputProgram: "inputType == 'recoverable' ? 300.0 : 200.0",
@@ -267,12 +298,12 @@ func TestBuildIntentFee(t *testing.T) {
 	src[0].Swept = false
 
 	oscillates := arkfee.Config{IntentOffchainOutputProgram: "amount >= 74950.0 ? 100.0 : 0.0"}
-	_, err = inst.Build(src, Fee{Dust: 330, Intent: oscillates})
-	require.ErrorIs(t, err, ErrIneligible, "no fixed point")
+	_, err = inst.Build(src, model.Fee{Dust: 330, Intent: oscillates})
+	require.ErrorIs(t, err, failure.ErrIneligible, "no fixed point")
 
 	free, _, src := mixedPaymentNoFees(t, 100_000)
-	_, err = free.Build(src, Fee{Dust: 330, Intent: charge})
-	require.ErrorIs(t, err, ErrIneligible, "arkd charges and the template pays nothing")
+	_, err = free.Build(src, model.Fee{Dust: 330, Intent: charge})
+	require.ErrorIs(t, err, failure.ErrIneligible, "arkd charges and the template pays nothing")
 }
 
 func TestBuildOutputScripts(t *testing.T) {
@@ -287,7 +318,7 @@ func TestBuildOutputScripts(t *testing.T) {
 		}
 	})
 	inst, _, src := instanceOf(t, doc, coin(t, 100_000))
-	act, err := inst.Build(src, Fee{Dust: 330})
+	act, err := inst.Build(src, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	want, err := contract.Build(
 		inst.tmpl.inputs[0].contract.def,
@@ -306,9 +337,9 @@ func TestBuildOutputScripts(t *testing.T) {
 			m["outputs"].([]any)[0].(map[string]any)["locking"] = script
 		})
 		inst, _, src := instanceOf(t, doc, coin(t, 100_000))
-		_, err := inst.Build(src, Fee{Dust: 330})
+		_, err := inst.Build(src, model.Fee{Dust: 330})
 		if wantErr {
-			require.ErrorIs(t, err, ErrIneligible, script)
+			require.ErrorIs(t, err, failure.ErrIneligible, script)
 		} else {
 			require.NoError(t, err, script)
 		}
@@ -318,8 +349,8 @@ func TestBuildOutputScripts(t *testing.T) {
 		m["outputs"].([]any)[1].(map[string]any)["locking"] = "4c"
 	})
 	inst, _, src = instanceOf(t, doc, coin(t, 100_000))
-	_, err = inst.Build(src, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrIneligible, "a truncated push is no script")
+	_, err = inst.Build(src, model.Fee{Dust: 330})
+	require.ErrorIs(t, err, failure.ErrIneligible, "a truncated push is no script")
 }
 
 func TestBuildEmit(t *testing.T) {
@@ -332,9 +363,9 @@ func TestBuildEmit(t *testing.T) {
 		inst, _, src := instanceOf(
 			t, doc, sourceWith(t, 100_000, packets.Raw(packets.TypeState, []byte{0xab, 0xcd})),
 		)
-		act, err := inst.Build(src, Fee{Dust: 330})
+		act, err := inst.Build(src, model.Fee{Dust: 330})
 		if wantErr {
-			require.ErrorIs(t, err, ErrIneligible, "an empty packet")
+			require.ErrorIs(t, err, failure.ErrIneligible, "an empty packet")
 			continue
 		}
 		require.NoError(t, err, data)
@@ -360,9 +391,9 @@ func TestBuildAdvertisements(t *testing.T) {
 		}
 	})
 	inst, _, src := instanceOf(
-		t, doc, coin(t, 50_000, Asset{ID: assetID(1), Amount: 2}), coin(t, 60_000),
+		t, doc, coin(t, 50_000, model.Asset{ID: assetID(1), Amount: 2}), coin(t, 60_000),
 	)
-	act, err := inst.Build(src, Fee{Dust: 330})
+	act, err := inst.Build(src, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	body, ok := packets.Find(act.Tx.UnsignedTx, packets.TypeAdvertisement)
 	require.True(t, ok)
@@ -380,16 +411,19 @@ func TestBuildAdvertisements(t *testing.T) {
 
 func TestBuildRefusesSources(t *testing.T) {
 	inst, _, src := mixedPayment(t, 100_000, nil)
-	_, err := inst.Build(nil, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrIneligible, "no source")
-	_, err = inst.Build([]*Source{{Outpoint: src[0].Outpoint, Amount: 100_000}}, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrIneligible, "no transaction")
-	_, err = inst.Build([]*Source{coin(t, 100_000)}, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrIneligible, "another script")
+	_, err := inst.Build(nil, model.Fee{Dust: 330})
+	require.ErrorIs(t, err, failure.ErrIneligible, "no source")
+	_, err = inst.Build(
+		[]*model.Source{{Outpoint: src[0].Outpoint, Amount: 100_000}},
+		model.Fee{Dust: 330},
+	)
+	require.ErrorIs(t, err, failure.ErrIneligible, "no transaction")
+	_, err = inst.Build([]*model.Source{coin(t, 100_000)}, model.Fee{Dust: 330})
+	require.ErrorIs(t, err, failure.ErrIneligible, "another script")
 	moved := *src[0]
 	moved.Amount++
-	_, err = inst.Build([]*Source{&moved}, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrIneligible, "an amount the output does not hold")
+	_, err = inst.Build([]*model.Source{&moved}, model.Fee{Dust: 330})
+	require.ErrorIs(t, err, failure.ErrIneligible, "an amount the output does not hold")
 }
 
 func TestBuildNeedsPackets(t *testing.T) {
@@ -401,12 +435,12 @@ func TestBuildNeedsPackets(t *testing.T) {
 		sp := m["inputs"].([]any)[0].(map[string]any)["spend"].(map[string]any)
 		sp["function"], sp["leaf"] = "spend", "spend"
 	})
-	inst, _, src := instanceOf(t, doc, coin(t, 100_000, Asset{ID: assetID(1), Amount: 1}))
-	_, err := inst.Build(src, Fee{Dust: 330})
-	require.ErrorIs(t, err, ErrInvalidTemplate, "assets and no extension")
+	inst, _, src := instanceOf(t, doc, coin(t, 100_000, model.Asset{ID: assetID(1), Amount: 1}))
+	_, err := inst.Build(src, model.Fee{Dust: 330})
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "assets and no extension")
 
 	inst, _, src = instanceOf(t, doc, coin(t, 100_000))
-	act, err := inst.Build(src, Fee{Dust: 330})
+	act, err := inst.Build(src, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	require.Equal(t, -1, act.Extension)
 	require.Len(t, act.Tx.UnsignedTx.TxOut, 2)
@@ -449,17 +483,17 @@ func TestBuildErrorsHidePlaintext(t *testing.T) {
 			)
 			require.NoError(t, err)
 			lockTo(src, ct.PkScript)
-			inst, err := tmpl.Instantiate(Context{
+			inst, err := tmpl.Instantiate(model.Context{
 				Keys:    testKeys(t),
-				Sources: []*Source{src},
+				Sources: []*model.Source{src},
 				Variables: map[string][]byte{
 					"s": {0},
 				},
 				Decrypt: func([]byte) ([]byte, error) { return c.plain, nil },
 			})
 			require.NoError(t, err)
-			_, err = inst.Build([]*Source{src}, Fee{Dust: 330})
-			require.ErrorIs(t, err, ErrIneligible)
+			_, err = inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
+			require.ErrorIs(t, err, failure.ErrIneligible)
 			require.NotContains(t, err.Error(), hex.EncodeToString(c.plain))
 		})
 	}
@@ -640,17 +674,17 @@ func TestBuildSplicedProgram(t *testing.T) {
 		m["outputs"].([]any)[0].(map[string]any)["locking"] = "5120$(<!terms> OP_VERIFY <to>)"
 	})
 	tmpl := parseDoc(t, doc)
-	build := func(terms []byte, amount int64) (*Action, error) {
+	build := func(terms []byte, amount int64) (*model.Action, error) {
 		vars := map[string][]byte{"preimage": bytes.Repeat([]byte{7}, 32), "terms": terms, "to": to}
-		watch, err := tmpl.Instantiate(Context{Keys: testKeys(t), Variables: vars})
+		watch, err := tmpl.Instantiate(model.Context{Keys: testKeys(t), Variables: vars})
 		require.NoError(t, err)
 		src := sourceWith(t, amount)
 		lockTo(src, watch.PkScript(0))
 		inst, err := tmpl.Instantiate(
-			Context{Keys: testKeys(t), Variables: vars, Sources: []*Source{src}},
+			model.Context{Keys: testKeys(t), Variables: vars, Sources: []*model.Source{src}},
 		)
 		require.NoError(t, err)
-		return inst.Build([]*Source{src}, Fee{Dust: 330})
+		return inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
 	}
 	atLeast, _ := hex.DecodeString(
 		"cdc902e02ea2",
@@ -660,11 +694,11 @@ func TestBuildSplicedProgram(t *testing.T) {
 	require.Equal(t, append([]byte{0x51, 0x20}, to...), act.Tx.UnsignedTx.TxOut[0].PkScript)
 
 	_, err = build(atLeast, 11_999)
-	require.ErrorIs(t, err, ErrIneligible, "the program refuses a smaller coin")
+	require.ErrorIs(t, err, failure.ErrIneligible, "the program refuses a smaller coin")
 	_, err = build([]byte{0x6d, 0x51}, 12_000) // OP_2DROP OP_1 drops the stack and pushes its own
-	require.ErrorIs(t, err, ErrIneligible)
+	require.ErrorIs(t, err, failure.ErrIneligible)
 	_, err = build([]byte{arkade.OP_TXID}, 12_000)
-	require.ErrorIs(t, err, ErrIneligible, "a spliced program obeys the expression rules")
+	require.ErrorIs(t, err, failure.ErrIneligible, "a spliced program obeys the expression rules")
 	_, err = build([]byte{0x4c}, 12_000)
-	require.ErrorIs(t, err, ErrIneligible, "a program that does not parse")
+	require.ErrorIs(t, err, failure.ErrIneligible, "a program that does not parse")
 }

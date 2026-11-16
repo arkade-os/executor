@@ -10,6 +10,8 @@ import (
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 	"github.com/arkade-os/executor/pkg/template/internal/contract"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +20,7 @@ func TestAllocate(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		amount, fee     uint64
-		assets          []Asset
+		assets          []model.Asset
 		wantChange      uint64
 		wantChangeAsset uint64
 		err             error
@@ -27,23 +29,23 @@ func TestAllocate(t *testing.T) {
 		{name: "remainder", amount: 100_000, wantChange: 75_000},
 		{name: "fee from the remainder", amount: 100_000, fee: 600, wantChange: 74_400},
 		{name: "fee at the cap", amount: 100_000, fee: 1000, wantChange: 74_000},
-		{name: "fee above the cap", amount: 100_000, fee: 1001, err: ErrIneligible, unaffordable: true},
-		{name: "fixed draw not covered", amount: 20_000, err: ErrIneligible},
-		{name: "dust remainder", amount: 25_100, err: ErrIneligible, unaffordable: true},
-		{name: "dust remainder after the fee", amount: 25_600, fee: 300, err: ErrIneligible, unaffordable: true},
-		{name: "source above 21e14", amount: 21e14 + 1, err: ErrIneligible},
-		{name: "assets follow the catch-all", amount: 100_000, assets: []Asset{{ID: assetID(1), Amount: 7}}, wantChange: 75_000, wantChangeAsset: 7},
-		{name: "asset entries combine", amount: 100_000, assets: []Asset{{ID: assetID(1), Amount: 7}, {ID: assetID(1), Amount: 3}}, wantChange: 75_000, wantChangeAsset: 10},
-		{name: "asset above 21e14 is routed", amount: 100_000, assets: []Asset{{ID: assetID(1), Amount: 3e15}}, wantChange: 75_000, wantChangeAsset: 3e15},
-		{name: "asset entries overflow", amount: 100_000, assets: []Asset{{ID: assetID(1), Amount: 1 << 63}, {ID: assetID(1), Amount: 1 << 63}}, err: ErrIneligible},
-		{name: "asset id of 33 bytes", amount: 100_000, assets: []Asset{{ID: assetID(1)[:33], Amount: 7}}, err: ErrIneligible},
+		{name: "fee above the cap", amount: 100_000, fee: 1001, err: failure.ErrIneligible, unaffordable: true},
+		{name: "fixed draw not covered", amount: 20_000, err: failure.ErrIneligible},
+		{name: "dust remainder", amount: 25_100, err: failure.ErrIneligible, unaffordable: true},
+		{name: "dust remainder after the fee", amount: 25_600, fee: 300, err: failure.ErrIneligible, unaffordable: true},
+		{name: "source above 21e14", amount: 21e14 + 1, err: failure.ErrIneligible},
+		{name: "assets follow the catch-all", amount: 100_000, assets: []model.Asset{{ID: assetID(1), Amount: 7}}, wantChange: 75_000, wantChangeAsset: 7},
+		{name: "asset entries combine", amount: 100_000, assets: []model.Asset{{ID: assetID(1), Amount: 7}, {ID: assetID(1), Amount: 3}}, wantChange: 75_000, wantChangeAsset: 10},
+		{name: "asset above 21e14 is routed", amount: 100_000, assets: []model.Asset{{ID: assetID(1), Amount: 3e15}}, wantChange: 75_000, wantChangeAsset: 3e15},
+		{name: "asset entries overflow", amount: 100_000, assets: []model.Asset{{ID: assetID(1), Amount: 1 << 63}, {ID: assetID(1), Amount: 1 << 63}}, err: failure.ErrIneligible},
+		{name: "asset id of 33 bytes", amount: 100_000, assets: []model.Asset{{ID: assetID(1)[:33], Amount: 7}}, err: failure.ErrIneligible},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inst, d, src := mixedPayment(t, tc.amount, tc.assets)
 			got, err := inst.allocate(d, src, tc.fee, 330)
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
-				require.Equal(t, tc.unaffordable, errors.Is(err, ErrUnaffordable))
+				require.Equal(t, tc.unaffordable, errors.Is(err, failure.ErrUnaffordable))
 				return
 			}
 			require.NoError(t, err)
@@ -57,8 +59,8 @@ func TestAllocate(t *testing.T) {
 func TestAllocateWithoutFees(t *testing.T) {
 	inst, d, src := mixedPaymentNoFees(t, 100_000)
 	_, err := inst.allocate(d, src, 1, 330)
-	require.ErrorIs(t, err, ErrIneligible, "a template without fees pays none")
-	require.ErrorIs(t, err, ErrUnaffordable)
+	require.ErrorIs(t, err, failure.ErrIneligible, "a template without fees pays none")
+	require.ErrorIs(t, err, failure.ErrUnaffordable)
 	require.ErrorContains(t, err, "pays no fee")
 	got, err := inst.allocate(d, src, 0, 330)
 	require.NoError(t, err)
@@ -72,9 +74,9 @@ func TestAllocateTwoInputs(t *testing.T) {
 		t,
 		twoFunds(t),
 		coin(
-			t, 100_000, Asset{ID: assetID(1), Amount: 10},
+			t, 100_000, model.Asset{ID: assetID(1), Amount: 10},
 		),
-		coin(t, 50_000, Asset{ID: assetID(2), Amount: 4}),
+		coin(t, 50_000, model.Asset{ID: assetID(2), Amount: 4}),
 	)
 	got, err := inst.allocate(d, src, 700, 330)
 	require.NoError(t, err)
@@ -87,13 +89,13 @@ func TestAllocateTwoInputs(t *testing.T) {
 	)
 	requireBalanced(t, inst, got, src)
 
-	_, err = inst.allocate(d, []*Source{nil, src[1]}, 0, 330)
-	require.ErrorIs(t, err, ErrIneligible)
+	_, err = inst.allocate(d, []*model.Source{nil, src[1]}, 0, 330)
+	require.ErrorIs(t, err, failure.ErrIneligible)
 	require.ErrorContains(t, err, `"funds"`)
 	_, err = inst.allocate(d, src[:1], 0, 330)
-	require.ErrorIs(t, err, ErrIneligible)
+	require.ErrorIs(t, err, failure.ErrIneligible)
 	_, err = inst.allocate(d, src, 49_700, 330)
-	require.ErrorIs(t, err, ErrIneligible, "fee above the cap")
+	require.ErrorIs(t, err, failure.ErrIneligible, "fee above the cap")
 }
 
 func TestAllocateAssetOverflowAcrossInputs(t *testing.T) {
@@ -108,12 +110,12 @@ func TestAllocateAssetOverflowAcrossInputs(t *testing.T) {
 		t,
 		doc,
 		coin(
-			t, 100_000, Asset{ID: assetID(1), Amount: 1 << 63},
+			t, 100_000, model.Asset{ID: assetID(1), Amount: 1 << 63},
 		),
-		coin(t, 50_000, Asset{ID: assetID(1), Amount: 1 << 63}),
+		coin(t, 50_000, model.Asset{ID: assetID(1), Amount: 1 << 63}),
 	)
 	_, err := inst.allocate(d, src, 0, 330)
-	require.ErrorIs(t, err, ErrIneligible)
+	require.ErrorIs(t, err, failure.ErrIneligible)
 
 	src[1].Assets[0].Amount = 1<<63 - 1
 	got, err := inst.allocate(d, src, 0, 330)
@@ -124,22 +126,22 @@ func TestAllocateAssetOverflowAcrossInputs(t *testing.T) {
 func TestFixedAmountWrapsResolveErrors(t *testing.T) {
 	inst, d, _ := mixedPayment(t, 100_000, nil)
 	_, err := inst.fixedAmount(byteTemplate{{name: "nope"}}, d, 0)
-	require.ErrorIs(t, err, ErrIneligible)
-	require.ErrorIs(t, err, ErrInvalidTemplate)
+	require.ErrorIs(t, err, failure.ErrIneligible)
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 	_, err = inst.fixedAmount(byteTemplate{{hex: []byte{0x81}}}, d, 0)
-	require.ErrorIs(t, err, ErrIneligible, "negative")
+	require.ErrorIs(t, err, failure.ErrIneligible, "negative")
 }
 
 func TestAllocateAssetWithoutRoute(t *testing.T) {
-	inst, d, src := noAssetRoute(t, 100_000, []Asset{{ID: assetID(1), Amount: 7}})
+	inst, d, src := noAssetRoute(t, 100_000, []model.Asset{{ID: assetID(1), Amount: 7}})
 	_, err := inst.allocate(d, src, 0, 330)
-	require.ErrorIs(t, err, ErrIneligible, "a balance without a route is a loss")
+	require.ErrorIs(t, err, failure.ErrIneligible, "a balance without a route is a loss")
 }
 
 func TestAllocateDustDraw(t *testing.T) {
 	inst, d, src := mixedPayment(t, 100_000, nil)
 	_, err := inst.allocate(d, src, 0, 25_001)
-	require.ErrorIs(t, err, ErrIneligible, "a fixed draw below the minimum")
+	require.ErrorIs(t, err, failure.ErrIneligible, "a fixed draw below the minimum")
 }
 
 func TestAllocateAssetRoutes(t *testing.T) {
@@ -152,23 +154,23 @@ func TestAllocateAssetRoutes(t *testing.T) {
 	})
 	for _, tc := range []struct {
 		name   string
-		assets []Asset
+		assets []model.Asset
 		want   map[string]uint64
 	}{
-		{name: "exact", assets: []Asset{{ID: assetID(1), Amount: 3}, {ID: assetID(2), Amount: 5}},
+		{name: "exact", assets: []model.Asset{{ID: assetID(1), Amount: 3}, {ID: assetID(2), Amount: 5}},
 			want: map[string]uint64{hex.EncodeToString(assetID(1)): 3, hex.EncodeToString(assetID(2)): 5}},
-		{name: "remainder route of an absent asset", assets: []Asset{{ID: assetID(1), Amount: 3}},
+		{name: "remainder route of an absent asset", assets: []model.Asset{{ID: assetID(1), Amount: 3}},
 			want: map[string]uint64{hex.EncodeToString(assetID(1)): 3}},
-		{name: "fixed draw of an absent asset", assets: []Asset{{ID: assetID(2), Amount: 5}}},
-		{name: "fixed draw not covered", assets: []Asset{{ID: assetID(1), Amount: 2}}},
-		{name: "rest of a fixed asset", assets: []Asset{{ID: assetID(1), Amount: 4}}},
-		{name: "asset without a route", assets: []Asset{{ID: assetID(1), Amount: 3}, {ID: assetID(3), Amount: 1}}},
+		{name: "fixed draw of an absent asset", assets: []model.Asset{{ID: assetID(2), Amount: 5}}},
+		{name: "fixed draw not covered", assets: []model.Asset{{ID: assetID(1), Amount: 2}}},
+		{name: "rest of a fixed asset", assets: []model.Asset{{ID: assetID(1), Amount: 4}}},
+		{name: "asset without a route", assets: []model.Asset{{ID: assetID(1), Amount: 3}, {ID: assetID(3), Amount: 1}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inst, d, src := instanceOf(t, doc, coin(t, 100_000, tc.assets...))
 			got, err := inst.allocate(d, src, 0, 330)
 			if tc.want == nil {
-				require.ErrorIs(t, err, ErrIneligible)
+				require.ErrorIs(t, err, failure.ErrIneligible)
 				return
 			}
 			require.NoError(t, err)
@@ -181,7 +183,7 @@ func TestAllocateAssetRoutes(t *testing.T) {
 
 // every input's satoshis go to the outputs drawing from it and to the fee, assets are summed over
 // all inputs
-func requireBalanced(t *testing.T, inst *Instance, a *allocation, src []*Source) {
+func requireBalanced(t *testing.T, inst *Instance, a *allocation, src []*model.Source) {
 	t.Helper()
 	in, out := map[string]uint64{}, map[string]uint64{}
 	for slot, s := range src {
@@ -211,18 +213,26 @@ func assetID(n int) []byte { return bytes.Repeat([]byte{byte(n)}, 34) }
 
 // mixedPayment is an intent paying 25,000 on chain from funds, the rest back to funds' script with
 // every asset.
-func mixedPayment(t *testing.T, amount uint64, assets []Asset) (*Instance, *draft, []*Source) {
+func mixedPayment(
+	t *testing.T,
+	amount uint64,
+	assets []model.Asset,
+) (*Instance, *draft, []*model.Source) {
 	t.Helper()
 	return instanceOf(t, mixedPaymentDoc(t, true), coin(t, amount, assets...))
 }
 
-func mixedPaymentNoFees(t *testing.T, amount uint64) (*Instance, *draft, []*Source) {
+func mixedPaymentNoFees(t *testing.T, amount uint64) (*Instance, *draft, []*model.Source) {
 	t.Helper()
 	return instanceOf(t, mixedPaymentDoc(t, false), coin(t, amount))
 }
 
 // noAssetRoute is mixedPayment whose change carries no asset.
-func noAssetRoute(t *testing.T, amount uint64, assets []Asset) (*Instance, *draft, []*Source) {
+func noAssetRoute(
+	t *testing.T,
+	amount uint64,
+	assets []model.Asset,
+) (*Instance, *draft, []*model.Source) {
 	t.Helper()
 	doc := edited(t, mixedPaymentDoc(t, true), func(m map[string]any) {
 		delete(m["outputs"].([]any)[0].(map[string]any), "assets")
@@ -230,7 +240,7 @@ func noAssetRoute(t *testing.T, amount uint64, assets []Asset) (*Instance, *draf
 	return instanceOf(t, doc, coin(t, amount, assets...))
 }
 
-func coin(t *testing.T, amount uint64, assets ...Asset) *Source {
+func coin(t *testing.T, amount uint64, assets ...model.Asset) *model.Source {
 	t.Helper()
 	src := sourceWith(t, int64(amount))
 	src.Assets = assets
@@ -238,7 +248,11 @@ func coin(t *testing.T, amount uint64, assets ...Asset) *Source {
 }
 
 // instanceOf moves sources to its input contracts' scripts, owned by testKey 2.
-func instanceOf(t *testing.T, doc []byte, sources ...*Source) (*Instance, *draft, []*Source) {
+func instanceOf(
+	t *testing.T,
+	doc []byte,
+	sources ...*model.Source,
+) (*Instance, *draft, []*model.Source) {
 	t.Helper()
 	tmpl := parseDoc(t, doc)
 	for slot, src := range sources {
@@ -253,7 +267,7 @@ func instanceOf(t *testing.T, doc []byte, sources ...*Source) (*Instance, *draft
 		require.NoError(t, err)
 		lockTo(src, c.PkScript)
 	}
-	inst, err := tmpl.Instantiate(Context{Keys: testKeys(t), Sources: sources})
+	inst, err := tmpl.Instantiate(model.Context{Keys: testKeys(t), Sources: sources})
 	require.NoError(t, err)
 	return inst, newDraft(tmpl.typ, sources), sources
 }

@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +23,7 @@ func TestUnindexedProofPlacesTheExtension(t *testing.T) {
 		}
 	})
 	inst, _, src := instanceOf(t, doc, sourceWith(t, 100_000))
-	act, err := inst.Build(src, Fee{Dust: 330})
+	act, err := inst.Build(src, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	tx := act.Tx.UnsignedTx
 	require.Len(t, tx.TxOut, 3)
@@ -35,7 +37,7 @@ func TestUnindexedProofPlacesTheExtension(t *testing.T) {
 		o[0], o[1] = o[1], o[0]
 	})
 	_, err = Parse(swapped, nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "a proof lists offchain outputs first")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "a proof lists offchain outputs first")
 
 	stray := edited(
 		t,
@@ -43,7 +45,7 @@ func TestUnindexedProofPlacesTheExtension(t *testing.T) {
 		func(m map[string]any) { m["packets"] = map[string]any{"output_index": 1} },
 	)
 	_, err = Parse(stray, nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "output_index goes with indexed outputs")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "output_index goes with indexed outputs")
 }
 
 // TestValueDraws: an output sums its draws, and every input has one remainder draw.
@@ -57,7 +59,7 @@ func TestValueDraws(t *testing.T) {
 		}
 	})
 	inst, _, src := instanceOf(t, doc, sourceWith(t, 50_000), sourceWith(t, 30_000))
-	act, err := inst.Build(src, Fee{Dust: 330, Onchain: onchainFee})
+	act, err := inst.Build(src, model.Fee{Dust: 330, Onchain: onchainFee})
 	require.NoError(t, err)
 	require.EqualValues(t, 50_000-600+10_000, act.Tx.UnsignedTx.TxOut[0].Value)
 	require.EqualValues(t, 20_000, act.Tx.UnsignedTx.TxOut[1].Value)
@@ -67,7 +69,7 @@ func TestValueDraws(t *testing.T) {
 		m["outputs"].([]any)[1].(map[string]any)["value"] = map[string]any{"from": "a"}
 	})
 	_, err = Parse(twice, nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "two remainder draws on a")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "two remainder draws on a")
 }
 
 // TestIndexedInputs: indexes reorder the slots.
@@ -86,7 +88,7 @@ func TestIndexedInputs(t *testing.T) {
 		func(m map[string]any) { m["inputs"].([]any)[0].(map[string]any)["index"] = 0 },
 	)
 	_, err := Parse(dup, nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate)
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 }
 
 // TestLeafTimelocks: CLTV sets nLockTime, CSV the input's nSequence, and stated values must satisfy
@@ -100,7 +102,7 @@ func TestLeafTimelocks(t *testing.T) {
 	})
 	build := func(doc []byte) (*wire.MsgTx, error) {
 		inst, _, src := instanceOf(t, doc, sourceWith(t, 100_000))
-		act, err := inst.Build(src, Fee{Dust: 330, Onchain: onchainFee})
+		act, err := inst.Build(src, model.Fee{Dust: 330, Onchain: onchainFee})
 		if err != nil {
 			return nil, err
 		}
@@ -126,8 +128,8 @@ func TestLeafTimelocks(t *testing.T) {
 			m["inputs"].([]any)[0].(map[string]any)["sequence"] = 100
 		},
 	} {
-		_, err := parseDoc(t, edited(t, doc, edit)).Instantiate(Context{Keys: testKeys(t)})
-		require.ErrorIs(t, err, ErrIneligible, name)
+		_, err := parseDoc(t, edited(t, doc, edit)).Instantiate(model.Context{Keys: testKeys(t)})
+		require.ErrorIs(t, err, failure.ErrIneligible, name)
 	}
 
 	plain, err := build(fixture(t, "minimal.json"))
@@ -148,7 +150,7 @@ func TestLeafTimelocks(t *testing.T) {
 	)
 
 	_, err = Parse(edited(t, []byte(releaseDoc), func(m map[string]any) { m["locktime"] = 5 }), nil)
-	require.ErrorIs(t, err, ErrUnsupported, "arkd sets a virtual transaction's locktime")
+	require.ErrorIs(t, err, failure.ErrUnsupported, "arkd sets a virtual transaction's locktime")
 }
 
 func releaseFn(m map[string]any) map[string]any {

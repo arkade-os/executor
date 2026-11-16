@@ -27,6 +27,7 @@ import (
 	wallettypes "github.com/arkade-os/arkd/pkg/client-wallet/types"
 	executorv1 "github.com/arkade-os/executor/api-spec/protobuf/gen/executor/v1"
 	template "github.com/arkade-os/executor/pkg/template"
+	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/test/daemon"
 	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -47,10 +48,10 @@ const (
 func registerTemplate(t *testing.T, d executor, file string) string {
 	t.Helper()
 	doc := fixture(t, file)
-	for id, artifact := range artifacts(t) {
-		if bytes.Contains(doc, []byte(id)) {
+	for id, raw := range artifacts(t) {
+		if bytes.Contains(raw, []byte(id)) {
 			_, err := d.client.RegisterArtifact(
-				t.Context(), &executorv1.RegisterArtifactRequest{Document: string(artifact)},
+				t.Context(), &executorv1.RegisterArtifactRequest{Document: string(raw)},
 			)
 			require.NoError(t, err)
 		}
@@ -90,8 +91,8 @@ func artifacts(t *testing.T) map[string][]byte {
 	for _, p := range paths {
 		doc, err := os.ReadFile(p)
 		require.NoError(t, err)
-		if a, err := template.ParseArtifact(doc); err == nil {
-			docs[a.ID] = doc
+		if a, err := artifact.Parse(doc); err == nil {
+			docs[a.ID()] = doc
 		}
 	}
 	return docs

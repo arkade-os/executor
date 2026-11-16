@@ -226,14 +226,15 @@ func (b *batchWorker) intentOf(
 	if err != nil {
 		return nil, fmt.Errorf("arkd info: %w", err)
 	}
-	in, err := execution.BuildIntent(
-		inst.Template, inst.Delegation.Inputs, e.Coins, txs,
-		template.Fee{Intent: info.IntentFees, Dust: info.Dust}, s.cosignerKey.PubKey(),
-	)
+	swept, err := s.swept(ctx, e.Coins)
 	if err != nil {
 		return nil, err
 	}
-	if in.Swept, err = s.swept(ctx, e.Coins); err != nil {
+	in, err := execution.BuildIntent(
+		inst.Template, inst.Delegation.Inputs, e.Coins, txs,
+		template.Fee{Intent: info.IntentFees, Dust: info.Dust}, s.cosignerKey.PubKey(), swept,
+	)
+	if err != nil {
 		return nil, err
 	}
 	if in.HasArkadePacket {

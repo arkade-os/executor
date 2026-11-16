@@ -10,6 +10,7 @@ import (
 	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
 	"github.com/arkade-os/executor/pkg/template"
+	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/templates"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
@@ -112,8 +113,8 @@ func instance(t *testing.T, doc []byte, variables map[string]string) *template.I
 	t.Helper()
 	docs := map[string][]byte{}
 	for _, a := range templates.Artifacts {
-		if parsed, err := template.ParseArtifact(a); err == nil {
-			docs[parsed.ID] = a
+		if parsed, err := artifact.Parse(a); err == nil {
+			docs[parsed.ID()] = a
 		}
 	}
 	tmpl, err := template.Parse(doc, docs)

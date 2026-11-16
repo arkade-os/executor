@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/btcsuite/btcd/btcec/v2"
 )
@@ -11,7 +12,7 @@ import (
 // BoundTemplate never holds state derived from a particular source or plaintext.
 type BoundTemplate struct {
 	tmpl *Template
-	keys Keys
+	keys model.Keys
 	vars map[string][]byte
 }
 
@@ -36,19 +37,24 @@ func (t *Template) Bind(b model.Bindings) (*BoundTemplate, error) {
 	return &BoundTemplate{
 		tmpl: t,
 		vars: vars,
-		keys: Keys{
+		keys: model.Keys{
 			Server: clone(b.Keys.Server), Emulator: clone(b.Keys.Emulator),
 			Cosigner: clone(b.Keys.Cosigner),
 		},
 	}, nil
 }
-func (b *BoundTemplate) Build(r model.BuildRequest) (*Action, error) {
+func (b *BoundTemplate) Build(r model.BuildRequest) (*model.Action, error) {
 	if r.Sources == nil {
-		return nil, fmt.Errorf("%w: no sources", ErrIneligible)
+		return nil, fmt.Errorf("%w: no sources", failure.ErrIneligible)
 	}
 	i, err := b.tmpl.Instantiate(
-		Context{Keys: b.keys, Variables: b.vars, Decrypt: r.Runtime.Decrypt, Sources: r.Sources,
-			Coins: r.Coins},
+		model.Context{
+			Keys:      b.keys,
+			Variables: b.vars,
+			Decrypt:   r.Runtime.Decrypt,
+			Sources:   r.Sources,
+			Coins:     r.Coins,
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -56,5 +62,5 @@ func (b *BoundTemplate) Build(r model.BuildRequest) (*Action, error) {
 	return i.Build(r.Sources, r.Fee)
 }
 func (b *BoundTemplate) InputContracts(r model.Runtime) (*Instance, error) {
-	return b.tmpl.Instantiate(Context{Keys: b.keys, Variables: b.vars, Decrypt: r.Decrypt})
+	return b.tmpl.Instantiate(model.Context{Keys: b.keys, Variables: b.vars, Decrypt: r.Decrypt})
 }

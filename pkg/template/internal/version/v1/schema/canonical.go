@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/internal/jcs"
 )
 
@@ -55,7 +56,7 @@ func (t *Template) SpendCanonical() ([]byte, error) {
 func (t *Template) Canonical() ([]byte, error) {
 	b, err := json.Marshal(t)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrInvalidTemplate, err)
 	}
 	v, err := jcsDecode(b)
 	if err != nil {
@@ -63,7 +64,7 @@ func (t *Template) Canonical() ([]byte, error) {
 	}
 	b, err = jcs.Canonical(v)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrInvalidTemplate, err)
 	}
 	return b, nil
 }
@@ -75,7 +76,7 @@ func jcsDecode(doc []byte) (any, error) {
 		err = jcs.CheckNumbers(v)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrInvalidTemplate, err)
 	}
 	return v, nil
 }

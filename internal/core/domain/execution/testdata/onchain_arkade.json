@@ -1,0 +1,41 @@
+{
+  "format": "template/v1",
+  "type": "onchain",
+  "inputs": [
+    {
+      "name": "funds",
+      "contract": {
+        "definition": {
+          "contractName": "OnchainArkadeRelease",
+          "constructorInputs": [],
+          "structs": [],
+          "functions": [
+            {
+              "name": "release",
+              "arkade": {"inputs": [], "asm": ["1"]},
+              "leaves": [
+                {
+                  "name": "release",
+                  "asm": ["<EMULATOR_KEY:release>", "OP_CHECKSIG"],
+                  "witness": [{"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "spend": {"function": "release", "leaf": "release"}
+    }
+  ],
+  "outputs": [
+    {
+      "name": "payment",
+      "index": 0,
+      "value": {"from": "funds"},
+      "locking": "5120f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+    }
+  ],
+  "packets": {"output_index": 1},
+  "fees": {"from": "funds", "max": 1000},
+  "delegation": {"schedule": {"funds": {"min_confirmations": 1}}}
+}

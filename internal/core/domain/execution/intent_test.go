@@ -16,6 +16,7 @@ import (
 	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
 	"github.com/arkade-os/executor/pkg/template"
+	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/templates"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
@@ -31,6 +32,7 @@ func TestBuildIntentRenewsTheCoinInFullWithProofAndMessage(t *testing.T) {
 	in, err := BuildIntent(
 		r.inst, r.inputs, []delegation.Coin{r.coin}, r.txs, template.Fee{Dust: 330},
 		r.cosigner.PubKey(),
+		nil,
 	)
 	require.NoError(t, err)
 	require.True(t, in.HasArkadePacket)
@@ -70,7 +72,7 @@ func TestBuildIntentDeductsTheIntentFeeAndRefusesAboveMaxFee(t *testing.T) {
 	r := newRenewal(t, 1000)
 	fee := template.Fee{Dust: 330, Intent: arkfee.Config{IntentOffchainInputProgram: "500.0"}}
 	in, err := BuildIntent(
-		r.inst, r.inputs, []delegation.Coin{r.coin}, r.txs, fee, r.cosigner.PubKey(),
+		r.inst, r.inputs, []delegation.Coin{r.coin}, r.txs, fee, r.cosigner.PubKey(), nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, int64(9_500), in.Outputs[0].Value)
@@ -78,41 +80,67 @@ func TestBuildIntentDeductsTheIntentFeeAndRefusesAboveMaxFee(t *testing.T) {
 	capped := newRenewal(t, 100)
 	_, err = BuildIntent(
 		capped.inst, capped.inputs, []delegation.Coin{capped.coin}, capped.txs, fee,
-		capped.cosigner.PubKey(),
+		capped.cosigner.PubKey(), nil,
 	)
 	require.ErrorIs(t, err, template.ErrIneligible)
 	require.ErrorContains(t, err, "exceeds the cap 100")
 	free := newRenewal(t, 0)
 	_, err = BuildIntent(
-		free.inst, free.inputs, []delegation.Coin{free.coin}, free.txs, fee, free.cosigner.PubKey(),
+		free.inst,
+		free.inputs,
+		[]delegation.Coin{free.coin},
+		free.txs,
+		fee,
+		free.cosigner.PubKey(),
+		nil,
 	)
 	require.ErrorContains(t, err, "exceeds the cap 0")
 	_, err = BuildIntent(
 		free.inst, free.inputs, []delegation.Coin{free.coin}, free.txs, template.Fee{Dust: 330},
 		free.cosigner.PubKey(),
+		nil,
 	)
 	require.NoError(t, err, "no fee, no cap to exceed")
+}
+
+func TestBuildIntentPricesSweptCoinsAsRecoverable(t *testing.T) {
+	r := newRenewal(t, 1000)
+	fee := template.Fee{
+		Dust: 330,
+		Intent: arkfee.Config{
+			IntentOffchainInputProgram: "inputType == 'recoverable' ? 0.0 : 500.0",
+		},
+	}
+	coins := []delegation.Coin{r.coin}
+	in, err := BuildIntent(r.inst, r.inputs, coins, r.txs, fee, r.cosigner.PubKey(), []bool{true})
+	require.NoError(t, err)
+	require.Equal(t, int64(10_000), in.Outputs[0].Value, "a swept coin pays no fee")
+	require.Equal(t, []bool{true}, in.Swept)
+
+	in, err = BuildIntent(r.inst, r.inputs, coins, r.txs, fee, r.cosigner.PubKey(), nil)
+	require.NoError(t, err)
+	require.Equal(t, int64(9_500), in.Outputs[0].Value)
 }
 
 func TestBuildIntentRefusesCoinNotMatchingItsFundingTxOrTree(t *testing.T) {
 	r := newRenewal(t, 1000)
 	_, err := BuildIntent(
 		r.inst, r.inputs, []delegation.Coin{r.coin}, nil, template.Fee{Dust: 330},
-		r.cosigner.PubKey(),
+		r.cosigner.PubKey(), nil,
 	)
 	require.ErrorContains(t, err, "missing source output")
 	moved := r.coin
 	moved.Script = "5120" + strings.Repeat("00", 32)
 	_, err = BuildIntent(
 		r.inst, r.inputs, []delegation.Coin{moved}, r.txs, template.Fee{Dust: 330},
-		r.cosigner.PubKey(),
+		r.cosigner.PubKey(), nil,
 	)
 	require.ErrorContains(t, err, "differs from its source output")
 	wrong := r.inputs[0]
 	wrong.Tapscripts = nil
 	_, err = BuildIntent(
 		r.inst, []delegation.Input{wrong}, []delegation.Coin{r.coin}, r.txs,
-		template.Fee{Dust: 330}, r.cosigner.PubKey(),
+		template.Fee{Dust: 330}, r.cosigner.PubKey(), nil,
 	)
 	require.ErrorContains(t, err, "not in the registered tree")
 }
@@ -122,6 +150,7 @@ func TestIntentForfeitSpendsTheVtxoIntoItsBatchConnector(t *testing.T) {
 	in, err := BuildIntent(
 		r.inst, r.inputs, []delegation.Coin{r.coin}, r.txs, template.Fee{Dust: 330},
 		r.cosigner.PubKey(),
+		nil,
 	)
 	require.NoError(t, err)
 	b := newBatch(t, []*wire.TxOut{in.Outputs[0]}, 1)
@@ -152,6 +181,7 @@ func TestBoardingIntentSpendsOnchainInputAndNeedsNoForfeit(t *testing.T) {
 	in, err := BuildIntent(
 		b.inst, b.inputs, []delegation.Coin{b.coin}, b.txs, template.Fee{Dust: 330},
 		b.cosigner.PubKey(),
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, []bool{true}, in.Boarding)
@@ -168,6 +198,7 @@ func TestForfeitsSkipTheBoardingInputs(t *testing.T) {
 	in, err := BuildIntent(
 		r.inst, r.inputs, []delegation.Coin{r.coin}, r.txs, template.Fee{Dust: 330},
 		r.cosigner.PubKey(),
+		nil,
 	)
 	require.NoError(t, err)
 	b := newBatch(t, []*wire.TxOut{in.Outputs[0]}, 1)
@@ -200,6 +231,7 @@ func TestForfeitsSkipTheSweptInputs(t *testing.T) {
 	in, err := BuildIntent(
 		r.inst, r.inputs, []delegation.Coin{r.coin}, r.txs, template.Fee{Dust: 330},
 		r.cosigner.PubKey(),
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, 1, in.Forfeited())
@@ -420,8 +452,8 @@ func instantiateWith(
 func artifactDocs() map[string][]byte {
 	docs := map[string][]byte{}
 	for _, a := range templates.Artifacts {
-		if parsed, err := template.ParseArtifact(a); err == nil {
-			docs[parsed.ID] = a
+		if parsed, err := artifact.Parse(a); err == nil {
+			docs[parsed.ID()] = a
 		}
 	}
 	return docs

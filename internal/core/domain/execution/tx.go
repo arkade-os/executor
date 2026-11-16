@@ -13,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/emulator/pkg/arkade"
@@ -138,12 +139,12 @@ func BuildOffchain(
 	return out, nil
 }
 
-// BuildIntent builds the transaction of inst spending coins, one per input in order, and the intent
-// registering it under the cosigner key; txs hold the transactions that created the coins.
-func BuildIntent(
+// BuildOnchain builds the bitcoin transaction of inst spending coins, one per input in order, for the
+// emulator to sign; txs hold the transactions that created the coins.
+func BuildOnchain(
 	inst *template.Instance, inputs []delegation.Input, coins []delegation.Coin,
-	txs map[string]*wire.MsgTx, fee template.Fee, cosigner *btcec.PublicKey,
-) (*Intent, error) {
+	txs map[string]*wire.MsgTx, fee template.Fee,
+) (*psbt.Packet, error) {
 	sources, err := sourcesOf(coins, txs)
 	if err != nil {
 		return nil, err
@@ -155,18 +156,54 @@ func BuildIntent(
 	if err := checkTx(act.Tx, coins, inputs); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrBadTx, err)
 	}
-	tx := act.Tx.UnsignedTx
-	offchain := len(tx.TxOut)
-	onchain := []int{}
-	if act.Extension >= 0 {
-		offchain = act.Extension
-		for i := offchain + 1; i < len(tx.TxOut); i++ {
-			onchain = append(onchain, i)
+	for i, src := range sources {
+		if err := txutils.SetArkPsbtField(act.Tx, i, arkade.PrevoutTxField, *src.Tx); err != nil {
+			return nil, err
 		}
 	}
-	in := &Intent{Tx: act.Tx, Outputs: tx.TxOut[:offchain], Boarding: boardingOf(coins)}
+	return act.Tx, nil
+}
+
+func FinalizeOnchain(signed *psbt.Packet) (*wire.MsgTx, error) {
+	for i := range signed.Inputs {
+		if err := script.FinalizeVtxoScript(signed, i); err != nil {
+			return nil, fmt.Errorf("%w: finalize input %d: %w", ErrBadTx, i, err)
+		}
+	}
+	return psbt.Extract(signed)
+}
+
+// BuildIntent builds the transaction of inst spending coins, one per input in order, and the intent
+// registering it under the cosigner key; txs hold the transactions that created the coins.
+func BuildIntent(
+	inst *template.Instance, inputs []delegation.Input, coins []delegation.Coin,
+	txs map[string]*wire.MsgTx, fee template.Fee, cosigner *btcec.PublicKey,
+	swept []bool,
+) (*Intent, error) {
+	sources, err := sourcesOf(coins, txs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range sources {
+		sources[i].Swept = i < len(swept) && swept[i]
+	}
+	act, err := inst.Build(sources, fee)
+	if err != nil {
+		return nil, fmt.Errorf("build: %w", err)
+	}
+	if err := checkTx(act.Tx, coins, inputs); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrBadTx, err)
+	}
+	tx := act.Tx.UnsignedTx
+	offchain := len(tx.TxOut) - len(act.Onchain)
 	if act.Extension >= 0 {
-		in.Onchain = tx.TxOut[offchain+1:]
+		offchain = act.Extension
+	}
+	in := &Intent{
+		Tx: act.Tx, Outputs: tx.TxOut[:offchain], Boarding: boardingOf(coins), Swept: swept,
+	}
+	for _, i := range act.Onchain {
+		in.Onchain = append(in.Onchain, tx.TxOut[i])
 	}
 	ext, err := extension.NewExtensionFromTx(tx)
 	if err != nil && !errors.Is(err, extension.ErrExtensionNotFound) {
@@ -182,7 +219,7 @@ func BuildIntent(
 	}
 	in.Message, err = intent.RegisterMessage{
 		BaseMessage:          intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
-		OnchainOutputIndexes: onchain,
+		OnchainOutputIndexes: append([]int{}, act.Onchain...),
 		CosignersPublicKeys:  []string{hex.EncodeToString(cosigner.SerializeCompressed())},
 	}.Encode()
 	if err != nil {

@@ -23,6 +23,9 @@ type ChainWatcher interface {
 	Unspents(ctx context.Context, script string) ([]Output, error)
 	Tip(ctx context.Context) (delegation.Tip, error)
 	Transaction(ctx context.Context, txid string) (*wire.MsgTx, error)
+	Broadcast(ctx context.Context, tx *wire.MsgTx) (txid string, err error)
+	// FeeRate is the going rate in satoshis per virtual byte, 1 at the least.
+	FeeRate(ctx context.Context) (satPerVbyte float64, err error)
 }
 
 // ChainEvent is a script's new status hash, or a new tip when Tip is set.

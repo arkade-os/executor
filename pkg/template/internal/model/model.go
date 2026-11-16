@@ -78,6 +78,7 @@ type Action struct {
 	Tx        *psbt.Packet
 	Extension int // output index of the extension, -1 without
 	Fee       uint64
+	Onchain   []int // output indexes of a proof's onchain outputs
 }
 
 // TriggerKeys are the daemon keys a trigger may require, compared compressed.

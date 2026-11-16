@@ -13,21 +13,23 @@ import (
 	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 	"github.com/arkade-os/executor/pkg/template/internal/contract"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
 )
 
 type construction struct {
-	def     *Definition
+	def     *artifact.Definition
 	args    map[string]byteTemplate // flattened constructor name → binding
 	taptree string                  // bytes variable holding the whole tree; "" builds it from def
 }
 
 type input struct {
-	selected       *Function
-	selectedLeaf   *Leaf
+	selected       *artifact.Function
+	selectedLeaf   *artifact.Leaf
 	name           string
 	onchain        bool
-	schedule       Schedule
+	schedule       model.Schedule
 	leadVariable   string // an int variable holding before_expiry_seconds
 	contract       construction
 	function, leaf string
@@ -63,7 +65,7 @@ func (i *Instance) PkScript(slot int) []byte {
 
 // DueAt is the schedule's due time, no earlier than a timestamp locktime or a relative lock in
 // seconds; heights are the caller's to check.
-func (i *Instance) DueAt(slot int, s *Source, now time.Time) time.Time {
+func (i *Instance) DueAt(slot int, s *model.Source, now time.Time) time.Time {
 	slot = i.firstCoin(slot)
 	due := i.scheduleDue(slot, s, now)
 	if i.locktime >= locktimeThreshold {
@@ -104,20 +106,20 @@ func (c *compiler) input(s *schema.Input) error {
 	return nil
 }
 
-func (c *compiler) schedule(s *schema.Schedule, onchain bool) (Schedule, string, error) {
+func (c *compiler) schedule(s *schema.Schedule, onchain bool) (model.Schedule, string, error) {
 	switch {
 	case s.Immediate != nil:
-		return Schedule{}, "", nil
+		return model.Schedule{}, "", nil
 	case s.BeforeExpiry != nil && !onchain:
 		n, name, err := c.intVariable(*s.BeforeExpiry)
 		if err != nil || name != "" {
-			return Schedule{}, name, err
+			return model.Schedule{}, name, err
 		}
-		return Schedule{BeforeExpiry: time.Duration(n) * time.Second}, "", nil
+		return model.Schedule{BeforeExpiry: time.Duration(n) * time.Second}, "", nil
 	case s.MinConfirmations != nil && onchain:
-		return Schedule{MinConfirmations: int(*s.MinConfirmations)}, "", nil
+		return model.Schedule{MinConfirmations: int(*s.MinConfirmations)}, "", nil
 	}
-	return Schedule{}, "", bad("the schedule does not fit the input")
+	return model.Schedule{}, "", bad("the schedule does not fit the input")
 }
 
 func (c *compiler) construction(s *schema.Construction) (*construction, error) {
@@ -173,7 +175,7 @@ func (c *compiler) definition(ref schema.DefinitionRef) (*artifact.Definition, e
 		return nil, bad("artifact %s not provided", id)
 	}
 	if a.Version() != artifact.Version1 {
-		return nil, fmt.Errorf("%w: artifact profile %q", ErrUnsupported, a.Version())
+		return nil, fmt.Errorf("%w: artifact profile %q", failure.ErrUnsupported, a.Version())
 	}
 	if a.ID() != id {
 		return nil, bad("artifact %s resolves to a document with id %s", id, a.ID())
@@ -194,15 +196,15 @@ func (c *compiler) spend(in *input, s *schema.Spend) error {
 		return bad("unknown leaf %q", s.Leaf)
 	}
 	// an intent proof carries no locktime
-	if slices.ContainsFunc(l.Asm, isCLTV) && c.t.typ == Proof {
+	if slices.ContainsFunc(l.Asm, isCLTV) && c.t.typ == model.Proof {
 		return fmt.Errorf(
 			"%w: leaf %q needs an absolute locktime, which a proof does not set",
-			ErrUnsupported, l.Name,
+			failure.ErrUnsupported, l.Name,
 		)
 	}
 	in.function, in.leaf = f.Name, l.Name
 	in.selected, in.selectedLeaf = f, l
-	var want []Field
+	var want []artifact.Field
 	if f.Arkade != nil {
 		var err error
 		if want, err = in.contract.def.Flatten(f.Arkade.Inputs); err != nil {
@@ -255,9 +257,9 @@ func (i *Instance) contractOf(
 		raw, err := i.resolve(c.args[f.Name], d, d.index(slot))
 		if err == nil {
 			if err = asm.CanonicalBytes(f.Type, raw); err != nil {
-				sentinel := ErrIneligible
+				sentinel := failure.ErrIneligible
 				if watch {
-					sentinel = ErrInvalidVariables
+					sentinel = failure.ErrInvalidVariables
 				}
 				err = fmt.Errorf("%w: %v", sentinel, err)
 			}
@@ -288,7 +290,7 @@ func (i *Instance) lead(slot int) time.Duration {
 // scheduleDue is the window start for an expiry lead, else the source's creation, or now when
 // unknown. A fee-paying instance waits at least half the source's life: a longer lead would pay in
 // every batch.
-func (i *Instance) scheduleDue(slot int, s *Source, now time.Time) time.Time {
+func (i *Instance) scheduleDue(slot int, s *model.Source, now time.Time) time.Time {
 	sch := i.tmpl.inputs[slot].schedule
 	lead := i.lead(slot)
 	if i.feeCap() > 0 && !s.CreatedAt.IsZero() {
@@ -312,11 +314,11 @@ func contractErr(err error) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, contract.ErrNoCosigner):
-		return fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return fmt.Errorf("%w: %v", failure.ErrUnsupported, err)
 	case errors.Is(err, contract.ErrBadTree):
-		return fmt.Errorf("%w: %v", ErrIneligible, err)
+		return fmt.Errorf("%w: %v", failure.ErrIneligible, err)
 	case errors.Is(err, contract.ErrBadLeaf):
-		return fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
+		return fmt.Errorf("%w: %v", failure.ErrInvalidTemplate, err)
 	}
 	return err
 }
@@ -326,13 +328,17 @@ func isCLTV(tok string) bool { return tok == "OP_CHECKLOCKTIMEVERIFY" || tok == 
 // checkClosure returns a virtual spend leaf's absolute locktime, nil without one. The emulator
 // accepts only ark-lib closures on a leaf naming its key, and arkd builds a locktime only from a
 // CLTV multisig.
-func checkClosure(in input, ct *contract.Contract, typ Type) (*arklib.AbsoluteLocktime, error) {
+func checkClosure(
+	in input,
+	ct *contract.Contract,
+	typ model.Type,
+) (*arklib.AbsoluteLocktime, error) {
 	f := in.contract.def.FindFunction(in.function)
 	l := f.FindLeaf(in.leaf)
 	emulated := slices.ContainsFunc(l.Asm, func(tok string) bool {
 		return strings.HasPrefix(tok, "<EMULATOR_KEY:") || strings.HasPrefix(tok, "<TWEAK:")
 	})
-	cltv := typ == Virtual && slices.ContainsFunc(l.Asm, isCLTV)
+	cltv := typ == model.Virtual && slices.ContainsFunc(l.Asm, isCLTV)
 	if !emulated && !cltv {
 		return nil, nil
 	}
@@ -341,12 +347,12 @@ func checkClosure(in input, ct *contract.Contract, typ Type) (*arklib.AbsoluteLo
 	switch {
 	case cltv && !isLock:
 		return nil, fmt.Errorf(
-			"%w: input %q: leaf %q is not a CLTV multisig closure", ErrUnsupported, in.name,
+			"%w: input %q: leaf %q is not a CLTV multisig closure", failure.ErrUnsupported, in.name,
 			in.leaf,
 		)
 	case err != nil:
 		return nil, fmt.Errorf(
-			"%w: input %q: leaf %q is not a closure", ErrUnsupported, in.name, in.leaf,
+			"%w: input %q: leaf %q is not a closure", failure.ErrUnsupported, in.name, in.leaf,
 		)
 	case cltv:
 		return &lock.Locktime, nil
@@ -370,10 +376,10 @@ func sameDomain(lts []*arklib.AbsoluteLocktime) bool {
 	return true
 }
 
-func checkSourceScript(in input, s *Source, ct *contract.Contract) error {
+func checkSourceScript(in input, s *model.Source, ct *contract.Contract) error {
 	if !bytes.Equal(pkScript(s), ct.PkScript) {
 		return fmt.Errorf(
-			"%w: input %q: source script differs from the contract", ErrIneligible, in.name,
+			"%w: input %q: source script differs from the contract", failure.ErrIneligible, in.name,
 		)
 	}
 	return nil

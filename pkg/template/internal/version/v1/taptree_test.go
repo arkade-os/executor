@@ -6,6 +6,8 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -25,13 +27,18 @@ func TestTaptreeContract(t *testing.T) {
 	require.Equal(t, serverLeaf(t), hex.EncodeToString(spendProof(t, inst).Script))
 
 	_, err = instantiateTree(t, []string{a, b})
-	require.ErrorIs(t, err, ErrIneligible, "the declared leaf is not in the tree")
+	require.ErrorIs(t, err, failure.ErrIneligible, "the declared leaf is not in the tree")
 	_, err = instantiateTree(t, []string{a, serverLeaf(t), "51"})
-	require.ErrorIs(t, err, ErrIneligible, "a leaf that is no closure: arkd would refuse the spend")
+	require.ErrorIs(
+		t,
+		err,
+		failure.ErrIneligible,
+		"a leaf that is no closure: arkd would refuse the spend",
+	)
 	_, err = instantiateRaw(t, []byte{0x01})
-	require.ErrorIs(t, err, ErrIneligible, "a tree that does not decode")
+	require.ErrorIs(t, err, failure.ErrIneligible, "a tree that does not decode")
 	_, err = instantiateRaw(t, []byte{})
-	require.ErrorIs(t, err, ErrIneligible, "an empty tree holds no leaf")
+	require.ErrorIs(t, err, failure.ErrIneligible, "an empty tree holds no leaf")
 
 	dup, err := instantiateTree(t, []string{serverLeaf(t), serverLeaf(t)})
 	require.NoError(t, err, "a duplicated leaf is still in the tree")
@@ -55,7 +62,7 @@ func TestTaptreeParse(t *testing.T) {
 		"not bytes":         func(m map[string]any) { firstContract(m)["taptree"] = "<to>" },
 	} {
 		_, err := Parse(edited(t, []byte(treeDoc), edit), nil)
-		require.ErrorIs(t, err, ErrInvalidTemplate, name)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, name)
 	}
 	onOutput := edited(t, []byte(treeDoc), func(m map[string]any) {
 		m["outputs"].([]any)[0].(map[string]any)["locking"] = map[string]any{
@@ -63,7 +70,7 @@ func TestTaptreeParse(t *testing.T) {
 		}
 	})
 	_, err := Parse(onOutput, nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate)
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 	require.ErrorContains(t, err, "taptree")
 
 	for name, edit := range map[string]func(m map[string]any){
@@ -78,7 +85,7 @@ func TestTaptreeParse(t *testing.T) {
 		},
 	} {
 		_, err := Parse(edited(t, []byte(treeDoc), edit), nil)
-		require.ErrorIs(t, err, ErrInvalidTemplate, name)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, name)
 		require.ErrorContains(t, err, "outside the taptree field", name)
 	}
 }
@@ -139,7 +146,7 @@ func instantiateTree(t *testing.T, leaves []string) (*Instance, error) {
 
 func instantiateRaw(t *testing.T, raw []byte) (*Instance, error) {
 	t.Helper()
-	return parseDoc(t, []byte(treeDoc)).Instantiate(Context{
+	return parseDoc(t, []byte(treeDoc)).Instantiate(model.Context{
 		Keys:      testKeys(t),
 		Variables: map[string][]byte{"tree": raw, "to": make([]byte, 32)},
 	})

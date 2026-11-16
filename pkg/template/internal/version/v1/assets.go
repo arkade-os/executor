@@ -10,6 +10,8 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
 )
 
@@ -172,7 +174,7 @@ func (i *Instance) routeAssets(
 					}
 					if n > held[key] {
 						return fmt.Errorf(
-							"%w: %s draws %d of asset %s, input %q holds %d", ErrIneligible,
+							"%w: %s draws %d of asset %s, input %q holds %d", failure.ErrIneligible,
 							o.name, n, key, i.tmpl.inputs[slot].name, held[key],
 						)
 					}
@@ -181,8 +183,10 @@ func (i *Instance) routeAssets(
 				case 1:
 					if named[key] {
 						return fmt.Errorf(
-							"%w: input %q has two remainder routes for asset %s", ErrIneligible,
-							i.tmpl.inputs[slot].name, key,
+							"%w: input %q has two remainder routes for asset %s",
+							failure.ErrIneligible,
+							i.tmpl.inputs[slot].name,
+							key,
 						)
 					}
 					named[key] = true
@@ -226,7 +230,7 @@ func (i *Instance) mint(d *draft, a *allocation) error {
 			if is.asset == nil {
 				sum, carry := bits.Add64(a.minted[r.issue][k], n, 0)
 				if carry != 0 {
-					return fmt.Errorf("%w: issue %q overflows", ErrIneligible, is.name)
+					return fmt.Errorf("%w: issue %q overflows", failure.ErrIneligible, is.name)
 				}
 				a.minted[r.issue][k] = sum
 				continue
@@ -258,7 +262,7 @@ func routePass(r assetRoute) int {
 func assetPacket(
 	i *Instance,
 	d *draft,
-	sources []*Source,
+	sources []*model.Source,
 	a *allocation,
 ) (extension.Packet, error) {
 	t := i.tmpl
@@ -286,14 +290,14 @@ func assetPacket(
 		}
 		g, err := i.issueGroup(d, a, j, newPos)
 		if err != nil {
-			return nil, fmt.Errorf("%w: issue %q: %v", ErrIneligible, is.name, err)
+			return nil, fmt.Errorf("%w: issue %q: %v", failure.ErrIneligible, is.name, err)
 		}
 		groups = append(groups, *g)
 	}
 	for _, id := range slices.Sorted(maps.Keys(ids)) {
 		g, err := assetGroup(t, sources, a, id)
 		if err != nil {
-			return nil, fmt.Errorf("%w: asset %s: %v", ErrIneligible, id, err)
+			return nil, fmt.Errorf("%w: asset %s: %v", failure.ErrIneligible, id, err)
 		}
 		groups = append(groups, *g)
 	}
@@ -302,7 +306,7 @@ func assetPacket(
 	}
 	p, err := asset.NewPacket(groups)
 	if err != nil {
-		return nil, fmt.Errorf("%w: assets packet: %v", ErrIneligible, err)
+		return nil, fmt.Errorf("%w: assets packet: %v", failure.ErrIneligible, err)
 	}
 	return p, nil
 }
@@ -354,7 +358,7 @@ func (i *Instance) issueGroup(
 }
 
 func assetGroup(
-	t *Template, sources []*Source, a *allocation, id string,
+	t *Template, sources []*model.Source, a *allocation, id string,
 ) (*asset.AssetGroup, error) {
 	var ins []asset.AssetInput
 	for slot, s := range sources {

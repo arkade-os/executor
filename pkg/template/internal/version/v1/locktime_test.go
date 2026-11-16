@@ -8,6 +8,8 @@ import (
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
@@ -18,7 +20,7 @@ func TestLocktimeOnlyOffchain(t *testing.T) {
 	_, err := Parse(
 		edited(t, []byte(releaseDoc), func(m map[string]any) { m["type"] = "proof" }), nil,
 	)
-	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorIs(t, err, failure.ErrUnsupported)
 	require.ErrorContains(t, err, "absolute locktime")
 }
 
@@ -34,7 +36,7 @@ func TestLocktimeFromLeaf(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, lt.IsSeconds())
 
-	minimal, err := parseFixture(t, "minimal.json").Instantiate(Context{Keys: testKeys(t)})
+	minimal, err := parseFixture(t, "minimal.json").Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
 	_, ok = minimal.Locktime(0)
 	require.False(t, ok, "no CLTV leaf, no locktime")
@@ -47,7 +49,7 @@ func TestLocktimeNeedsCLTVClosure(t *testing.T) {
 		}
 	})
 	_, err := parseDoc(t, doc).Instantiate(releaseContext(t, 200))
-	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorIs(t, err, failure.ErrUnsupported)
 	require.ErrorContains(t, err, "CLTV multisig closure")
 }
 
@@ -71,11 +73,11 @@ func TestInstantiateRefusesMixedLocktimes(t *testing.T) {
 		m["packets"] = map[string]any{"output_index": 2}
 	})
 	tmpl := parseDoc(t, doc)
-	sources := func(lock, lock2 int64) []*Source {
+	sources := func(lock, lock2 int64) []*model.Source {
 		a, b := sourceWith(t, 100_000), sourceWith(t, 100_000)
 		lockTo(a, releaseWatch(t, parseDoc(t, []byte(releaseDoc)), lock).PkScript(0))
 		lockTo(b, releaseWatch(t, parseDoc(t, []byte(releaseDoc)), lock2).PkScript(0))
-		return []*Source{a, b}
+		return []*model.Source{a, b}
 	}
 	c := releaseContext(t, 200)
 	c.Variables["lock2"], c.Sources = asm.ScriptNum(300), sources(200, 300)
@@ -84,7 +86,7 @@ func TestInstantiateRefusesMixedLocktimes(t *testing.T) {
 
 	c.Variables["lock2"], c.Sources = asm.ScriptNum(1_800_000_000), sources(200, 1_800_000_000)
 	_, err = tmpl.Instantiate(c)
-	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorIs(t, err, failure.ErrUnsupported)
 	require.ErrorContains(t, err, "mix block heights and timestamps")
 }
 
@@ -110,11 +112,11 @@ func TestBuildSetsLocktime(t *testing.T) {
 	src := sourceWith(t, 100_000)
 	lockTo(src, releaseWatch(t, tmpl, 200).PkScript(0))
 	c := releaseContext(t, 200)
-	c.Sources = []*Source{src}
+	c.Sources = []*model.Source{src}
 	inst, err := tmpl.Instantiate(c)
 	require.NoError(t, err)
 
-	act, err := inst.Build([]*Source{src}, Fee{Dust: 330})
+	act, err := inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	require.EqualValues(t, 200, act.Tx.UnsignedTx.LockTime)
 	require.Equal(t, uint32(wire.MaxTxInSequenceNum-1), act.Tx.UnsignedTx.TxIn[0].Sequence)
@@ -177,9 +179,9 @@ const releaseDoc = `{
   "packets": {"output_index": 1}
 }`
 
-func releaseContext(t *testing.T, lock int64) Context {
+func releaseContext(t *testing.T, lock int64) model.Context {
 	t.Helper()
-	return Context{Keys: testKeys(t), Variables: map[string][]byte{
+	return model.Context{Keys: testKeys(t), Variables: map[string][]byte{
 		"owner": testKey(
 			t, 2,
 		).SerializeCompressed(),

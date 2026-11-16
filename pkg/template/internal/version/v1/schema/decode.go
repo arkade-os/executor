@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/internal/jcs"
 
 	"github.com/arkade-os/executor/pkg/template/artifact"
@@ -51,7 +52,7 @@ func Decode(doc []byte) (*Template, error) {
 
 func DecodeValue(v any) (*Template, error) {
 	if err := jcs.CheckNumbers(v); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrInvalidTemplate, err)
 	}
 	decoded, err := readTemplate(v, "")
 	if err != nil {

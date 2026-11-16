@@ -12,17 +12,15 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 	"github.com/arkade-os/executor/pkg/template/internal/contract"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 )
-
-type Keys = model.Keys
-type Context = model.Context
 
 // Instance is a template bound to keys, variables and, unless it is a watch, sources.
 type Instance struct {
 	base      *Template // before expansion
 	watch     bool
 	tmpl      *Template
-	keys      Keys
+	keys      model.Keys
 	vars      map[string][]byte
 	contracts []*contract.Contract       // per slot
 	locktimes []*arklib.AbsoluteLocktime // per slot, nil without a CLTV spend leaf
@@ -30,7 +28,7 @@ type Instance struct {
 	sequences []uint32                   // per slot
 }
 
-func (t *Template) Instantiate(c Context) (*Instance, error) {
+func (t *Template) Instantiate(c model.Context) (*Instance, error) {
 	vars, err := t.open(c.Variables, c.Decrypt)
 	if err != nil {
 		return nil, err
@@ -51,12 +49,12 @@ func (t *Template) Instantiate(c Context) (*Instance, error) {
 	if watch {
 		if !t.ContextFree() {
 			return nil, fmt.Errorf(
-				"%w: a watch needs context-free contract arguments", ErrUnsupported,
+				"%w: a watch needs context-free contract arguments", failure.ErrUnsupported,
 			)
 		}
-		sources = make([]*Source, len(x.inputs))
+		sources = make([]*model.Source, len(x.inputs))
 		for slot := range sources {
-			sources[slot] = &Source{}
+			sources[slot] = &model.Source{}
 		}
 	} else if err := checkSources(sources, len(x.inputs)); err != nil {
 		return nil, err
@@ -93,7 +91,10 @@ func (t *Template) Instantiate(c Context) (*Instance, error) {
 		i.contracts = append(i.contracts, ct)
 	}
 	if !sameDomain(i.locktimes) {
-		return nil, fmt.Errorf("%w: locktimes mix block heights and timestamps", ErrUnsupported)
+		return nil, fmt.Errorf(
+			"%w: locktimes mix block heights and timestamps",
+			failure.ErrUnsupported,
+		)
 	}
 	if err := i.resolveLocks(csvs); err != nil {
 		return nil, err
@@ -107,7 +108,7 @@ func (t *Template) checkRanges(vars map[string][]byte, skipSealed bool) error {
 			return nil
 		}
 		if n, err := asm.ParseScriptNum(vars[name]); err != nil || n < lo || n > hi {
-			return fmt.Errorf("%w: %q must be in %d..%d", ErrInvalidVariables, name, lo, hi)
+			return fmt.Errorf("%w: %q must be in %d..%d", failure.ErrInvalidVariables, name, lo, hi)
 		}
 		return nil
 	}
@@ -138,20 +139,23 @@ func (t *Template) checkRanges(vars map[string][]byte, skipSealed bool) error {
 func (t *Template) validateVariables(vars map[string][]byte, skipSealed bool) error {
 	if len(vars) != len(t.variables) {
 		return fmt.Errorf(
-			"%w: %d values for %d variables", ErrInvalidVariables, len(vars), len(t.variables),
+			"%w: %d values for %d variables",
+			failure.ErrInvalidVariables,
+			len(vars),
+			len(t.variables),
 		)
 	}
 	for _, n := range slices.Sorted(maps.Keys(t.variables)) {
 		typ := t.variables[n]
 		v, ok := vars[n]
 		if !ok {
-			return fmt.Errorf("%w: missing %q", ErrInvalidVariables, n)
+			return fmt.Errorf("%w: missing %q", failure.ErrInvalidVariables, n)
 		}
 		if t.isTaptree(n) || skipSealed && t.sealed[n] {
 			continue
 		}
 		if err := asm.CanonicalBytes(typ, v); err != nil {
-			return fmt.Errorf("%w: variable %q: %v", ErrInvalidVariables, n, err)
+			return fmt.Errorf("%w: variable %q: %v", failure.ErrInvalidVariables, n, err)
 		}
 	}
 	if err := t.checkRanges(vars, skipSealed); err != nil {
@@ -161,33 +165,41 @@ func (t *Template) validateVariables(vars map[string][]byte, skipSealed bool) er
 	return nil
 }
 
-func checkSources(sources []*Source, n int) error {
+func checkSources(sources []*model.Source, n int) error {
 	if len(sources) != n {
-		return fmt.Errorf("%w: %d sources for %d inputs", ErrIneligible, len(sources), n)
+		return fmt.Errorf("%w: %d sources for %d inputs", failure.ErrIneligible, len(sources), n)
 	}
 	for i, s := range sources {
 		if s == nil || s.Tx == nil {
-			return fmt.Errorf("%w: source %d or its transaction missing", ErrIneligible, i)
+			return fmt.Errorf("%w: source %d or its transaction missing", failure.ErrIneligible, i)
 		}
 		for _, in := range s.Tx.TxIn {
 			if in == nil {
-				return fmt.Errorf("%w: source %d has a nil transaction input", ErrIneligible, i)
+				return fmt.Errorf(
+					"%w: source %d has a nil transaction input",
+					failure.ErrIneligible,
+					i,
+				)
 			}
 		}
 		for _, out := range s.Tx.TxOut {
 			if out == nil {
-				return fmt.Errorf("%w: source %d has a nil transaction output", ErrIneligible, i)
+				return fmt.Errorf(
+					"%w: source %d has a nil transaction output",
+					failure.ErrIneligible,
+					i,
+				)
 			}
 		}
 		if !isBound(s) {
 			return fmt.Errorf(
-				"%w: source %d is not the output of its transaction", ErrIneligible, i,
+				"%w: source %d is not the output of its transaction", failure.ErrIneligible, i,
 			)
 		}
 		if slices.ContainsFunc(
-			sources[:i], func(o *Source) bool { return o.Outpoint == s.Outpoint },
+			sources[:i], func(o *model.Source) bool { return o.Outpoint == s.Outpoint },
 		) {
-			return fmt.Errorf("%w: source %d repeats an outpoint", ErrIneligible, i)
+			return fmt.Errorf("%w: source %d repeats an outpoint", failure.ErrIneligible, i)
 		}
 	}
 	return nil

@@ -11,6 +11,8 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/emulator/pkg/arkade"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
 	"github.com/arkade-os/executor/pkg/template/packets"
 )
@@ -148,7 +150,7 @@ func (c *compiler) advert(s *schema.Advert, prev []advert) (advert, error) {
 			) {
 			return ad, bad("output %q is advertised twice", name)
 		}
-		if c.t.typ == Proof && c.t.outputs[i].onchain {
+		if c.t.typ == model.Proof && c.t.outputs[i].onchain {
 			return ad, bad("an intent advertises only offchain outputs")
 		}
 		ad.outputs = append(ad.outputs, i)
@@ -172,7 +174,7 @@ func (c *compiler) advert(s *schema.Advert, prev []advert) (advert, error) {
 
 // packets are in ascending type
 func (i *Instance) extension(
-	d *draft, sources []*Source, a *allocation, spends []spending,
+	d *draft, sources []*model.Source, a *allocation, spends []spending,
 ) (extension.Extension, error) {
 	t := i.tmpl
 	var ext extension.Extension
@@ -192,13 +194,16 @@ func (i *Instance) extension(
 	if len(entries) > 0 {
 		emu, err := arkade.NewPacket(entries...)
 		if err != nil {
-			return nil, fmt.Errorf("%w: emulator packet: %v", ErrIneligible, err)
+			return nil, fmt.Errorf("%w: emulator packet: %v", failure.ErrIneligible, err)
 		}
 		ext = append(ext, emu)
 	}
 	if t.packets == nil {
 		if len(ext) > 0 {
-			return nil, fmt.Errorf("%w: assets or a covenant need packets", ErrInvalidTemplate)
+			return nil, fmt.Errorf(
+				"%w: assets or a covenant need packets",
+				failure.ErrInvalidTemplate,
+			)
 		}
 		return nil, unmatched(sources, nil, false)
 	}
@@ -213,7 +218,9 @@ func (i *Instance) extension(
 			body, ok := packets.Find(src.Tx, r.typ)
 			if !ok {
 				return nil, fmt.Errorf(
-					"%w: input %q has no packet %d to copy", ErrIneligible, t.inputs[r.from].name,
+					"%w: input %q has no packet %d to copy",
+					failure.ErrIneligible,
+					t.inputs[r.from].name,
 					r.typ,
 				)
 			}
@@ -224,7 +231,7 @@ func (i *Instance) extension(
 				return nil, fmt.Errorf("packet %d: %w", r.typ, err)
 			}
 			if len(body) == 0 {
-				return nil, fmt.Errorf("%w: packet %d is empty", ErrIneligible, r.typ)
+				return nil, fmt.Errorf("%w: packet %d is empty", failure.ErrIneligible, r.typ)
 			}
 			emitted[r.typ] = packets.Raw(r.typ, body)
 		}
@@ -241,7 +248,7 @@ func (i *Instance) extension(
 		_, _ = hex.Decode(id[:], []byte(t.id))
 		body, err := packets.EncodeAdvertisement(t.packets.records(t, id))
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
+			return nil, fmt.Errorf("%w: %v", failure.ErrInvalidTemplate, err)
 		}
 		ext = append(ext, packets.Raw(packets.TypeAdvertisement, body))
 	}
@@ -249,7 +256,7 @@ func (i *Instance) extension(
 }
 
 // unmatched fails on a source application packet no rule handles, unless drop.
-func unmatched(sources []*Source, handled map[handledKey]bool, drop bool) error {
+func unmatched(sources []*model.Source, handled map[handledKey]bool, drop bool) error {
 	for _, s := range sources {
 		ext, err := extension.NewExtensionFromTx(s.Tx)
 		if errors.Is(err, extension.ErrExtensionNotFound) {
@@ -257,7 +264,7 @@ func unmatched(sources []*Source, handled map[handledKey]bool, drop bool) error 
 		}
 		if err != nil {
 			return fmt.Errorf(
-				"%w: source %s: malformed extension: %v", ErrIneligible, s.Outpoint, err,
+				"%w: source %s: malformed extension: %v", failure.ErrIneligible, s.Outpoint, err,
 			)
 		}
 		for _, p := range ext {
@@ -266,7 +273,7 @@ func unmatched(sources []*Source, handled map[handledKey]bool, drop bool) error 
 				typ == packets.TypeAdvertisement
 			if !generated && !drop && !handled[handledKey{s.Outpoint.Hash, typ}] {
 				return fmt.Errorf(
-					"%w: source %s carries packet %d that no rule handles", ErrIneligible,
+					"%w: source %s carries packet %d that no rule handles", failure.ErrIneligible,
 					s.Outpoint, typ,
 				)
 			}

@@ -7,6 +7,8 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/btcsuite/btcd/wire/v2"
 )
 
@@ -24,7 +26,7 @@ func (c *compiler) fees() error {
 	if s == nil {
 		return nil
 	}
-	if c.t.typ == Virtual {
+	if c.t.typ == model.Virtual {
 		return bad("an offchain template has no fees")
 	}
 	f := &fee{}
@@ -56,7 +58,7 @@ func (i *Instance) feeCap() uint64 {
 
 // the Ark server charges inputs plus outputs at the amounts they receive once it is paid
 func (i *Instance) intentFee(
-	d *draft, sources []*Source, scripts [][]byte, fee Fee,
+	d *draft, sources []*model.Source, scripts [][]byte, fee model.Fee,
 ) (uint64, error) {
 	est, err := arkfee.New(fee.Intent)
 	if err != nil {
@@ -106,17 +108,17 @@ func (i *Instance) intentFee(
 		}
 		charged = next
 	}
-	return 0, fmt.Errorf("%w: the intent fee does not converge", ErrIneligible)
+	return 0, fmt.Errorf("%w: the intent fee does not converge", failure.ErrIneligible)
 }
 
 // addFee rounds f up to whole satoshis.
 func addFee(sum uint64, f arkfee.FeeAmount, err error) (uint64, error) {
 	if err != nil {
-		return 0, fmt.Errorf("%w: fee program: %v", ErrIneligible, err)
+		return 0, fmt.Errorf("%w: fee program: %v", failure.ErrIneligible, err)
 	}
 	v := float64(f)
 	if math.IsNaN(v) || v < 0 || v > maxAmount {
-		return 0, fmt.Errorf("%w: fee %v out of range", ErrIneligible, v)
+		return 0, fmt.Errorf("%w: fee %v out of range", failure.ErrIneligible, v)
 	}
 	return sum + uint64(f.ToSatoshis()), nil
 }

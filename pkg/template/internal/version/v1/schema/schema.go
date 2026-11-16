@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 )
 
 const format = "template/v1"
@@ -437,5 +438,5 @@ func integer(n int64, what string, lo, hi int64) error {
 }
 
 func bad(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
+	return fmt.Errorf("%w: %s", failure.ErrInvalidTemplate, fmt.Sprintf(format, args...))
 }

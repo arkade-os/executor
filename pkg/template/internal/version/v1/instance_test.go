@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/executor/pkg/template/internal/contract"
 	"github.com/arkade-os/executor/pkg/template/internal/model"
 
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/packets"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -20,7 +21,7 @@ import (
 func TestInstantiateWatch(t *testing.T) {
 	tmpl := parseFixture(t, "minimal.json")
 	require.True(t, tmpl.ContextFree())
-	inst, err := tmpl.Instantiate(Context{Keys: testKeys(t)})
+	inst, err := tmpl.Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
 	require.Len(t, inst.Tapscripts(0), 1)
 	require.Len(t, inst.PkScript(0), 34)
@@ -28,7 +29,7 @@ func TestInstantiateWatch(t *testing.T) {
 
 func TestInstantiateCosignerKey(t *testing.T) {
 	keys := testKeys(t)
-	inst, err := parseFixture(t, "minimal.json").Instantiate(Context{Keys: keys})
+	inst, err := parseFixture(t, "minimal.json").Instantiate(model.Context{Keys: keys})
 	require.NoError(t, err)
 	want, err := contract.Build(
 		parseDef(t, `{"contractName":"R","constructorInputs":[],"functions":[
@@ -44,7 +45,7 @@ func TestInstantiateCosignerKey(t *testing.T) {
 	)
 
 	keys.Cosigner = nil
-	_, err = parseFixture(t, "minimal.json").Instantiate(Context{Keys: keys})
+	_, err = parseFixture(t, "minimal.json").Instantiate(model.Context{Keys: keys})
 	require.Error(t, err)
 }
 
@@ -57,11 +58,11 @@ func TestInstantiateVariables(t *testing.T) {
 	}))
 	key := testKey(t, 2).SerializeCompressed()
 	a, err := tmpl.Instantiate(
-		Context{Keys: testKeys(t), Variables: map[string][]byte{"delegate": key}},
+		model.Context{Keys: testKeys(t), Variables: map[string][]byte{"delegate": key}},
 	)
 	require.NoError(t, err)
 	b, err := tmpl.Instantiate(
-		Context{
+		model.Context{
 			Keys:      testKeys(t),
 			Variables: map[string][]byte{"delegate": testKey(t, 4).SerializeCompressed()},
 		},
@@ -75,8 +76,8 @@ func TestInstantiateVariables(t *testing.T) {
 		"x-only":  {"delegate": key[1:]},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := tmpl.Instantiate(Context{Keys: testKeys(t), Variables: vars})
-			require.ErrorIs(t, err, ErrInvalidVariables)
+			_, err := tmpl.Instantiate(model.Context{Keys: testKeys(t), Variables: vars})
+			require.ErrorIs(t, err, failure.ErrInvalidVariables)
 		})
 	}
 }
@@ -85,36 +86,36 @@ func TestInstantiateFromSource(t *testing.T) {
 	// the owner comes from packet 2 of the source: not watchable, and the script follows the packet
 	tmpl := parseDoc(t, ownerFromPacket(t))
 	require.False(t, tmpl.ContextFree())
-	_, err := tmpl.Instantiate(Context{Keys: testKeys(t)})
-	require.ErrorIs(t, err, ErrUnsupported, "a watch needs context-free bindings")
+	_, err := tmpl.Instantiate(model.Context{Keys: testKeys(t)})
+	require.ErrorIs(t, err, failure.ErrUnsupported, "a watch needs context-free bindings")
 
 	alice := ownedSource(t, tmpl, testKey(t, 2), testKey(t, 2))
 	bob := ownedSource(t, tmpl, testKey(t, 4), testKey(t, 4))
-	a, err := tmpl.Instantiate(Context{Keys: testKeys(t), Sources: []*Source{alice}})
+	a, err := tmpl.Instantiate(model.Context{Keys: testKeys(t), Sources: []*model.Source{alice}})
 	require.NoError(t, err)
-	b, err := tmpl.Instantiate(Context{Keys: testKeys(t), Sources: []*Source{bob}})
+	b, err := tmpl.Instantiate(model.Context{Keys: testKeys(t), Sources: []*model.Source{bob}})
 	require.NoError(t, err)
 	require.NotEqual(t, a.PkScript(0), b.PkScript(0))
 	require.Equal(t, pkScript(alice), a.PkScript(0))
 
 	_, err = tmpl.Instantiate(
-		Context{Keys: testKeys(t), Sources: []*Source{sourceWith(t, 100_000)}},
+		model.Context{Keys: testKeys(t), Sources: []*model.Source{sourceWith(t, 100_000)}},
 	)
-	require.ErrorIs(t, err, ErrIneligible, "no packet 2")
+	require.ErrorIs(t, err, failure.ErrIneligible, "no packet 2")
 	_, err = parseFixture(
 		t, "minimal.json",
-	).Instantiate(Context{Keys: testKeys(t), Sources: []*Source{{Outpoint: wire.OutPoint{Index: 7}, Amount: 5}}})
-	require.ErrorIs(t, err, ErrIneligible, "a source without its transaction")
+	).Instantiate(model.Context{Keys: testKeys(t), Sources: []*model.Source{{Outpoint: wire.OutPoint{Index: 7}, Amount: 5}}})
+	require.ErrorIs(t, err, failure.ErrIneligible, "a source without its transaction")
 
-	for name, sources := range map[string][]*Source{
+	for name, sources := range map[string][]*model.Source{
 		"script of another owner": {ownedSource(t, tmpl, testKey(t, 2), testKey(t, 4))},
 		"missing source":          {nil},
 		"too many sources":        {alice, bob},
 		"none":                    {},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := tmpl.Instantiate(Context{Keys: testKeys(t), Sources: sources})
-			require.ErrorIs(t, err, ErrIneligible)
+			_, err := tmpl.Instantiate(model.Context{Keys: testKeys(t), Sources: sources})
+			require.ErrorIs(t, err, failure.ErrIneligible)
 		})
 	}
 }
@@ -125,17 +126,20 @@ func TestSealed(t *testing.T) {
 	require.True(t, tmpl.ContextFree())
 	preimage := bytes.Repeat([]byte{7}, 32)
 	opened := 0
-	c := Context{Keys: testKeys(t), Variables: map[string][]byte{"preimage": []byte("sealed")},
+	c := model.Context{
+		Keys:      testKeys(t),
+		Variables: map[string][]byte{"preimage": []byte("sealed")},
 		Decrypt: func(ct []byte) ([]byte, error) {
 			require.Equal(t, []byte("sealed"), ct)
 			opened++
 			return preimage, nil
-		}}
+		},
+	}
 	inst, err := tmpl.Instantiate(c)
 	require.NoError(t, err)
 	require.Equal(t, 1, opened, "a sealed value opens once per instance")
 	got, err := inst.resolve(
-		inst.tmpl.inputs[0].witness["preimage"], newDraft(Virtual, []*Source{{}}), 0,
+		inst.tmpl.inputs[0].witness["preimage"], newDraft(model.Virtual, []*model.Source{{}}), 0,
 	)
 	require.NoError(t, err)
 	require.Equal(t, preimage, got)
@@ -145,11 +149,16 @@ func TestSealed(t *testing.T) {
 
 	c.Decrypt = func([]byte) ([]byte, error) { return preimage[:31], nil }
 	_, err = tmpl.Instantiate(c)
-	require.ErrorIs(t, err, ErrIneligible, "the plaintext is not a bytes32")
+	require.ErrorIs(t, err, failure.ErrIneligible, "the plaintext is not a bytes32")
 
 	c.Decrypt = nil
 	_, err = tmpl.Instantiate(c)
-	require.ErrorIs(t, err, ErrInvalidVariables, "without decryption the value is the plaintext")
+	require.ErrorIs(
+		t,
+		err,
+		failure.ErrInvalidVariables,
+		"without decryption the value is the plaintext",
+	)
 	c.Variables = map[string][]byte{"preimage": preimage}
 	_, err = tmpl.Instantiate(c)
 	require.NoError(t, err, "a consumer ignoring delegation supplies the plaintext")
@@ -169,7 +178,9 @@ func TestDueAt(t *testing.T) {
 	offchain := parseDoc(t, ownerFromPacket(t)) // schedule before_expiry_seconds 1024
 	src := ownedSource(t, offchain, testKey(t, 2), testKey(t, 2))
 	src.Expiry = now.Add(2 * time.Hour)
-	inst, err := offchain.Instantiate(Context{Keys: testKeys(t), Sources: []*Source{src}})
+	inst, err := offchain.Instantiate(
+		model.Context{Keys: testKeys(t), Sources: []*model.Source{src}},
+	)
 	require.NoError(t, err)
 	require.Equal(t, src.Expiry.Add(-1024*time.Second), inst.DueAt(0, src, now))
 	src.CreatedAt = now.Add(-time.Minute)
@@ -189,7 +200,7 @@ func TestDueAt(t *testing.T) {
 			},
 		}
 	}))
-	inst, err = onchain.Instantiate(Context{Keys: testKeys(t)})
+	inst, err = onchain.Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
 	coin := sourceWith(t, 100_000)
 	coin.Confirms = 1
@@ -201,7 +212,7 @@ func TestDueAt(t *testing.T) {
 	coin.CreatedAt = time.Time{}
 	require.Equal(t, now, inst.DueAt(0, coin, now))
 
-	inst, err = parseFixture(t, "minimal.json").Instantiate(Context{Keys: testKeys(t)})
+	inst, err = parseFixture(t, "minimal.json").Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
 	require.Equal(t, now, inst.DueAt(0, coin, now), "immediate")
 	coin.CreatedAt = now.Add(-time.Minute)
@@ -216,8 +227,8 @@ func TestInstantiateRefusesNonClosureEmulatorLeaf(t *testing.T) {
 		}
 	})
 	tmpl := parseDoc(t, doc)
-	_, err := tmpl.Instantiate(Context{Keys: testKeys(t)})
-	require.ErrorIs(t, err, ErrUnsupported)
+	_, err := tmpl.Instantiate(model.Context{Keys: testKeys(t)})
+	require.ErrorIs(t, err, failure.ErrUnsupported)
 }
 
 func testKey(t testing.TB, n int) *btcec.PublicKey {
@@ -228,9 +239,9 @@ func testKey(t testing.TB, n int) *btcec.PublicKey {
 	return pub
 }
 
-func testKeys(t testing.TB) Keys {
+func testKeys(t testing.TB) model.Keys {
 	t.Helper()
-	return Keys{Server: testKey(t, 1), Emulator: testKey(t, 3), Cosigner: testKey(t, 1)}
+	return model.Keys{Server: testKey(t, 1), Emulator: testKey(t, 3), Cosigner: testKey(t, 1)}
 }
 
 func parseDoc(t *testing.T, doc []byte) *Template {
@@ -248,7 +259,7 @@ func parseFixture(t *testing.T, name string) *Template {
 }
 
 // ownedSource's packet 2 holds packet and its script is tmpl's contract for owner.
-func ownedSource(t *testing.T, tmpl *Template, packet, owner *btcec.PublicKey) *Source {
+func ownedSource(t *testing.T, tmpl *Template, packet, owner *btcec.PublicKey) *model.Source {
 	t.Helper()
 	src := sourceWith(t, 100_000, packets.Raw(packets.TypeState, packet.SerializeCompressed()))
 	c, err := contract.Build(
@@ -386,7 +397,7 @@ func hashLock(t *testing.T) []byte {
 }`)
 }
 
-func parseDef(t *testing.T, doc string) *Definition {
+func parseDef(t *testing.T, doc string) *artifact.Definition {
 	t.Helper()
 	var v any
 	require.NoError(t, json.Unmarshal([]byte(doc), &v))

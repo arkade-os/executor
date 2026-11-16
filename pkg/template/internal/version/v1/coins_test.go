@@ -7,6 +7,8 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 	"github.com/arkade-os/executor/pkg/template/internal/contract"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
@@ -70,17 +72,17 @@ func TestEachCoin(t *testing.T) {
 	)
 	require.NoError(t, err)
 	note := map[string][]byte{"note": {1}}
-	var src []*Source
+	var src []*model.Source
 	for _, n := range []uint64{10_000, 20_000, 30_000} {
-		s := coin(t, n, Asset{ID: assetID(1), Amount: 3})
+		s := coin(t, n, model.Asset{ID: assetID(1), Amount: 3})
 		lockTo(s, c.PkScript)
 		src = append(src, s)
 	}
 	inst, err := tmpl.Instantiate(
-		Context{Keys: testKeys(t), Variables: note, Sources: src, Coins: []int{3}},
+		model.Context{Keys: testKeys(t), Variables: note, Sources: src, Coins: []int{3}},
 	)
 	require.NoError(t, err)
-	act, err := inst.Build(src, Fee{Dust: 330})
+	act, err := inst.Build(src, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	tx := act.Tx.UnsignedTx
 	require.Len(t, tx.TxIn, 3)
@@ -94,15 +96,15 @@ func TestEachCoin(t *testing.T) {
 	require.True(t, extension.IsExtension(tx.TxOut[4].PkScript))
 	require.EqualValues(t, 25_000, tx.TxOut[5].Value)
 
-	watch, err := tmpl.Instantiate(Context{Keys: testKeys(t), Variables: note})
+	watch, err := tmpl.Instantiate(model.Context{Keys: testKeys(t), Variables: note})
 	require.NoError(t, err)
-	again, err := watch.BuildCoins(src, []int{3}, Fee{Dust: 330})
+	again, err := watch.BuildCoins(src, []int{3}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 	require.Equal(t, tx.TxOut, again.Tx.UnsignedTx.TxOut, "a watch takes the coins as built")
 	require.True(t, tmpl.Inputs()[0].AllOutputs)
 
-	_, err = tmpl.Instantiate(Context{Keys: testKeys(t), Variables: note, Sources: src})
-	require.ErrorIs(t, err, ErrIneligible, "three sources for one coin")
+	_, err = tmpl.Instantiate(model.Context{Keys: testKeys(t), Variables: note, Sources: src})
+	require.ErrorIs(t, err, failure.ErrIneligible, "three sources for one coin")
 
 	a, err := inst.allocate(newDraft(inst.tmpl.typ, src), src, 0, 330)
 	require.NoError(t, err)
@@ -116,21 +118,21 @@ func TestEachCoin(t *testing.T) {
 		}
 	})
 	_, err = Parse(indexed, nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "no index with all_outputs")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "no index with all_outputs")
 
 	stray := edited(t, poolDoc(t), func(m map[string]any) {
 		delete(m, "delegation")
 	})
 	single := parseDoc(t, stray)
 	_, err = single.Instantiate(
-		Context{Keys: testKeys(t), Variables: note, Sources: src, Coins: []int{3}},
+		model.Context{Keys: testKeys(t), Variables: note, Sources: src, Coins: []int{3}},
 	)
-	require.ErrorIs(t, err, ErrIneligible, "several coins need all_outputs")
+	require.ErrorIs(t, err, failure.ErrIneligible, "several coins need all_outputs")
 }
 
 // TestAllOutputsMatch: candidates sharing a script are one match, in output order.
 func TestAllOutputsMatch(t *testing.T) {
-	keys := TriggerKeys{Keys: testKeys(t)}
+	keys := model.TriggerKeys{Keys: testKeys(t)}
 	tr := parseDoc(t, poolDoc(t)).Triggers()[0]
 	ptx, _ := streamed7(t, tlv(0, keys.Server.SerializeCompressed(), 1, []byte{1}))
 	tx := ptx.UnsignedTx

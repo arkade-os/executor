@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/stretchr/testify/require"
+
+	"github.com/arkade-os/executor/pkg/template/artifact"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 )
 
 func TestFixtureIDs(t *testing.T) {
@@ -107,7 +109,7 @@ func TestDecodeRejects(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Decode(edited(t, doc, edit))
-			require.ErrorIs(t, err, ErrInvalid)
+			require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 		})
 	}
 }
@@ -118,7 +120,7 @@ func TestPooledOutputValueIsRefused(t *testing.T) {
 			m["outputs"].([]any)[0].(map[string]any)["value"] = map[string]any{"from": from}
 		})
 		_, err := Decode(doc)
-		require.ErrorIs(t, err, ErrInvalid, name)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, name)
 	}
 }
 
@@ -128,7 +130,7 @@ func TestInlineDefinitionErrorIsArtifactOnly(t *testing.T) {
 	})
 	_, err := Decode(doc)
 	require.ErrorIs(t, err, artifact.ErrInvalid)
-	require.NotErrorIs(t, err, ErrInvalid)
+	require.NotErrorIs(t, err, failure.ErrInvalidTemplate)
 }
 
 func TestCanonicalKeepsForms(t *testing.T) {

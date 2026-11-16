@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 )
 
 func (i *Instance) resolve(b byteTemplate, d *draft, input int) ([]byte, error) {
@@ -40,7 +41,7 @@ func (i *Instance) resolve(b byteTemplate, d *draft, input int) ([]byte, error) 
 func (i *Instance) lookup(n string, _ *draft) (asm.Value, error) {
 	typ, ok := i.tmpl.variables[n]
 	if !ok {
-		return asm.Value{}, fmt.Errorf("%w: unknown name %q", ErrInvalidTemplate, n)
+		return asm.Value{}, fmt.Errorf("%w: unknown name %q", failure.ErrInvalidTemplate, n)
 	}
 	return asm.Value{Type: typ, Raw: i.vars[n]}, nil
 }

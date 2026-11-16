@@ -108,6 +108,8 @@ type Emulator interface {
 	SubmitTx(
 		ctx context.Context, tx string, checkpoints []string,
 	) (signedTx string, signedCheckpoints []string, err error)
+	// SubmitOnchainTx cosigns a bitcoin transaction, given a base64 psbt.
+	SubmitOnchainTx(ctx context.Context, tx string) (signedTx string, err error)
 	// SubmitIntent cosigns the proof of an intent.
 	SubmitIntent(ctx context.Context, in execution.Intent) (signedProof string, err error)
 	// SubmitFinalization cosigns the forfeits of an intent once its batch is validated.

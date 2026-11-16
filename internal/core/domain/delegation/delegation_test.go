@@ -11,6 +11,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/arkade-os/executor/pkg/template"
+	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/templates"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -319,8 +320,8 @@ func scriptNum(n int64) string {
 func artifactDocs() map[string][]byte {
 	docs := map[string][]byte{}
 	for _, a := range templates.Artifacts {
-		if parsed, err := template.ParseArtifact(a); err == nil {
-			docs[parsed.ID] = a
+		if parsed, err := artifact.Parse(a); err == nil {
+			docs[parsed.ID()] = a
 		}
 	}
 	return docs

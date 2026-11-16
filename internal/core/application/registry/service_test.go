@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/executor/internal/core/domain/registry"
+	"github.com/arkade-os/executor/pkg/template"
 	"github.com/arkade-os/executor/templates"
 	"github.com/stretchr/testify/require"
 )
@@ -178,6 +179,14 @@ func (r *storedTemplate) AddOrUpdate(_ context.Context, t *registry.Template) er
 	return nil
 }
 
+func TestRegisterTemplateEnforcesSizeLimit(t *testing.T) {
+	doc := templates.Templates["renew.json"]
+	s := NewService(nil, nil, Limits{MaxDocumentBytes: len(doc) - 1})
+	_, err := s.RegisterTemplate(t.Context(), doc)
+	require.ErrorIs(t, err, registry.ErrInvalidDocument)
+	require.ErrorContains(t, err, "exceeds")
+}
+
 func newService(t *testing.T) (*Service, *countingArtifacts, *storedTemplate, registry.Template) {
 	t.Helper()
 	artifacts := &countingArtifacts{docs: map[string]registry.Artifact{}}
@@ -188,7 +197,9 @@ func newService(t *testing.T) (*Service, *countingArtifacts, *storedTemplate, re
 		artifacts.docs[a.ID] = *a
 		docs[a.ID] = a.Document
 	}
-	tpl, err := registry.NewTemplate(templates.Templates["renew.json"], 0, docs)
+	decoded, err := template.Decode(templates.Templates["renew.json"])
+	require.NoError(t, err)
+	tpl, err := registry.NewDecodedTemplate(decoded, docs)
 	require.NoError(t, err)
 	repo := &storedTemplate{t: *tpl}
 	return NewService(artifacts, repo, Limits{}), artifacts, repo, *tpl

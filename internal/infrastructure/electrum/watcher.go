@@ -27,6 +27,9 @@ const (
 	eventsBuffer = 256
 )
 
+// feeTarget is the confirmation target of the fee estimate, in blocks.
+const feeTarget = 2
+
 var errSubscribed = errors.New("electrum watcher already has a subscription")
 
 // Watcher is the chain watcher over one Electrum server.
@@ -130,6 +133,28 @@ func (w *Watcher) Transaction(ctx context.Context, txid string) (*wire.MsgTx, er
 		return nil, err
 	}
 	return tx, nil
+}
+
+func (w *Watcher) Broadcast(ctx context.Context, tx *wire.MsgTx) (string, error) {
+	var raw bytes.Buffer
+	if err := tx.Serialize(&raw); err != nil {
+		return "", err
+	}
+	var txid string
+	err := w.callInto(
+		ctx, &txid, "blockchain.transaction.broadcast", hex.EncodeToString(raw.Bytes()),
+	)
+	return txid, err
+}
+
+// FeeRate asks for the fee of a two block target, which the server gives in BTC per kvB, negative
+// without an estimate.
+func (w *Watcher) FeeRate(ctx context.Context) (float64, error) {
+	var btcPerKvB float64
+	if err := w.callInto(ctx, &btcPerKvB, "blockchain.estimatefee", feeTarget); err != nil {
+		return 0, err
+	}
+	return max(btcPerKvB*1e8/1000, 1), nil
 }
 
 func (s *subscription) Events() <-chan ports.ChainEvent { return s.events }

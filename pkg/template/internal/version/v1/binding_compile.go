@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
 )
 
@@ -55,7 +56,7 @@ func (c *compiler) bind(v schema.Binding, typ string) (byteTemplate, error) {
 	}
 	if lit, ok := b.literal(); ok {
 		if err := asm.CanonicalBytes(typ, lit); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
+			return nil, fmt.Errorf("%w: %v", failure.ErrInvalidTemplate, err)
 		}
 	}
 	if len(b) == 1 && b[0].name != "" && typ != "bytes" {
@@ -74,7 +75,7 @@ func (c *compiler) checkExpression(expr []string) error {
 		}
 	}
 	if err := asm.CheckExpression(expr); err != nil {
-		return fmt.Errorf("%w: expression: %v", ErrInvalidTemplate, err)
+		return fmt.Errorf("%w: expression: %v", failure.ErrInvalidTemplate, err)
 	}
 	return nil
 }

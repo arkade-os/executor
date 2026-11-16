@@ -14,7 +14,7 @@ import (
 
 func TestNewTemplateDerivesFieldsFromDocument(t *testing.T) {
 	doc := testTemplate(t, "renew.json")
-	tpl, err := NewTemplate(doc, 0, testArtifacts(t))
+	tpl, err := newTemplate(doc, testArtifacts(t))
 	require.NoError(t, err)
 	require.Len(t, tpl.ID, 64)
 	require.Equal(t, doc, tpl.Document)
@@ -30,35 +30,49 @@ func TestNewTemplateDerivesFieldsFromDocument(t *testing.T) {
 	require.NoError(t, json.Unmarshal(doc, &v))
 	spaced, err := json.MarshalIndent(v, "", "    ")
 	require.NoError(t, err)
-	again, err := NewTemplate(spaced, 0, testArtifacts(t))
+	again, err := newTemplate(spaced, testArtifacts(t))
 	require.NoError(t, err)
 	require.Equal(t, tpl.ID, again.ID)
 }
 
 func TestNewTemplateNeedsNoArtifactsWhenItReferencesNone(t *testing.T) {
-	tpl, err := NewTemplate(testTemplate(t, "vhtlc_claim.json"), 0, nil)
+	tpl, err := newTemplate(testTemplate(t, "vhtlc_claim.json"), nil)
 	require.NoError(t, err)
 	require.Empty(t, tpl.ArtifactIDs)
 	require.NotEmpty(t, tpl.Params)
 	require.NotEmpty(t, tpl.Type)
 }
 
-func TestNewTemplateRejectsInvalidDocument(t *testing.T) {
+func TestDecodeRejectsInvalidDocument(t *testing.T) {
 	for name, doc := range map[string][]byte{
 		"not json": []byte("nope"), "empty": nil,
 		"wrong schema": []byte(`{"format":"template/v1"}`),
 	} {
-		_, err := NewTemplate(doc, 0, testArtifacts(t))
-		require.ErrorIs(t, err, ErrInvalidDocument, name)
+		_, err := template.Decode(doc)
+		require.Error(t, err, name)
 	}
 }
 
-func TestNewTemplateRefusesAnOnchainTemplate(t *testing.T) {
+func TestNewTemplateServesAnOnchainTemplateOnlyWithAnArkadePacket(t *testing.T) {
 	doc, err := os.ReadFile("../../../../pkg/template/testdata/onchain_release.json")
 	require.NoError(t, err)
-	_, err = NewTemplate(doc, 0, nil)
+	_, err = newTemplate(doc, nil)
 	require.ErrorIs(t, err, ErrUnsupported)
 	require.NotErrorIs(t, err, ErrInvalidDocument)
+	require.ErrorContains(t, err, "arkade packet")
+
+	doc, err = os.ReadFile("../execution/testdata/onchain_arkade.json")
+	require.NoError(t, err)
+	tpl, err := newTemplate(doc, nil)
+	require.NoError(t, err)
+	require.Equal(t, template.Onchain, tpl.Type)
+
+	free := bytes.Replace(doc, []byte(`  "fees": {"from": "funds", "max": 1000},
+`), nil, 1)
+	require.NotEqual(t, doc, free)
+	_, err = newTemplate(free, nil)
+	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorContains(t, err, "must pay their fee")
 }
 
 func TestNewTemplateRefusesAnOffchainTemplateWithoutAnArkadePacket(t *testing.T) {
@@ -67,26 +81,18 @@ func TestNewTemplateRefusesAnOffchainTemplateWithoutAnArkadePacket(t *testing.T)
 	doc = bytes.Replace(doc, []byte(`"type": "proof"`), []byte(`"type": "virtual"`), 1)
 	doc = bytes.Replace(doc, []byte(`,
   "fees": {"from": "funds", "max": 1000}`), nil, 1)
-	_, err = NewTemplate(doc, 0, nil)
+	_, err = newTemplate(doc, nil)
 	require.ErrorIs(t, err, ErrUnsupported)
 	require.NotErrorIs(t, err, ErrInvalidDocument)
 	require.ErrorContains(t, err, "arkade packet")
 
-	_, err = NewTemplate(testTemplate(t, "vhtlc_claim.json"), 0, nil)
+	_, err = newTemplate(testTemplate(t, "vhtlc_claim.json"), nil)
 	require.NoError(t, err)
 }
 
 func TestNewTemplateRejectsAReferencedArtifactThatIsNotStored(t *testing.T) {
-	_, err := NewTemplate(testTemplate(t, "renew.json"), 0, nil)
+	_, err := newTemplate(testTemplate(t, "renew.json"), nil)
 	require.ErrorIs(t, err, ErrInvalidDocument)
-}
-
-func TestNewTemplateEnforcesSizeLimit(t *testing.T) {
-	doc := testTemplate(t, "vhtlc_claim.json")
-	_, err := NewTemplate(doc, len(doc)-1, nil)
-	require.ErrorIs(t, err, ErrInvalidDocument)
-	_, err = NewTemplate(doc, len(doc), nil)
-	require.NoError(t, err)
 }
 
 func TestReenablingATemplateResetsFailuresAndUnknownStatusIsRefused(t *testing.T) {
@@ -104,6 +110,14 @@ func TestReenablingATemplateResetsFailuresAndUnknownStatusIsRefused(t *testing.T
 	require.ErrorIs(t, tpl.SetStatus(""), ErrInvalidStatus)
 	require.Equal(t, TemplateStatusActive, tpl.Status)
 	require.Equal(t, 2, tpl.Failures)
+}
+
+func newTemplate(doc []byte, artifacts map[string][]byte) (*Template, error) {
+	decoded, err := template.Decode(doc)
+	if err != nil {
+		return nil, err
+	}
+	return NewDecodedTemplate(decoded, artifacts)
 }
 
 func testTemplate(t *testing.T, name string) []byte {

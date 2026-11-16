@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	tpl "github.com/arkade-os/executor/pkg/template"
+	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/pkg/template/ecies"
 	"github.com/arkade-os/executor/pkg/template/packets"
 	"github.com/arkade-os/executor/templates"
@@ -395,8 +396,8 @@ func fundingTx(t *testing.T, d *Daemon, sw swap, amount int64) ([]byte, *psbt.Pa
 func artifactDocs() map[string][]byte {
 	docs := map[string][]byte{}
 	for _, doc := range templates.Artifacts {
-		if parsed, err := tpl.ParseArtifact(doc); err == nil {
-			docs[parsed.ID] = doc
+		if parsed, err := artifact.Parse(doc); err == nil {
+			docs[parsed.ID()] = doc
 		}
 	}
 	return docs

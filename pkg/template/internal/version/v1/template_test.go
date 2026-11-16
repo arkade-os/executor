@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/arkade-os/emulator/pkg/arkade"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,10 +20,10 @@ func TestParseMinimal(t *testing.T) {
 	doc := fixture(t, "minimal.json")
 	tmpl, err := Parse(doc, nil)
 	require.NoError(t, err)
-	require.Equal(t, Onchain, tmpl.Type())
-	require.Equal(t, []Slot{{Name: "funds", Onchain: true}}, tmpl.Inputs())
+	require.Equal(t, model.Onchain, tmpl.Type())
+	require.Equal(t, []model.Slot{{Name: "funds", Onchain: true}}, tmpl.Inputs())
 	require.Empty(t, tmpl.Variables())
-	inst, err := tmpl.Instantiate(Context{Keys: testKeys(t)})
+	inst, err := tmpl.Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
 	require.EqualValues(t, 1000, inst.feeCap())
 	require.Len(t, tmpl.ID(), 64)
@@ -121,7 +123,10 @@ func TestParseRejects(t *testing.T) {
 			_, err := Parse(edited(t, doc, edit), nil)
 			require.Error(t, err)
 			require.True(
-				t, errors.Is(err, ErrInvalidTemplate) || errors.Is(err, ErrInvalidArtifact), err,
+				t,
+				errors.Is(err, failure.ErrInvalidTemplate) ||
+					errors.Is(err, failure.ErrInvalidArtifact),
+				err,
 			)
 		})
 	}
@@ -134,7 +139,7 @@ func TestParseRejects(t *testing.T) {
 		),
 		nil,
 	)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "duplicate key")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "duplicate key")
 }
 
 // a program reference is a contract argument and nothing else
@@ -151,7 +156,7 @@ func TestProgramOnlyInContractArguments(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Parse(edited(t, doc, edit), nil)
-			require.ErrorIs(t, err, ErrInvalidTemplate)
+			require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 		})
 	}
 }
@@ -168,8 +173,8 @@ func TestParseProof(t *testing.T) {
 	})
 	tmpl, err := Parse(doc, nil)
 	require.NoError(t, err)
-	require.Equal(t, Proof, tmpl.Type())
-	require.Equal(t, []Slot{{Name: "funds"}}, tmpl.Inputs())
+	require.Equal(t, model.Proof, tmpl.Type())
+	require.Equal(t, []model.Slot{{Name: "funds"}}, tmpl.Inputs())
 
 	pk := func(m map[string]any) map[string]any { return m["packets"].(map[string]any) }
 	rule := func(typ int, action string) map[string]any {
@@ -227,7 +232,7 @@ func TestParseProof(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Parse(edited(t, doc, edit), nil)
-			require.ErrorIs(t, err, ErrInvalidTemplate)
+			require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 		})
 	}
 
@@ -277,7 +282,7 @@ func TestBindingTypes(t *testing.T) {
 			if tc.ok {
 				require.NoError(t, err)
 			} else {
-				require.ErrorIs(t, err, ErrInvalidTemplate)
+				require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 			}
 		})
 	}
@@ -304,7 +309,7 @@ func TestVHTLC(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Parse(edited(t, doc, edit), nil)
-			require.ErrorIs(t, err, ErrInvalidTemplate)
+			require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 		})
 	}
 }
@@ -351,7 +356,7 @@ func TestSecretsOnlyHashedInScripts(t *testing.T) {
 			if tc.ok {
 				require.NoError(t, err)
 			} else {
-				require.ErrorIs(t, err, ErrInvalidTemplate)
+				require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 				require.ErrorContains(t, err, "must be hashed")
 			}
 		})
@@ -365,35 +370,40 @@ func TestArtifactReference(t *testing.T) {
 	def := m["inputs"].([]any)[0].(map[string]any)["contract"].(map[string]any)["definition"]
 	raw, err := json.Marshal(def)
 	require.NoError(t, err)
-	artifact, err := ParseArtifact(raw)
+	art, err := ParseArtifact(raw)
 	require.NoError(t, err)
 
 	referenced := edited(t, doc, func(m map[string]any) {
 		m["inputs"].([]any)[0].(map[string]any)["contract"].(map[string]any)["definition"] = map[string]any{
-			"artifact": artifact.ID,
+			"artifact": art.ID,
 		}
 	})
-	tmpl, err := Parse(referenced, map[string][]byte{artifact.ID: raw})
+	tmpl, err := Parse(referenced, map[string][]byte{art.ID: raw})
 	require.NoError(t, err)
-	require.Equal(t, []string{artifact.ID}, tmpl.Artifacts())
+	require.Equal(t, []string{art.ID}, tmpl.Artifacts())
 	inline, err := Parse(doc, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, inline.ID(), tmpl.ID(), "the id hashes the template as written")
 
 	_, err = Parse(referenced, nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "artifact not provided")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "artifact not provided")
 	other := []byte(strings.Replace(string(raw), "Release", "Other", 1))
-	_, err = Parse(referenced, map[string][]byte{artifact.ID: other})
-	require.ErrorIs(t, err, ErrInvalidTemplate, "the stored document does not hash to the id")
+	_, err = Parse(referenced, map[string][]byte{art.ID: other})
+	require.ErrorIs(
+		t,
+		err,
+		failure.ErrInvalidTemplate,
+		"the stored document does not hash to the id",
+	)
 
 	ids, err := ArtifactIDs(referenced)
 	require.NoError(t, err)
-	require.Equal(t, []string{artifact.ID}, ids)
+	require.Equal(t, []string{art.ID}, ids)
 	ids, err = ArtifactIDs(doc)
 	require.NoError(t, err)
 	require.Empty(t, ids)
 	_, err = ArtifactIDs([]byte("nope"))
-	require.ErrorIs(t, err, ErrInvalidTemplate)
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 }
 
 func TestPushOpcodesRefused(t *testing.T) {
@@ -402,19 +412,19 @@ func TestPushOpcodesRefused(t *testing.T) {
 	_, err := Parse(edited(t, doc, func(m map[string]any) {
 		out(m)["locking"] = fmt.Sprintf("5120$(OP_DATA_2 0x01%02x OP_NIP)", arkade.OP_TXID)
 	}), nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "locking expression")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "locking expression")
 	_, err = Parse(edited(t, doc, func(m map[string]any) {
 		def := m["inputs"].([]any)[0].(map[string]any)["contract"].(map[string]any)["definition"].(map[string]any)
 		leafOf(def, 0)["asm"] = []any{"OP_DATA_1", "<delegate>", "OP_CHECKSIG"}
 	}), nil)
-	require.ErrorIs(t, err, ErrInvalidArtifact, "leaf")
+	require.ErrorIs(t, err, failure.ErrInvalidArtifact, "leaf")
 }
 
 func TestParseRefusesUnbuildable(t *testing.T) {
 	_, err := Parse(
 		edited(t, fixture(t, "renew.json"), func(m map[string]any) { delete(m, "packets") }), nil,
 	)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "a covenant without packets")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "a covenant without packets")
 
 	_, err = Parse(edited(t, mixedPaymentDoc(t, false), func(m map[string]any) {
 		in := m["inputs"].([]any)[0].(map[string]any)
@@ -423,7 +433,7 @@ func TestParseRefusesUnbuildable(t *testing.T) {
 		def := in["contract"].(map[string]any)["definition"].(map[string]any)
 		delete(leafOf(def, 0)["witness"].([]any)[1].(map[string]any), "injected")
 	}), nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "a signature nobody injects")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "a signature nobody injects")
 
 	adverts := func(n int) []byte {
 		return edited(t, mixedPaymentDoc(t, false), func(m map[string]any) {
@@ -453,7 +463,7 @@ func TestParseRefusesUnbuildable(t *testing.T) {
 	_, err = Parse(adverts(14), nil)
 	require.NoError(t, err, "14 records fit")
 	_, err = Parse(adverts(15), nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "15 records do not fit")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "15 records do not fit")
 }
 
 func fixture(t testing.TB, name string) []byte {
@@ -768,7 +778,7 @@ func TestArrayInputs(t *testing.T) {
 	require.NoError(t, err, "an array input on a function the template does not spend")
 
 	_, err = Parse(withInput("release"), nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate)
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 	require.ErrorContains(
 		t,
 		err,

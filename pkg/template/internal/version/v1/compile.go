@@ -8,6 +8,8 @@ import (
 
 	"github.com/arkade-os/executor/pkg/template/artifact"
 
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
 )
 
@@ -39,18 +41,18 @@ func (c *compiler) intVariable(v schema.IntOrVar) (int64, string, error) {
 
 // slotType resolves a slot's type, which defaults to the template's and may differ only in a proof.
 func (c *compiler) slotType(given string) (bool, error) {
-	def := Virtual
-	if c.t.typ == Onchain {
-		def = Onchain
+	def := model.Virtual
+	if c.t.typ == model.Onchain {
+		def = model.Onchain
 	}
 	typ := def
 	if given != "" {
-		typ = Type(given)
+		typ = model.Type(given)
 	}
-	if c.t.typ != Proof && typ != def {
+	if c.t.typ != model.Proof && typ != def {
 		return false, bad("%s slot in a template of type %s", typ, c.t.typ)
 	}
-	return typ == Onchain, nil
+	return typ == model.Onchain, nil
 }
 
 // confineTaptrees: a taptree variable escapes the push size cap, so it fills nothing else.
@@ -70,7 +72,7 @@ func compile(doc *schema.Template, artifacts map[string]*artifact.Artifact) (*Te
 		doc:         doc,
 		named:       map[string]bool{},
 		t: &Template{
-			typ:       Type(doc.Type),
+			typ:       model.Type(doc.Type),
 			variables: map[string]string{},
 			sealed:    map[string]bool{},
 		},
@@ -124,7 +126,11 @@ func unsupported(doc *schema.Template) error {
 	}
 	for _, x := range d.Sealed {
 		if x.Scheme != "" {
-			return fmt.Errorf("%w: sealed scheme %s is not supported", ErrUnsupported, x.Scheme)
+			return fmt.Errorf(
+				"%w: sealed scheme %s is not supported",
+				failure.ErrUnsupported,
+				x.Scheme,
+			)
 		}
 	}
 	all := slices.ContainsFunc(

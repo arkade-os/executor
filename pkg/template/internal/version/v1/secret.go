@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 )
 
 func (c *compiler) declarations() error {
@@ -58,7 +59,7 @@ func (t *Template) open(
 			err = asm.CanonicalBytes(t.variables[n], p)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: sealed %q: %v", ErrIneligible, n, err)
+			return nil, fmt.Errorf("%w: sealed %q: %v", failure.ErrIneligible, n, err)
 		}
 		out[n] = p
 	}

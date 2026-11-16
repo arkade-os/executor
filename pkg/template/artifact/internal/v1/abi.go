@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/internal/jcs"
 )
 
@@ -86,11 +87,11 @@ var (
 func Parse(doc []byte) (*Artifact, error) {
 	v, err := jcs.Decode(doc)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrInvalidArtifact, err)
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("%w: not an object", ErrInvalid)
+		return nil, fmt.Errorf("%w: not an object", failure.ErrInvalidArtifact)
 	}
 	for _, k := range metadata {
 		delete(m, k)
@@ -101,7 +102,7 @@ func Parse(doc []byte) (*Artifact, error) {
 	}
 	b, err := jcs.Canonical(d.Canonical())
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrInvalidArtifact, err)
 	}
 	id := sha256.Sum256(b)
 	return &Artifact{ID: hex.EncodeToString(id[:]), Definition: *d}, nil
@@ -110,7 +111,10 @@ func Parse(doc []byte) (*Artifact, error) {
 // ParseDefinition parses a decoded definition object.
 func ParseDefinition(v any) (*Definition, error) {
 	m, err := object(
-		ErrInvalid, v, "definition", []string{"contractName", "constructorInputs", "functions"},
+		failure.ErrInvalidArtifact,
+		v,
+		"definition",
+		[]string{"contractName", "constructorInputs", "functions"},
 		"structs",
 	)
 	if err != nil {
@@ -355,7 +359,7 @@ func parseStructs(v any) ([]Struct, error) {
 	}
 	var out []Struct
 	for _, e := range list {
-		m, err := object(ErrInvalid, e, "struct", []string{"name", "fields"})
+		m, err := object(failure.ErrInvalidArtifact, e, "struct", []string{"name", "fields"})
 		if err != nil {
 			return nil, err
 		}
@@ -381,7 +385,13 @@ func parseStructs(v any) ([]Struct, error) {
 }
 
 func parseFunction(v any) (*Function, error) {
-	m, err := object(ErrInvalid, v, "function", []string{"name", "leaves"}, "arkade")
+	m, err := object(
+		failure.ErrInvalidArtifact,
+		v,
+		"function",
+		[]string{"name", "leaves"},
+		"arkade",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +400,7 @@ func parseFunction(v any) (*Function, error) {
 		return nil, err
 	}
 	if raw, ok := m["arkade"]; ok {
-		am, err := object(ErrInvalid, raw, "arkade", []string{"inputs", "asm"})
+		am, err := object(failure.ErrInvalidArtifact, raw, "arkade", []string{"inputs", "asm"})
 		if err != nil {
 			return nil, err
 		}
@@ -426,7 +436,7 @@ func parseFunction(v any) (*Function, error) {
 }
 
 func parseLeaf(v any) (*Leaf, error) {
-	m, err := object(ErrInvalid, v, "leaf", []string{"name", "asm", "witness"})
+	m, err := object(failure.ErrInvalidArtifact, v, "leaf", []string{"name", "asm", "witness"})
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +453,11 @@ func parseLeaf(v any) (*Leaf, error) {
 	}
 	for _, w := range ws {
 		wm, err := object(
-			ErrInvalid, w, "witness item", []string{"name", "type", "encoding"}, "injected",
+			failure.ErrInvalidArtifact,
+			w,
+			"witness item",
+			[]string{"name", "type", "encoding"},
+			"injected",
 		)
 		if err != nil {
 			return nil, err
@@ -482,7 +496,7 @@ func validType(t string, structs map[string]bool) bool {
 }
 
 func invalid(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
+	return fmt.Errorf("%w: %s", failure.ErrInvalidArtifact, fmt.Sprintf(format, args...))
 }
 
 // object requires every required key and none outside required and optional.
@@ -537,7 +551,7 @@ func parseFields(v any, what string) ([]Field, error) {
 	}
 	out := make([]Field, 0, len(list))
 	for _, e := range list {
-		m, err := object(ErrInvalid, e, what, []string{"name", "type"})
+		m, err := object(failure.ErrInvalidArtifact, e, what, []string{"name", "type"})
 		if err != nil {
 			return nil, err
 		}

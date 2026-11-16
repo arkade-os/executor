@@ -8,25 +8,16 @@ import (
 
 	"github.com/arkade-os/executor/pkg/template/internal/model"
 
+	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 )
-
-type Type = model.Type
-
-const (
-	Proof   = model.Proof
-	Virtual = model.Virtual
-	Onchain = model.Onchain
-)
-
-type Schedule = model.Schedule
-type Slot = model.Slot
 
 type Template struct {
 	requiredKeys keyRequirements
 	id           string
 	spendID      string
-	typ          Type
+	typ          model.Type
 	variables    map[string]string
 	sealed       map[string]bool // variables a service receives encrypted
 	inputs       []input
@@ -47,20 +38,20 @@ func (t *Template) ID() string { return t.id }
 // SpendID is the hex SHA-256 of the canonical document without its delegation.
 func (t *Template) SpendID() string { return t.spendID }
 
-func (t *Template) Type() Type { return t.typ }
+func (t *Template) Type() model.Type { return t.typ }
 
-func (t *Template) Variables() []Field {
-	out := make([]Field, 0, len(t.variables))
+func (t *Template) Variables() []artifact.Field {
+	out := make([]artifact.Field, 0, len(t.variables))
 	for _, n := range slices.Sorted(maps.Keys(t.variables)) {
-		out = append(out, Field{Name: n, Type: t.variables[n]})
+		out = append(out, artifact.Field{Name: n, Type: t.variables[n]})
 	}
 	return out
 }
 
-func (t *Template) Inputs() []Slot {
-	out := make([]Slot, 0, len(t.inputs))
+func (t *Template) Inputs() []model.Slot {
+	out := make([]model.Slot, 0, len(t.inputs))
 	for _, in := range t.inputs {
-		out = append(out, Slot{
+		out = append(out, model.Slot{
 			Name:       in.name,
 			Onchain:    in.onchain,
 			Schedule:   in.schedule,
@@ -69,6 +60,8 @@ func (t *Template) Inputs() []Slot {
 	}
 	return out
 }
+
+func (t *Template) PaysFees() bool { return t.fee != nil }
 
 // Arkade reports whether a spend carries an arkade packet: an input runs a covenant function.
 func (t *Template) Arkade() bool {
@@ -116,7 +109,7 @@ func (t *Template) isTaptree(name string) bool {
 }
 
 func bad(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", ErrInvalidTemplate, fmt.Sprintf(format, args...))
+	return fmt.Errorf("%w: %s", failure.ErrInvalidTemplate, fmt.Sprintf(format, args...))
 }
 
 func exprsFree(b byteTemplate) bool {

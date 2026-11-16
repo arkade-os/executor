@@ -17,13 +17,11 @@ import (
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 	"github.com/arkade-os/executor/pkg/template/internal/contract"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/packets"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 )
-
-type TriggerKeys = model.TriggerKeys
-type Capture = model.Capture
 
 type Trigger struct {
 	tmpl     *Template
@@ -56,10 +54,10 @@ type captureRule struct {
 
 const outputTaptree = "output:taptree"
 
-var serviceKeys = map[string]func(TriggerKeys) *btcec.PublicKey{
-	"ENCRYPTION_KEY": func(k TriggerKeys) *btcec.PublicKey { return k.Encryption },
-	"SERVER_KEY":     func(k TriggerKeys) *btcec.PublicKey { return k.Server },
-	"EMULATOR_KEY":   func(k TriggerKeys) *btcec.PublicKey { return k.Emulator },
+var serviceKeys = map[string]func(model.TriggerKeys) *btcec.PublicKey{
+	"ENCRYPTION_KEY": func(k model.TriggerKeys) *btcec.PublicKey { return k.Encryption },
+	"SERVER_KEY":     func(k model.TriggerKeys) *btcec.PublicKey { return k.Server },
+	"EMULATOR_KEY":   func(k model.TriggerKeys) *btcec.PublicKey { return k.Emulator },
 }
 
 type valueOf func(name string) (asm.Value, bool, error)
@@ -82,29 +80,29 @@ func (tr *Trigger) Captured() []string {
 // stands for its plaintext. A requirement naming a variable another rule captures is not checked
 // here: it holds only once a group is complete.
 func (tr *Trigger) Match(
-	tx *psbt.Packet, keys TriggerKeys, given map[string][]byte,
+	tx *psbt.Packet, keys model.TriggerKeys, given map[string][]byte,
 	decrypt func([]byte) ([]byte, error),
-) ([]Capture, error) {
+) ([]model.Capture, error) {
 	body, ok := packets.Find(tx.UnsignedTx, tr.packet)
 	if !ok {
-		return nil, fmt.Errorf("%w: no packet %d", ErrNoMatch, tr.packet)
+		return nil, fmt.Errorf("%w: no packet %d", failure.ErrNoMatch, tr.packet)
 	}
 	if !tr.records {
 		fields := map[string][]byte{"raw": body}
 		if !tr.raw {
 			var err error
 			if fields, err = decodeTLV(body); err != nil {
-				return nil, fmt.Errorf("%w: %v", ErrNoMatch, err)
+				return nil, fmt.Errorf("%w: %v", failure.ErrNoMatch, err)
 			}
 		}
 		return tr.match(tx, fields, keys, given, decrypt)
 	}
 	records, err := decodeRecords(body)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNoMatch, err)
+		return nil, fmt.Errorf("%w: %v", failure.ErrNoMatch, err)
 	}
-	var out []Capture
-	err = fmt.Errorf("%w: no record", ErrNoMatch)
+	var out []model.Capture
+	err = fmt.Errorf("%w: no record", failure.ErrNoMatch)
 	for _, fields := range records {
 		c, e := tr.match(tx, fields, keys, given, decrypt)
 		if e != nil {
@@ -120,9 +118,9 @@ func (tr *Trigger) Match(
 }
 
 func (tr *Trigger) match(
-	tx *psbt.Packet, fields map[string][]byte, keys TriggerKeys, given map[string][]byte,
+	tx *psbt.Packet, fields map[string][]byte, keys model.TriggerKeys, given map[string][]byte,
 	decrypt func([]byte) ([]byte, error),
-) ([]Capture, error) {
+) ([]model.Capture, error) {
 	vars := map[string][]byte{}
 	var tree string
 	for _, c := range tr.captures {
@@ -138,7 +136,7 @@ func (tr *Trigger) match(
 			}
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %v", ErrNoMatch, c.variable, err)
+			return nil, fmt.Errorf("%w: %s: %v", failure.ErrNoMatch, c.variable, err)
 		}
 		vars[c.variable] = got
 	}
@@ -164,18 +162,18 @@ func (tr *Trigger) match(
 	}
 	for _, r := range tr.require {
 		if err := r.check(tr, fields, keys, value); err != nil {
-			return nil, fmt.Errorf("%w: %s: %v", ErrNoMatch, r.source, err)
+			return nil, fmt.Errorf("%w: %s: %v", failure.ErrNoMatch, r.source, err)
 		}
 	}
 	var group string
 	if tr.group != "" {
 		g, ok := fields[tr.group]
 		if !ok {
-			return nil, fmt.Errorf("%w: no %s", ErrNoMatch, tr.group)
+			return nil, fmt.Errorf("%w: no %s", failure.ErrNoMatch, tr.group)
 		}
 		group = hex.EncodeToString(g)
 	}
-	var out []Capture
+	var out []model.Capture
 	for i, o := range tx.UnsignedTx.TxOut {
 		if o.Value < tr.minValue {
 			continue
@@ -197,16 +195,16 @@ func (tr *Trigger) match(
 			}
 			v[tree] = hex.EncodeToString(raw)
 		}
-		if k := slices.IndexFunc(out, func(c Capture) bool {
+		if k := slices.IndexFunc(out, func(c model.Capture) bool {
 			return tr.all && bytes.Equal(tx.UnsignedTx.TxOut[c.Output].PkScript, o.PkScript)
 		}); k >= 0 {
 			out[k].Outputs = append(out[k].Outputs, i)
 			continue
 		}
-		out = append(out, Capture{Output: i, Outputs: []int{i}, Group: group, Variables: v})
+		out = append(out, model.Capture{Output: i, Outputs: []int{i}, Group: group, Variables: v})
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%w: no candidate output", ErrNoMatch)
+		return nil, fmt.Errorf("%w: no candidate output", failure.ErrNoMatch)
 	}
 	return out, nil
 }
@@ -383,7 +381,7 @@ func (tr *Trigger) captured(c captureRule, fields map[string][]byte) ([]byte, er
 }
 
 func (r requirement) check(
-	tr *Trigger, fields map[string][]byte, keys TriggerKeys, value valueOf,
+	tr *Trigger, fields map[string][]byte, keys model.TriggerKeys, value valueOf,
 ) error {
 	got, present := fields[r.source]
 	if !present {
@@ -438,7 +436,7 @@ func (r requirement) check(
 }
 
 func evalFree(tokens []string, lookup asm.Lookup) ([]byte, error) {
-	d := newDraft(Virtual, []*Source{{}})
+	d := newDraft(model.Virtual, []*model.Source{{}})
 	d.contextFree = true
 	return d.eval(tokens, 0, lookup)
 }

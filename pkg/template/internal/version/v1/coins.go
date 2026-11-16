@@ -3,6 +3,8 @@ package v1
 import (
 	"fmt"
 	"slices"
+
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
 )
 
 // expand lays out an instance: an input becomes a slot per coin and an output with each a copy per
@@ -11,7 +13,7 @@ func (t *Template) expand(counts []int) (*Template, error) {
 	if counts != nil && len(counts) != len(t.inputs) {
 		return nil, fmt.Errorf(
 			"%w: %d coin counts for %d inputs",
-			ErrIneligible,
+			failure.ErrIneligible,
 			len(counts),
 			len(t.inputs),
 		)
@@ -24,7 +26,12 @@ func (t *Template) expand(counts []int) (*Template, error) {
 			n = counts[s]
 		}
 		if n < 1 || n > 1 && !t.allOutputs(s) {
-			return nil, fmt.Errorf("%w: input %q cannot hold %d coins", ErrIneligible, in.name, n)
+			return nil, fmt.Errorf(
+				"%w: input %q cannot hold %d coins",
+				failure.ErrIneligible,
+				in.name,
+				n,
+			)
 		}
 		for range n {
 			x.groups[s] = append(x.groups[s], len(x.inputs))
@@ -113,7 +120,7 @@ func (i *Instance) firstCoin(slot int) int {
 
 func (i *Instance) relayout(coins []int) (*Instance, error) {
 	if !i.watch {
-		return nil, fmt.Errorf("%w: only a watch takes a new coin layout", ErrUnsupported)
+		return nil, fmt.Errorf("%w: only a watch takes a new coin layout", failure.ErrUnsupported)
 	}
 	x, err := i.base.expand(coins)
 	if err != nil {

@@ -33,17 +33,3 @@ type Leaf = artifact.Leaf
 type Covenant = artifact.Covenant
 type Function = artifact.Function
 type Definition = artifact.Definition
-
-// Artifact is a mutable snapshot kept for existing callers; prefer artifact.Artifact.
-type Artifact struct {
-	ID         string
-	Definition Definition
-}
-
-func ParseArtifact(raw []byte) (*Artifact, error) {
-	a, err := artifact.Parse(raw)
-	if err != nil {
-		return nil, wrap("artifact", err)
-	}
-	return &Artifact{ID: a.ID(), Definition: a.Definition()}, nil
-}

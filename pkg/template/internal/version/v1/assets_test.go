@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +29,7 @@ func TestIssuesAndBurns(t *testing.T) {
 		}
 		m["burns"] = []any{map[string]any{"from": "funds", "asset": a1, "amount": 3}}
 	})
-	inst, d, src := instanceOf(t, doc, coin(t, 100_000, Asset{ID: assetID(1), Amount: 10}))
+	inst, d, src := instanceOf(t, doc, coin(t, 100_000, model.Asset{ID: assetID(1), Amount: 10}))
 	a, err := inst.allocate(d, src, 0, 330)
 	require.NoError(t, err)
 	require.Equal(t, map[string]uint64{a1: 7, a2: 4}, a.assets[0])
@@ -60,7 +62,7 @@ func TestIssuesAndBurns(t *testing.T) {
 		},
 	} {
 		_, err := Parse(edited(t, doc, edit), nil)
-		require.ErrorIs(t, err, ErrInvalidTemplate, name)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, name)
 	}
 }
 

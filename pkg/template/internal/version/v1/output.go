@@ -13,6 +13,8 @@ import (
 
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
 	"github.com/arkade-os/executor/pkg/template/internal/contract"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -192,7 +194,7 @@ func (t *Template) checkBalances() error {
 // outputs. Unindexed outputs take list order and the extension is placed when built.
 func (t *Template) checkPlacement() error {
 	if t.packets != nil && t.packets.index < 0 {
-		if t.typ == Proof && !slices.IsSortedFunc(t.outputs, func(a, b output) int {
+		if t.typ == model.Proof && !slices.IsSortedFunc(t.outputs, func(a, b output) int {
 			return cmp.Compare(btoi(a.onchain), btoi(b.onchain))
 		}) {
 			return bad("a proof template lists its offchain outputs before its onchain ones")
@@ -216,7 +218,7 @@ func (t *Template) checkPlacement() error {
 			return bad("output indexes must fill 0..%d once", len(idx)-1)
 		}
 	}
-	if t.typ != Proof {
+	if t.typ != model.Proof {
 		return nil
 	}
 	for _, o := range t.outputs {
@@ -233,26 +235,37 @@ func (t *Template) checkPlacement() error {
 // allocate balances every input separately; fee comes out of fees.from and dust is the minimum
 // output.
 func (i *Instance) allocate(
-	d *draft, sources []*Source, fee uint64, dust uint64,
+	d *draft, sources []*model.Source, fee uint64, dust uint64,
 ) (*allocation, error) {
 	t := i.tmpl
 	feeCap := i.feeCap()
 	switch {
 	case fee > 0 && t.fee == nil:
 		return nil, fmt.Errorf(
-			"%w: %w: the template pays no fee, asked %d", ErrIneligible, ErrUnaffordable, fee,
+			"%w: %w: the template pays no fee, asked %d",
+			failure.ErrIneligible,
+			failure.ErrUnaffordable,
+			fee,
 		)
 	case t.fee != nil && fee > feeCap:
 		return nil, fmt.Errorf(
-			"%w: %w: fee %d exceeds the cap %d", ErrIneligible, ErrUnaffordable, fee, feeCap,
+			"%w: %w: fee %d exceeds the cap %d",
+			failure.ErrIneligible,
+			failure.ErrUnaffordable,
+			fee,
+			feeCap,
 		)
 	case len(sources) != len(t.inputs):
 		return nil, fmt.Errorf(
-			"%w: %d sources for %d inputs", ErrIneligible, len(sources), len(t.inputs),
+			"%w: %d sources for %d inputs", failure.ErrIneligible, len(sources), len(t.inputs),
 		)
 	}
 	if k := slices.Index(sources, nil); k >= 0 {
-		return nil, fmt.Errorf("%w: input %q has no source", ErrIneligible, t.inputs[k].name)
+		return nil, fmt.Errorf(
+			"%w: input %q has no source",
+			failure.ErrIneligible,
+			t.inputs[k].name,
+		)
 	}
 	a := &allocation{
 		sats:   make([]uint64, len(t.outputs)),
@@ -269,7 +282,7 @@ func (i *Instance) allocate(
 			s := sources[c]
 			if s.Amount > maxAmount {
 				return nil, fmt.Errorf(
-					"%w: input %q holds more than 21e14 satoshis", ErrIneligible, name,
+					"%w: input %q holds more than 21e14 satoshis", failure.ErrIneligible, name,
 				)
 			}
 			held := map[string]uint64{}
@@ -277,7 +290,7 @@ func (i *Instance) allocate(
 				if len(as.ID) != 34 {
 					return nil, fmt.Errorf(
 						"%w: input %q holds an asset id of %d bytes",
-						ErrIneligible,
+						failure.ErrIneligible,
 						name,
 						len(as.ID),
 					)
@@ -310,7 +323,11 @@ func (i *Instance) allocate(
 		for key, n := range pooled {
 			if n > 0 {
 				return nil, fmt.Errorf(
-					"%w: input %q has %d of asset %s without a route", ErrIneligible, name, n, key,
+					"%w: input %q has %d of asset %s without a route",
+					failure.ErrIneligible,
+					name,
+					n,
+					key,
 				)
 			}
 		}
@@ -344,7 +361,7 @@ func (i *Instance) routeSats(
 			if n > left {
 				return 0, fmt.Errorf(
 					"%w: output %q draws %d of %d left",
-					ErrIneligible,
+					failure.ErrIneligible,
 					o.name,
 					n,
 					left,
@@ -357,7 +374,10 @@ func (i *Instance) routeSats(
 	if !copies && t.fee != nil && t.fee.from == slot {
 		if a.fee > left {
 			return 0, fmt.Errorf(
-				"%w: input %q cannot pay fee %d", ErrIneligible, t.inputs[t.fee.from].name, a.fee,
+				"%w: input %q cannot pay fee %d",
+				failure.ErrIneligible,
+				t.inputs[t.fee.from].name,
+				a.fee,
 			)
 		}
 		left -= a.fee
@@ -378,8 +398,12 @@ func (i *Instance) checkDust(a *allocation, dust uint64) error {
 	for k, o := range i.tmpl.outputs {
 		if a.sats[k] < dust {
 			return fmt.Errorf(
-				"%w: %w: output %q holds %d, minimum %d", ErrIneligible, ErrUnaffordable, o.name,
-				a.sats[k], dust,
+				"%w: %w: output %q holds %d, minimum %d",
+				failure.ErrIneligible,
+				failure.ErrUnaffordable,
+				o.name,
+				a.sats[k],
+				dust,
 			)
 		}
 	}
@@ -397,21 +421,21 @@ func btoi(b bool) int {
 func (i *Instance) fixedAmount(b byteTemplate, d *draft, slot int) (uint64, error) {
 	raw, err := i.resolve(b, d, d.index(slot))
 	if err != nil {
-		if !errors.Is(err, ErrIneligible) {
-			err = fmt.Errorf("%w: %w", ErrIneligible, err)
+		if !errors.Is(err, failure.ErrIneligible) {
+			err = fmt.Errorf("%w: %w", failure.ErrIneligible, err)
 		}
 		return 0, err
 	}
 	n, err := asm.ParseScriptNum(raw)
 	if err != nil || n < 1 {
 		return 0, fmt.Errorf(
-			"%w: amount of %d bytes is not a positive number", ErrIneligible, len(raw),
+			"%w: amount of %d bytes is not a positive number", failure.ErrIneligible, len(raw),
 		)
 	}
 	return uint64(n), nil
 }
 
-func (i *Instance) outputScripts(d *draft, sources []*Source) ([][]byte, error) {
+func (i *Instance) outputScripts(d *draft, sources []*model.Source) ([][]byte, error) {
 	out := make([][]byte, len(i.tmpl.outputs))
 	for k, o := range i.tmpl.outputs {
 		var err error
@@ -443,7 +467,7 @@ func credit(m map[string]uint64, key string, n uint64) error {
 	}
 	sum, carry := bits.Add64(m[key], n, 0)
 	if carry != 0 {
-		return fmt.Errorf("%w: asset %s overflows", ErrIneligible, key)
+		return fmt.Errorf("%w: asset %s overflows", failure.ErrIneligible, key)
 	}
 	m[key] = sum
 	return nil
@@ -454,11 +478,16 @@ func checkScript(s []byte, onchain bool) error {
 	if !onchain {
 		if !txscript.IsPayToTaproot(s) {
 			return fmt.Errorf(
-				"%w: an offchain output needs a P2TR script, got %d bytes", ErrIneligible, len(s),
+				"%w: an offchain output needs a P2TR script, got %d bytes",
+				failure.ErrIneligible,
+				len(s),
 			)
 		}
 		if _, err := schnorr.ParsePubKey(s[2:]); err != nil {
-			return fmt.Errorf("%w: an offchain output needs a valid taproot key", ErrIneligible)
+			return fmt.Errorf(
+				"%w: an offchain output needs a valid taproot key",
+				failure.ErrIneligible,
+			)
 		}
 		return nil
 	}
@@ -466,7 +495,7 @@ func checkScript(s []byte, onchain bool) error {
 	for tok.Next() {
 	}
 	if len(s) == 0 || tok.Err() != nil {
-		return fmt.Errorf("%w: malformed script of %d bytes", ErrIneligible, len(s))
+		return fmt.Errorf("%w: malformed script of %d bytes", failure.ErrIneligible, len(s))
 	}
 	return nil
 }

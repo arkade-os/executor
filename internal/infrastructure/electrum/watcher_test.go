@@ -584,3 +584,36 @@ func (s *server) paramsOf(method string) []string {
 	}
 	return out
 }
+
+func TestBroadcastSendsTheRawTransaction(t *testing.T) {
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{})
+	tx.AddTxOut(wire.NewTxOut(1000, []byte{0x51}))
+	var raw bytes.Buffer
+	require.NoError(t, tx.Serialize(&raw))
+	srv := newServer(t, func(method string, params []any) (any, *rpcError) {
+		if method != "blockchain.transaction.broadcast" {
+			return nil, nil
+		}
+		require.Equal(t, []any{hex.EncodeToString(raw.Bytes())}, params)
+		return tx.TxHash().String(), nil
+	})
+	txid, err := newTestWatcher(t, srv).Broadcast(t.Context(), tx)
+	require.NoError(t, err)
+	require.Equal(t, tx.TxHash().String(), txid)
+}
+
+func TestFeeRateConvertsBTCPerKvBAndFloorsAtOne(t *testing.T) {
+	for estimate, want := range map[float64]float64{0.0002: 20, -1: 1, 0.000001: 1} {
+		srv := newServer(t, func(method string, params []any) (any, *rpcError) {
+			if method != "blockchain.estimatefee" {
+				return nil, nil
+			}
+			require.Equal(t, []any{float64(2)}, params)
+			return estimate, nil
+		})
+		rate, err := newTestWatcher(t, srv).FeeRate(t.Context())
+		require.NoError(t, err)
+		require.InDelta(t, want, rate, 1e-9, "estimate %v", estimate)
+	}
+}

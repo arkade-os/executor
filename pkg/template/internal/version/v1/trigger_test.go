@@ -15,6 +15,8 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/packets"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
@@ -23,7 +25,7 @@ import (
 )
 
 func TestTriggerMatch(t *testing.T) {
-	keys := TriggerKeys{Keys: testKeys(t)}
+	keys := model.TriggerKeys{Keys: testKeys(t)}
 	server := keys.Server.SerializeCompressed()
 	to := bytes.Repeat([]byte{7}, 32)
 	push := pushScript(t, to)
@@ -35,7 +37,7 @@ func TestTriggerMatch(t *testing.T) {
 	ptx, tree := streamed(t, tlv(1, []byte("hi"), 2, push, 3, server, 9, []byte{1}))
 	got, err := tr.Match(ptx, keys, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, []Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
+	require.Equal(t, []model.Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
 		"note": hex.EncodeToString(
 			[]byte("hi"),
 		),
@@ -52,18 +54,18 @@ func TestTriggerMatch(t *testing.T) {
 	} {
 		p, _ := streamed(t, body)
 		_, err := tr.Match(p, keys, nil, nil)
-		require.ErrorIs(t, err, ErrNoMatch, name)
+		require.ErrorIs(t, err, failure.ErrNoMatch, name)
 	}
 
 	noExt, _ := streamed(t, nil)
 	_, err = tr.Match(noExt, keys, nil, nil)
-	require.ErrorIs(t, err, ErrNoMatch, "no packet 4")
+	require.ErrorIs(t, err, failure.ErrNoMatch, "no packet 4")
 
 	foreign, _ := streamed(t, tlv(1, nil, 2, push, 3, server))
 	foreign.UnsignedTx.TxOut[0].PkScript = append([]byte{0x51, 0x20}, make([]byte, 32)...)
 	_, err = tr.Match(foreign, keys, nil, nil)
 	require.ErrorIs(
-		t, err, ErrNoMatch, "a tree that does not derive its output's key is no candidate",
+		t, err, failure.ErrNoMatch, "a tree that does not derive its output's key is no candidate",
 	)
 
 	last, _ := streamed(t, tlv(1, []byte("a"), 1, []byte("b"), 2, push, 3, server))
@@ -84,7 +86,7 @@ func TestTriggerMatch(t *testing.T) {
 }
 
 func TestTriggerMinValue(t *testing.T) {
-	keys := TriggerKeys{Keys: testKeys(t)}
+	keys := model.TriggerKeys{Keys: testKeys(t)}
 	body := tlv(
 		1, nil, 2, pushScript(t, bytes.Repeat([]byte{7}, 32)), 3, keys.Server.SerializeCompressed(),
 	)
@@ -103,13 +105,13 @@ func TestTriggerMinValue(t *testing.T) {
 
 	two.UnsignedTx.TxOut[0].Value = 999
 	_, err = tr.Match(two, keys, nil, nil)
-	require.ErrorIs(t, err, ErrNoMatch)
+	require.ErrorIs(t, err, failure.ErrNoMatch)
 
 	for _, v := range []any{-1, "1000"} {
 		trig := baseTrigger()
 		trig["min_value"] = v
 		_, err := Parse(triggerDoc(t, trig), nil)
-		require.ErrorIs(t, err, ErrInvalidTemplate, v)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, v)
 		require.ErrorContains(t, err, "min_value", v)
 	}
 	// a fraction or an unsafe integer is refused by the decoder, before any field is read
@@ -117,7 +119,7 @@ func TestTriggerMinValue(t *testing.T) {
 		trig := baseTrigger()
 		trig["min_value"] = v
 		_, err := Parse(triggerDoc(t, trig), nil)
-		require.ErrorIs(t, err, ErrInvalidTemplate, v)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, v)
 	}
 
 	zero := baseTrigger()
@@ -130,7 +132,7 @@ func TestTriggerMinValue(t *testing.T) {
 
 // TestTriggerRecords: each record is matched on its own and one that fails is skipped.
 func TestTriggerRecords(t *testing.T) {
-	keys := TriggerKeys{Keys: testKeys(t)}
+	keys := model.TriggerKeys{Keys: testKeys(t)}
 	server := keys.Server.SerializeCompressed()
 	to := bytes.Repeat([]byte{7}, 32)
 	push := pushScript(t, to)
@@ -157,10 +159,10 @@ func TestTriggerRecords(t *testing.T) {
 		record(tlv(1, []byte("b"), 2, push, 3, testKey(t, 2).SerializeCompressed())),
 	)
 	_, err = tr.Match(bad, keys, nil, nil)
-	require.ErrorIs(t, err, ErrNoMatch)
+	require.ErrorIs(t, err, failure.ErrNoMatch)
 	trunc, _ := streamed(t, append(record(tlv(1, []byte("a"), 2, push, 3, server)), 0, 9))
 	_, err = tr.Match(trunc, keys, nil, nil)
-	require.ErrorIs(t, err, ErrNoMatch, "a truncated record")
+	require.ErrorIs(t, err, failure.ErrNoMatch, "a truncated record")
 
 	trig["require"] = map[string]any{"tlv:3": "<COSIGNER_KEY>"}
 	_, err = Parse(triggerDoc(t, trig), nil)
@@ -170,7 +172,7 @@ func TestTriggerRecords(t *testing.T) {
 func TestTriggerRequiresAndRaw(t *testing.T) {
 	encryption, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	keys := TriggerKeys{Encryption: encryption.PubKey(), Keys: testKeys(t)}
+	keys := model.TriggerKeys{Encryption: encryption.PubKey(), Keys: testKeys(t)}
 	to := bytes.Repeat([]byte{7}, 32)
 	for name, want := range map[string][]byte{
 		"<ENCRYPTION_KEY>": encryption.PubKey().SerializeCompressed(),
@@ -207,13 +209,13 @@ func TestTriggerRequiresAndRaw(t *testing.T) {
 	)
 	other, _ := streamed(t, to)
 	_, err = tr.Match(other, keys, nil, nil)
-	require.ErrorIs(t, err, ErrNoMatch, "the literal requirement compares the whole body")
+	require.ErrorIs(t, err, failure.ErrNoMatch, "the literal requirement compares the whole body")
 }
 
 // TestTriggerVariableRequirements: a given variable pins a stream, an expression filters, a spliced
 // program runs on the stack, and a sealed variable stands for its plaintext.
 func TestTriggerVariableRequirements(t *testing.T) {
-	keys := TriggerKeys{Keys: testKeys(t)}
+	keys := model.TriggerKeys{Keys: testKeys(t)}
 	to := bytes.Repeat([]byte{7}, 32)
 	push := pushScript(t, to)
 	terms := []byte{0x02, 0x10, 0x27, 0xa2} // 10000 OP_GREATERTHANOREQUAL
@@ -257,7 +259,7 @@ func TestTriggerVariableRequirements(t *testing.T) {
 			given = map[string][]byte{"stream": stream, "terms_hash": h[:]}
 		}
 		_, err := tr.Match(ptx, keys, given, nil)
-		require.ErrorIs(t, err, ErrNoMatch, name)
+		require.ErrorIs(t, err, failure.ErrNoMatch, name)
 	}
 
 	sealed := edited(t, triggerDoc(t, map[string]any{
@@ -293,11 +295,11 @@ func TestTriggerVariableRequirements(t *testing.T) {
 		"the ciphertext is captured",
 	)
 	_, err = tr.Match(ptx, keys, nil, nil)
-	require.ErrorIs(t, err, ErrNoMatch, "no decryption for a sealed requirement")
+	require.ErrorIs(t, err, failure.ErrNoMatch, "no decryption for a sealed requirement")
 }
 
 func TestTriggerGroups(t *testing.T) {
-	keys := TriggerKeys{Keys: testKeys(t)}
+	keys := model.TriggerKeys{Keys: testKeys(t)}
 	doc := edited(t, triggerDoc(t, nil), func(m map[string]any) {
 		c := maps.Clone(m["inputs"].([]any)[0].(map[string]any))
 		c["name"] = "coin2"
@@ -345,7 +347,7 @@ func TestTriggerGroups(t *testing.T) {
 
 	ptx, _ = streamed7(t, tlv(0, op, 1, []byte("g"), 3, []byte("x"), 4, []byte("n")))
 	_, err = trs[1].Match(ptx, keys, map[string][]byte{"operator": op}, nil)
-	require.ErrorIs(t, err, ErrNoMatch, "a requirement on its own capture holds at once")
+	require.ErrorIs(t, err, failure.ErrNoMatch, "a requirement on its own capture holds at once")
 
 	for name, edit := range map[string]func(map[string]any){
 		"no group": func(m map[string]any) {
@@ -362,7 +364,7 @@ func TestTriggerGroups(t *testing.T) {
 		},
 	} {
 		_, err := Parse(edited(t, doc, edit), nil)
-		require.ErrorIs(t, err, ErrInvalidTemplate, name)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, name)
 	}
 }
 
@@ -393,7 +395,7 @@ func TestTriggerParse(t *testing.T) {
 		trig := baseTrigger()
 		edit(trig)
 		_, err := Parse(triggerDoc(t, trig), nil)
-		require.ErrorIs(t, err, ErrInvalidTemplate, name)
+		require.ErrorIs(t, err, failure.ErrInvalidTemplate, name)
 	}
 
 	onchain := edited(t, triggerDoc(t, baseTrigger()), func(m map[string]any) {
@@ -401,7 +403,7 @@ func TestTriggerParse(t *testing.T) {
 		m["inputs"].([]any)[0].(map[string]any)["type"] = "onchain"
 	})
 	_, err := Parse(onchain, nil)
-	require.ErrorIs(t, err, ErrInvalidTemplate, "a triggered input is offchain")
+	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "a triggered input is offchain")
 
 	a := parseDoc(t, triggerDoc(t, baseTrigger()))
 	trig := baseTrigger()

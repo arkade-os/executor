@@ -6,6 +6,8 @@ import (
 
 	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
+	"github.com/arkade-os/executor/pkg/template/internal/failure"
+	"github.com/arkade-os/executor/pkg/template/internal/model"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -25,8 +27,8 @@ func (c *compiler) locks() error {
 		if v == nil {
 			return nil, nil
 		}
-		if c.t.typ == Virtual || c.t.typ == Proof && what == "locktime" {
-			return nil, fmt.Errorf("%w: %s in a %s template", ErrUnsupported, what, c.t.typ)
+		if c.t.typ == model.Virtual || c.t.typ == model.Proof && what == "locktime" {
+			return nil, fmt.Errorf("%w: %s in a %s template", failure.ErrUnsupported, what, c.t.typ)
 		}
 		n, name, err := c.intVariable(*v)
 		return &lockSpec{n: n, variable: name}, err
@@ -101,7 +103,7 @@ func (i *Instance) resolveLocks(csvs []*uint32) error {
 			(n >= locktimeThreshold) != (i.locktime >= locktimeThreshold) {
 			return fmt.Errorf(
 				"%w: locktime %d is not accepted by the spent leaves",
-				ErrIneligible,
+				failure.ErrIneligible,
 				n,
 			)
 		}
@@ -113,7 +115,7 @@ func (i *Instance) resolveLocks(csvs []*uint32) error {
 			seq--
 		}
 		csv := csvs[slot]
-		if csv != nil && t.typ != Virtual {
+		if csv != nil && t.typ != model.Virtual {
 			seq = *csv
 		}
 		if in.sequence != nil {
@@ -121,7 +123,7 @@ func (i *Instance) resolveLocks(csvs []*uint32) error {
 			if csv != nil && !acceptsCSV(seq, *csv) {
 				return fmt.Errorf(
 					"%w: input %q: sequence %d is not accepted by its leaf",
-					ErrIneligible,
+					failure.ErrIneligible,
 					in.name,
 					seq,
 				)

@@ -30,6 +30,7 @@ func (t *Template) Type() Type          { return t.v1.Type() }
 func (t *Template) Variables() []Field  { return t.v1.Variables() }
 func (t *Template) Inputs() []Slot      { return t.v1.Inputs() }
 func (t *Template) Arkade() bool        { return t.v1.Arkade() }
+func (t *Template) PaysFees() bool      { return t.v1.PaysFees() }
 func (t *Template) Artifacts() []string { return t.v1.Artifacts() }
 func (t *Template) Sealed() []string    { return t.v1.Sealed() }
 func (t *Template) ContextFree() bool   { return t.v1.ContextFree() }

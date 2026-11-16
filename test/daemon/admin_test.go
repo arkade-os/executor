@@ -15,7 +15,7 @@ import (
 
 	executorv1 "github.com/arkade-os/executor/api-spec/protobuf/gen/executor/v1"
 	"github.com/arkade-os/executor/internal/config"
-	tpl "github.com/arkade-os/executor/pkg/template"
+	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/templates"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -70,7 +70,7 @@ func TestDeleteArtifactRefusedWhileReferenced(t *testing.T) {
 	code, body = get(t, d.AdminURL+"/v1/admin/artifacts")
 	require.Equal(t, http.StatusOK, code, string(body))
 	var list struct {
-		Artifacts []artifact `json:"artifacts"`
+		Artifacts []artifactView `json:"artifacts"`
 	}
 	require.NoError(t, json.Unmarshal(body, &list))
 	require.Len(t, list.Artifacts, 1)
@@ -178,9 +178,9 @@ func registerShipped(t *testing.T, d *Daemon, name string) (artifactID, template
 	}
 	require.NoError(t, err)
 	for _, file := range slices.Sorted(maps.Keys(templates.Artifacts)) {
-		a, err := tpl.ParseArtifact(templates.Artifacts[file])
+		a, err := artifact.Parse(templates.Artifacts[file])
 		require.NoError(t, err)
-		if !bytes.Contains(doc, []byte(a.ID)) {
+		if !bytes.Contains(doc, []byte(a.ID())) {
 			continue
 		}
 		code, body := post(

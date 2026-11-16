@@ -68,16 +68,16 @@ func TestRegisterArtifactRefused(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, code)
 }
 
-type artifact struct {
+type artifactView struct {
 	ID        string `json:"id"`
 	Document  string `json:"document"`
 	CreatedAt string `json:"createdAt"`
 }
 
-func decodeArtifact(t *testing.T, body []byte) artifact {
+func decodeArtifact(t *testing.T, body []byte) artifactView {
 	t.Helper()
 	var resp struct {
-		Artifact artifact `json:"artifact"`
+		Artifact artifactView `json:"artifact"`
 	}
 	require.NoError(t, json.Unmarshal(body, &resp))
 	return resp.Artifact
