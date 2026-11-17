@@ -64,7 +64,6 @@ type Artifact struct {
 }
 
 const (
-	// maxArray bounds the length of an array type.
 	maxArray = 1024
 	// bounds the flattened constructor and the walk that builds it
 	maxConstructor = 1024
@@ -499,7 +498,6 @@ func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", failure.ErrInvalidArtifact, fmt.Sprintf(format, args...))
 }
 
-// object requires every required key and none outside required and optional.
 func object(
 	sentinel error, v any, what string, required []string, optional ...string,
 ) (map[string]any, error) {

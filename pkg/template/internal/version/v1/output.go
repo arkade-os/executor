@@ -417,7 +417,6 @@ func btoi(b bool) int {
 	return 0
 }
 
-// fixedAmount requires a positive amount.
 func (i *Instance) fixedAmount(b byteTemplate, d *draft, slot int) (uint64, error) {
 	raw, err := i.resolve(b, d, d.index(slot))
 	if err != nil {
@@ -460,7 +459,6 @@ func (i *Instance) outputScripts(d *draft, sources []*model.Source) ([][]byte, e
 	return out, nil
 }
 
-// credit leaves zero out of m.
 func credit(m map[string]uint64, key string, n uint64) error {
 	if n == 0 {
 		return nil

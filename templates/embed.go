@@ -10,7 +10,6 @@ import (
 //go:embed *.json artifacts/*.json
 var files embed.FS
 
-// Artifacts and Templates are the default documents by file name.
 var Artifacts, Templates = documents("artifacts/*.json"), documents("*.json")
 
 func documents(pattern string) map[string][]byte {

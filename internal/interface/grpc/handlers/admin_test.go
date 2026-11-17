@@ -442,7 +442,6 @@ func (s *statusStub) Status(_ context.Context, forecast bool) (executionapp.Stat
 	return s.status, s.err
 }
 
-// summaryStub lists the summaries it was given, in that order.
 type summaryStub struct {
 	Execution
 	rows []ports.Summary
@@ -498,8 +497,6 @@ func delegationIDs(resp *executorv1.ListDelegationsResponse) []int64 {
 	return ids
 }
 
-// registerDefault registers the default artifact and the renewal template, returning the template
-// id.
 func registerDefault(t *testing.T, public *Executor) string {
 	t.Helper()
 	_, err := public.RegisterArtifact(

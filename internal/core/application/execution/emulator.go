@@ -74,7 +74,6 @@ func signCommitment(in *execution.Intent, commitment, remote string) (string, er
 	return tx.B64Encode()
 }
 
-// signForfeits merges what the emulator signed into forfeits.
 func signForfeits(forfeits, signed []string) ([]string, error) {
 	out := make([]string, len(forfeits))
 	for i := range forfeits {
@@ -131,7 +130,6 @@ func merge(original, signed string) (*psbt.Packet, error) {
 	return local, nil
 }
 
-// mergeSignatures adds the signatures a remote signer put on signed to original.
 func mergeSignatures(original, signed *psbt.Packet) {
 	for i := range min(len(original.Inputs), len(signed.Inputs)) {
 		for _, sig := range signed.Inputs[i].TaprootScriptSpendSig {

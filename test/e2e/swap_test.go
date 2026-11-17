@@ -110,14 +110,12 @@ func TestVHTLCRefundAfterLocktime(t *testing.T) {
 	oneSucceeded(t, d, w.Id)
 }
 
-// swap is a VHTLC whose preimage is sealed to the daemon.
 type swap struct {
 	variables      map[string]string
 	receiverScript []byte
 	preimage       []byte
 }
 
-// newSwap seals the preimage of a new swap for the template templateID.
 func newSwap(t *testing.T, d executor, templateID string) swap {
 	t.Helper()
 	preimage := make([]byte, 32)
@@ -144,7 +142,6 @@ func newSwap(t *testing.T, d executor, templateID string) swap {
 	}
 }
 
-// seal encrypts plaintext to the daemon for the template templateID.
 func seal(t *testing.T, d executor, templateID string, plaintext []byte) string {
 	t.Helper()
 	info, err := d.client.GetInfo(t.Context(), &executorv1.GetInfoRequest{})
@@ -154,7 +151,6 @@ func seal(t *testing.T, d executor, templateID string, plaintext []byte) string 
 	return hex.EncodeToString(ciphertext)
 }
 
-// sealTerms seals the preimage with the program to pay and the least amount to pay it.
 func (s swap) sealTerms(t *testing.T, d executor, templateID, program string, least int64) {
 	t.Helper()
 	terms, err := hex.DecodeString(program + daemon.ScriptNum(least))
@@ -162,7 +158,6 @@ func (s swap) sealTerms(t *testing.T, d executor, templateID, program string, le
 	s.variables["preimage"] = seal(t, d, templateID, slices.Concat(s.preimage, terms))
 }
 
-// swapClaim funds a VHTLC watched under the claim template and waits for its claim.
 func swapClaim(t *testing.T, d executor) (clientlib.Vtxo, time.Duration) {
 	t.Helper()
 	claim := registerTemplate(t, d, "vhtlc_claim.json")
@@ -181,7 +176,6 @@ func swapClaim(t *testing.T, d executor) (clientlib.Vtxo, time.Duration) {
 	return paid, took
 }
 
-// streamFunding pays swap from alice in a transaction its stream matches.
 func streamFunding(t *testing.T, d executor, alice testWallet, swap swap) string {
 	t.Helper()
 	addr, pkScript, tree := swapOutput(t, d, swap)
@@ -215,7 +209,6 @@ func streamActive(t *testing.T, d executor, templateID string) {
 	}, 30*time.Second, time.Second, "the stream is not active")
 }
 
-// streamChild waits for the only delegation a stream spawned.
 func streamChild(t *testing.T, d executor) *executorv1.Delegation {
 	t.Helper()
 	var child *executorv1.Delegation
@@ -241,7 +234,6 @@ func streamChild(t *testing.T, d executor) *executorv1.Delegation {
 	return child
 }
 
-// requirePreimage checks that the transaction making paid reveals the preimage of swap.
 func requirePreimage(t *testing.T, d executor, paid clientlib.Vtxo, swap swap) {
 	t.Helper()
 	claimTx, err := d.indexer.GetVirtualTxs(t.Context(), []string{paid.Txid})
@@ -252,7 +244,6 @@ func requirePreimage(t *testing.T, d executor, paid clientlib.Vtxo, swap swap) {
 	require.True(t, bytes.Contains(raw, swap.preimage), "the claim reveals the preimage")
 }
 
-// oneSucceeded waits for exactly one succeeded attempt of the delegation.
 func oneSucceeded(t *testing.T, d executor, id int64) {
 	t.Helper()
 	require.Eventually(t, func() bool {

@@ -72,7 +72,6 @@ func TestOpenErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
-// testDB opens the database at EXECUTOR_DATABASE_URL on a fresh public schema.
 func testDB(t *testing.T) *DB {
 	t.Helper()
 	dsn := testDSN()

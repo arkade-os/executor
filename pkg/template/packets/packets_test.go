@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAdvertisementSpecExamples checks the specification's byte-for-byte examples.
 func TestAdvertisementSpecExamples(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

@@ -115,7 +115,6 @@ func testStreamAdmin(t *testing.T) (*Admin, string) {
 	return NewAdmin(reg, svc, &spawnedStub{by: map[int64]ports.Spawned{}}, nil), stored.ID
 }
 
-// spawnedStub reports what it was told each stream spawned.
 type spawnedStub struct {
 	Execution
 	by map[int64]ports.Spawned

@@ -45,8 +45,8 @@ type Service struct {
 	info        Info
 	limits      Limits
 	onChange    func(delegation.Delegation)
-	addMu       sync.Mutex    // one add at a time, so the fingerprint and cap checks hold
-	changed     chan struct{} // the streams changed
+	addMu       sync.Mutex // one add at a time, so the fingerprint and cap checks hold
+	changed     chan struct{}
 	stop        context.CancelFunc
 	wg          sync.WaitGroup
 }

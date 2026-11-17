@@ -194,13 +194,11 @@ func listAttempts(t *testing.T, d *Daemon, delegationID string) []attempt {
 	return resp.Attempts
 }
 
-// registerClaim registers the VHTLC claim template.
 func registerClaim(t *testing.T, d *Daemon) string {
 	t.Helper()
 	return registerDoc(t, d, fixture(t, "vhtlc_claim.json"))
 }
 
-// claimDelegation registers a delegation for a new swap under the claim template.
 func claimDelegation(t *testing.T, d *Daemon) (delegation, swap) {
 	t.Helper()
 	id := registerClaim(t, d)
@@ -208,15 +206,13 @@ func claimDelegation(t *testing.T, d *Daemon) (delegation, swap) {
 	return registerDelegationWith(t, d, id, sw.variables), sw
 }
 
-// swap is a VHTLC whose preimage is sealed to the daemon.
 type swap struct {
 	variables      map[string]string
 	receiverScript []byte
 	preimage       []byte
-	templateID     string // the template the preimage is sealed for
+	templateID     string
 }
 
-// newSwap seals the preimage of a new swap for the template templateID.
 func newSwap(t *testing.T, d *Daemon, templateID string) swap {
 	t.Helper()
 	preimage := make([]byte, 32)
@@ -249,7 +245,6 @@ func newSwap(t *testing.T, d *Daemon, templateID string) swap {
 	}
 }
 
-// seal is the hex ciphertext of preimage for the template templateID, sealed to the daemon.
 func seal(t *testing.T, d *Daemon, preimage []byte, templateID string) string {
 	t.Helper()
 	encryption, err := btcec.ParsePubKey(encryptionKey(t, d))
@@ -259,7 +254,6 @@ func seal(t *testing.T, d *Daemon, preimage []byte, templateID string) string {
 	return hex.EncodeToString(ciphertext)
 }
 
-// attemptRows counts the attempts with status, any when empty.
 func attemptRows(t *testing.T, d *Daemon, status string) int {
 	t.Helper()
 	var n int

@@ -71,7 +71,6 @@ func testHandlerWithLimits(t *testing.T, maxArtifacts int, limits delegationapp.
 	return h
 }
 
-// testHandlerAndCoins wires the handler over in-memory repositories and the keys of testKeys.
 func testHandlerAndCoins(
 	t *testing.T, maxArtifacts int, limits delegationapp.Limits,
 ) (*Executor, *coins) {
@@ -97,7 +96,6 @@ func testHandlerAndStores(
 	return NewExecutor(reg, svc, execution, "test"), coins, attempts
 }
 
-// testKeys derives the server, emulator and cosigner keys from fixed scalars.
 func testKeys(t *testing.T) (server, emulator, cosigner *btcec.PrivateKey) {
 	t.Helper()
 	keys := make([]*btcec.PrivateKey, 3)

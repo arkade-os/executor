@@ -296,8 +296,6 @@ func TestPublicRateLimitSparesLoopbackAndTheAdminPort(t *testing.T) {
 	}
 }
 
-// metric reads the value of the sample whose name and labels are series, empty when it is not
-// exposed.
 func metric(t *testing.T, d *Daemon, series string) string {
 	t.Helper()
 	code, body := get(t, d.AdminURL+"/metrics")

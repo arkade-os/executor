@@ -337,7 +337,7 @@ func TestUnselectedIntentFailsAndItsCoinsAreQueuedAgain(t *testing.T) {
 	var attempts []attempt
 	require.Eventually(t, func() bool {
 		attempts = listAttempts(t, d, w.ID)
-		return len(attempts) >= 2 // the second attempt registers the coins again
+		return len(attempts) >= 2
 	}, 10*time.Second, 20*time.Millisecond)
 	require.Equal(t, "failed", attempts[len(attempts)-1].Status)
 	require.Contains(t, attempts[len(attempts)-1].Error, "not selected")

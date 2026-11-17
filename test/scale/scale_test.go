@@ -134,7 +134,6 @@ func sample() memory {
 	return memory{sys: ms.Sys, heap: ms.HeapInuse, rss: kb << 10}
 }
 
-// templateIDs finds the default renewal and boarding templates among the stored ones.
 func templateIDs(t *testing.T, db *sql.DB) (renewal, boarding string) {
 	t.Helper()
 	require.NoError(t, db.QueryRowContext(
@@ -150,8 +149,6 @@ func templateIDs(t *testing.T, db *sql.DB) (renewal, boarding string) {
 	return renewal, boarding
 }
 
-// seed stores the delegations and the coins of some of them, and lands those coins at the arkd
-// stand-in. It returns how many offchain scripts the delegations watch.
 func seed(t *testing.T, d *daemon.Daemon, renewal, boarding string) int {
 	t.Helper()
 	ctx := t.Context()
@@ -253,7 +250,6 @@ func hash(kind string, n int) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// owner is one of a thousand valid keys.
 func owner(n int) string {
 	var s btcec.ModNScalar
 	s.SetInt(uint32(n%1000 + 1))

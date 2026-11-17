@@ -218,8 +218,6 @@ func registerDocument(t *testing.T, h *Executor, path string) string {
 	return reg.GetTemplate().GetId()
 }
 
-// renewalVariables are the renewal template's variables for a fixed owner, seed picking the owner
-// key.
 func renewalVariables(t *testing.T, seed ...uint32) map[string]string {
 	t.Helper()
 	var scalar btcec.ModNScalar

@@ -315,7 +315,6 @@ func claimStreamTemplate(t *testing.T, d *Daemon) string {
 	return decodeTemplate(t, body).ID
 }
 
-// registerStreamTemplate registers the claim template with delegations living ttl seconds.
 func registerStreamTemplate(t *testing.T, d *Daemon, ttl int) string {
 	t.Helper()
 	doc := editClaim(t, func(doc map[string]any) {

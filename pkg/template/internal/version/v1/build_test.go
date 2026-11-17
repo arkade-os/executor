@@ -665,7 +665,6 @@ func hashLockWithCovenant(t *testing.T) []byte {
 }`)
 }
 
-// TestBuildSplicedProgram: a spliced program can inspect the coin, and decides the result.
 func TestBuildSplicedProgram(t *testing.T) {
 	to := schnorr.SerializePubKey(testKey(t, 4))
 	doc := edited(t, hashLock(t), func(m map[string]any) {

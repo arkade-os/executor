@@ -379,7 +379,6 @@ func newTestWatcher(t *testing.T, srv *server) *Watcher {
 	return w
 }
 
-// server stands in for an Electrum server: line-delimited JSON-RPC, batches answered as arrays.
 type server struct {
 	handle func(method string, params []any) (any, *rpcError)
 	addrs  string
@@ -391,11 +390,10 @@ type server struct {
 	calls   []recorded
 	batches []int
 
-	// newChain fills these
 	height     int64
 	status     map[string]any
 	headersHex string
-	silent     string // a method that never gets an answer
+	silent     string
 }
 
 type recorded struct {
@@ -411,7 +409,6 @@ func newServer(t *testing.T, handle func(string, []any) (any, *rpcError)) *serve
 	return s
 }
 
-// newChain answers like a node at height: headers whose times grow by ten seconds a block.
 func newChain(t *testing.T, height int64) *server {
 	t.Helper()
 	var s *server

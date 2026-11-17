@@ -70,7 +70,6 @@ func FuzzParseArtifact(f *testing.F) {
 	})
 }
 
-// FuzzEval evaluates a binding against a source transaction, variables reading as v.
 func FuzzEval(f *testing.F) {
 	owner := testKey(f, 2).SerializeCompressed()
 	for _, pkt := range [][]byte{owner, {5, 0, 0, 0, 0, 0, 0, 0}, {}} {

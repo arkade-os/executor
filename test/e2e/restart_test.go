@@ -92,12 +92,11 @@ func realArk(c *config.Config) { c.Ark, c.Indexer = nil, nil }
 // events end.
 type crashingArk struct {
 	ports.Signer
-	afterForfeits bool // dies once its forfeits reached arkd
+	afterForfeits bool
 	crashed       chan struct{}
 	once          sync.Once
 }
 
-// dial points the daemon at arkd through the crash.
 func (a *crashingArk) dial(t *testing.T) func(*config.Config) {
 	return func(c *config.Config) {
 		client, err := arkd.NewClient(arkURL)

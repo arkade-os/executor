@@ -37,21 +37,21 @@ type ark struct {
 	mu                sync.Mutex
 	server            *btcec.PrivateKey
 	vtxos             map[string]clientlib.Vtxo
-	txs               map[string]string // virtual transactions by txid, base64 psbt
+	txs               map[string]string
 	subs              map[string]*subscription
 	txStreams         map[int]chan clientlib.TransactionEvent
 	vtxosDelay        time.Duration
-	SubscriptionSizes []int // scripts per subscription opened
-	VtxosChunks       []int // scripts per GetVtxos call answered
+	SubscriptionSizes []int
+	VtxosChunks       []int
 
-	Submitted    []string // txids in order of submission
+	Submitted    []string
 	refuseSubmit error
-	unreachable  bool // Info fails
+	unreachable  bool
 	intentFee    string
 	boardingFee  string
-	chain        *chain // where the boarding inputs boarded by a batch are spent
+	chain        *chain
 	sessions     sessions
-	once         sync.Once // starts the batches
+	once         sync.Once
 }
 
 type subscription struct {
@@ -59,19 +59,17 @@ type subscription struct {
 	events  chan clientlib.ScriptEvent
 }
 
-// emulator stands in for the emulator: a fixed signer key. It submits and finalizes the
-// transactions it signs at arkd, and returns the other messages as they came.
 type emulator struct {
 	signer        *btcec.PublicKey
 	key           *btcec.PrivateKey
 	ark           *ark
 	mu            sync.Mutex
 	refuse        error
-	hangBefore    bool // SubmitTx waits for its context before reaching arkd
-	hangAfter     bool // SubmitTx waits for its context once arkd finalized
+	hangBefore    bool
+	hangAfter     bool
 	Signed        int
-	Intents       int // intents cosigned
-	Finalizations int // forfeits cosigned
+	Intents       int
+	Finalizations int
 }
 
 func (a *ark) Info(context.Context) (ports.ArkInfo, error) {
@@ -108,35 +106,28 @@ func (a *ark) Info(context.Context) (ports.ArkInfo, error) {
 	}, nil
 }
 
-// Unreachable makes the daemon's question about arkd fail as an arkd that cannot be reached would
-// answer.
 func (a *ark) Unreachable(on bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.unreachable = on
 }
 
-// ChargeIntentFee makes arkd charge sats per vtxo an intent spends, none when zero.
 func (a *ark) ChargeIntentFee(sats int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.intentFee = feeProgram(sats)
 }
 
-// ChargeBoardingFee makes arkd charge sats per boarding input an intent spends, none when zero.
 func (a *ark) ChargeBoardingFee(sats int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.boardingFee = feeProgram(sats)
 }
 
-// Fund lands a vtxo at script created by a real transaction the daemon can fetch, and returns its
-// outpoint.
 func (a *ark) Fund(script string, amount uint64, expiresAt time.Time) string {
 	return a.FundAged(script, amount, 0, expiresAt)
 }
 
-// FundAged is Fund for a vtxo created age ago.
 func (a *ark) FundAged(
 	script string, amount uint64, age time.Duration, expiresAt time.Time,
 ) string {
@@ -166,7 +157,6 @@ func (a *ark) FundAged(
 	return outpoint
 }
 
-// RefuseSubmit makes SubmitTx fail with err, nil accepting again.
 func (a *ark) RefuseSubmit(err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -209,12 +199,10 @@ func (a *ark) GetVirtualTxs(
 	return resp, nil
 }
 
-// Land puts a vtxo at script and tells the subscriptions.
 func (a *ark) Land(script, outpoint string, amount uint64, expiresAt time.Time) {
 	a.landAt(script, outpoint, amount, time.Now(), expiresAt)
 }
 
-// Spend marks a vtxo spent by txid and tells the subscriptions.
 func (a *ark) Spend(outpoint, txid string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -229,7 +217,6 @@ func (a *ark) Spend(outpoint, txid string) {
 	)
 }
 
-// Reconnect tells every subscription its stream came back.
 func (a *ark) Reconnect() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -344,7 +331,6 @@ func (a *ark) GetTransactionsStream(
 	}, nil
 }
 
-// Stream puts an ark transaction on the transaction stream.
 func (a *ark) Stream(tx *psbt.Packet) {
 	raw, err := tx.B64Encode()
 	if err != nil {
@@ -357,14 +343,12 @@ func (a *ark) Stream(tx *psbt.Packet) {
 	}
 }
 
-// Streaming is how many readers the transaction stream has.
 func (a *ark) Streaming() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return len(a.txStreams)
 }
 
-// Subscriptions is how many are open.
 func (a *ark) Subscriptions() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -402,7 +386,6 @@ func (e *emulator) SubmitTx(
 	return signed, signedCheckpoints, nil
 }
 
-// SubmitOnchainTx signs the first input with the signer key tweaked by its arkade script.
 func (e *emulator) SubmitOnchainTx(_ context.Context, raw string) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -465,22 +448,18 @@ func (e *emulator) SubmitFinalization(
 	return forfeits, "", nil
 }
 
-// Refuse makes every call fail with err, nil signing again.
 func (e *emulator) Refuse(err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.refuse = err
 }
 
-// Hang makes SubmitTx wait for its context, before it reaches arkd or once arkd finalized the
-// transaction.
 func (e *emulator) Hang(before, after bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.hangBefore, e.hangAfter = before, after
 }
 
-// signAsServer signs every input whose leaf pushes the server key, as arkd does.
 func (a *ark) signAsServer(raw string) (string, string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(raw), true)
 	if err != nil {

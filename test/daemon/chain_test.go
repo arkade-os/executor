@@ -201,7 +201,6 @@ func coinsOf(t *testing.T, d *Daemon, id string) []coin {
 	return decodeCoins(t, body)
 }
 
-// waitCoins waits for the delegation to have n coins and returns them.
 func waitCoins(t *testing.T, d *Daemon, id string, n int) []coin {
 	t.Helper()
 	var coins []coin
@@ -236,8 +235,6 @@ func atoi(t *testing.T, s string) int64 {
 	return n
 }
 
-// boardingAndRenewal registers a boarding delegation and the renewal delegation whose script its
-// boarding inputs board into; both renew in window seconds.
 func boardingAndRenewal(t *testing.T, d *Daemon, window int64) (board, renewal delegation) {
 	t.Helper()
 	variables := boardingVariables(t)
@@ -268,8 +265,6 @@ func registerDelegationWith(
 	return decodeDelegation(t, body)
 }
 
-// waitAttempts waits for the delegation to have n attempts, the newest with status, and returns
-// them.
 func waitAttempts(t *testing.T, d *Daemon, id string, n int, status string) []attempt {
 	t.Helper()
 	var attempts []attempt

@@ -27,7 +27,6 @@ const (
 	eventsBuffer = 256
 )
 
-// feeTarget is the confirmation target of the fee estimate, in blocks.
 const feeTarget = 2
 
 var errSubscribed = errors.New("electrum watcher already has a subscription")
@@ -35,10 +34,10 @@ var errSubscribed = errors.New("electrum watcher already has a subscription")
 // Watcher is the chain watcher over one Electrum server.
 type Watcher struct {
 	c      *client
-	syncMu sync.Mutex // one resync at a time
+	syncMu sync.Mutex
 
 	mu     sync.Mutex
-	hashes map[string]string // script hash to script, hex
+	hashes map[string]string
 	sub    *subscription
 }
 
@@ -213,7 +212,6 @@ func (w *Watcher) callInto(ctx context.Context, out any, method string, params .
 	return json.Unmarshal(raw, out)
 }
 
-// resync subscribes the headers and every script again and pushes the tip and each script's status.
 func (w *Watcher) resync(ctx context.Context) error {
 	w.syncMu.Lock()
 	defer w.syncMu.Unlock()
@@ -237,7 +235,6 @@ func (w *Watcher) resync(ctx context.Context) error {
 	return w.subscribeHashes(ctx, hashes)
 }
 
-// subscribeHashes subscribes the script hashes in batches and pushes their statuses.
 func (w *Watcher) subscribeHashes(ctx context.Context, hashes []string) error {
 	for chunk := range slices.Chunk(hashes, ports.MaxChainScripts) {
 		calls := make([]call, len(chunk))
@@ -305,7 +302,6 @@ func (w *Watcher) notify(method string, params json.RawMessage) {
 	}
 }
 
-// tipAt is the tip at height, with the median time past of the last eleven blocks.
 func (w *Watcher) tipAt(ctx context.Context, height int64) (delegation.Tip, error) {
 	start := max(height-medianBlocks+1, 0)
 	var res struct {
@@ -328,7 +324,6 @@ func (w *Watcher) tipAt(ctx context.Context, height int64) (delegation.Tip, erro
 	return tip, nil
 }
 
-// emit pushes ev, false when the subscription ended first.
 func (s *subscription) emit(ev ports.ChainEvent) bool {
 	select {
 	case s.events <- ev:
@@ -360,7 +355,6 @@ func scriptHashes(scripts []string) ([]string, error) {
 	return out, nil
 }
 
-// scriptHash is the hex of the reversed sha256 of the hex-encoded output script.
 func scriptHash(script string) (string, error) {
 	b, err := hex.DecodeString(strings.TrimSpace(script))
 	if err != nil {

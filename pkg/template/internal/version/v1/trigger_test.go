@@ -130,7 +130,6 @@ func TestTriggerMinValue(t *testing.T) {
 	)
 }
 
-// TestTriggerRecords: each record is matched on its own and one that fails is skipped.
 func TestTriggerRecords(t *testing.T) {
 	keys := model.TriggerKeys{Keys: testKeys(t)}
 	server := keys.Server.SerializeCompressed()
@@ -212,8 +211,6 @@ func TestTriggerRequiresAndRaw(t *testing.T) {
 	require.ErrorIs(t, err, failure.ErrNoMatch, "the literal requirement compares the whole body")
 }
 
-// TestTriggerVariableRequirements: a given variable pins a stream, an expression filters, a spliced
-// program runs on the stack, and a sealed variable stands for its plaintext.
 func TestTriggerVariableRequirements(t *testing.T) {
 	keys := model.TriggerKeys{Keys: testKeys(t)}
 	to := bytes.Repeat([]byte{7}, 32)

@@ -49,7 +49,6 @@ type Intent struct {
 	HasArkadePacket bool   // the transaction carries an arkade packet, which the emulator cosigns
 }
 
-// Vtxos is how many inputs are vtxos.
 func (in *Intent) Vtxos() int {
 	n := len(in.Tx.UnsignedTx.TxIn)
 	for _, boarding := range in.Boarding {
@@ -235,8 +234,6 @@ func BuildIntent(
 	return in, nil
 }
 
-// Forfeits builds one forfeit per forfeited input, each spending its coin and the connector
-// arkd assigned to it, keyed by the coin outpoint.
 func (in *Intent) Forfeits(
 	connectors map[string]*psbt.Packet, forfeitScript []byte,
 ) ([]string, error) {

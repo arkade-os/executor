@@ -43,8 +43,6 @@ const (
 	assetAmount    = uint64(1_000)
 )
 
-// registerTemplate registers the template file of pkg/template/testdata, else of templates/, with
-// its artifacts.
 func registerTemplate(t *testing.T, d executor, file string) string {
 	t.Helper()
 	doc := fixture(t, file)
@@ -110,15 +108,11 @@ func registerDelegation(
 	return resp.Delegation
 }
 
-// renewalDelegation registers a delegation on o's address at the default renewal paying up to
-// maxFee.
 func renewalDelegation(t *testing.T, d executor, o owner, maxFee int64) *executorv1.Delegation {
 	t.Helper()
 	return registerDelegation(t, d, registerTemplate(t, d, "renew.json"), o.variables(maxFee))
 }
 
-// boardingDelegations registers delegations on o's boarding address and on the renewal address it
-// boards into.
 func boardingDelegations(
 	t *testing.T, d executor, o owner,
 ) (boarding, renewal *executorv1.Delegation) {
@@ -142,8 +136,6 @@ func attemptsOf(t *testing.T, d executor, id int64) []*executorv1.Attempt {
 	return resp.Attempts
 }
 
-// landed waits for n coins at to's script from the batches of by's succeeded attempts, oldest
-// first.
 func landed(t *testing.T, d executor, by, to *executorv1.Delegation, n int) []clientlib.Vtxo {
 	t.Helper()
 	var coins []clientlib.Vtxo
@@ -177,7 +169,6 @@ func vtxosAt(t *testing.T, d executor, script string) []clientlib.Vtxo {
 	return resp.Vtxos
 }
 
-// waitForVtxo waits for a spendable vtxo at script not made by funding.
 func waitForVtxo(t *testing.T, d executor, script, funding string) clientlib.Vtxo {
 	t.Helper()
 	var found clientlib.Vtxo
@@ -245,7 +236,6 @@ func btc(sats int64) string {
 	return strings.TrimSuffix(btcutil.Amount(sats).Format(btcutil.AmountBTC), " BTC")
 }
 
-// chargeIntentFees makes arkd charge fees until the test ends.
 func chargeIntentFees(t *testing.T, fees string) {
 	t.Helper()
 	code, _ := postJSON(
@@ -344,7 +334,6 @@ func keysOf(t *testing.T, d executor) template.Keys {
 	}
 }
 
-// parseKey reads a hex key, x-only or compressed.
 func parseKey(t *testing.T, s string) *btcec.PublicKey {
 	t.Helper()
 	raw, err := hex.DecodeString(s)
@@ -403,7 +392,6 @@ func onchainTotal(b *wallettypes.Balance) uint64 {
 	return total
 }
 
-// fundedWallet is a wallet with a settled offchain balance.
 func fundedWallet(t *testing.T) testWallet {
 	t.Helper()
 	ctx := t.Context()

@@ -130,7 +130,6 @@ func TestEachCoin(t *testing.T) {
 	require.ErrorIs(t, err, failure.ErrIneligible, "several coins need all_outputs")
 }
 
-// TestAllOutputsMatch: candidates sharing a script are one match, in output order.
 func TestAllOutputsMatch(t *testing.T) {
 	keys := model.TriggerKeys{Keys: testKeys(t)}
 	tr := parseDoc(t, poolDoc(t)).Triggers()[0]

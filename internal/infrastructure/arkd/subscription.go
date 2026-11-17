@@ -10,7 +10,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// subscription merges one arkd subscription per shard of at most ports.MaxScripts scripts.
 type subscription struct {
 	ctx        context.Context
 	cancel     context.CancelFunc

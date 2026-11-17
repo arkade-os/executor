@@ -14,7 +14,6 @@ const payTo = "5120f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce03
 
 func onchainFee(int) uint64 { return 600 }
 
-// TestUnindexedProofPlacesTheExtension: list order, the extension after the offchain outputs.
 func TestUnindexedProofPlacesTheExtension(t *testing.T) {
 	doc := edited(t, mixedPaymentDoc(t, false), func(m map[string]any) {
 		delete(m, "packets")
@@ -48,7 +47,6 @@ func TestUnindexedProofPlacesTheExtension(t *testing.T) {
 	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "output_index goes with indexed outputs")
 }
 
-// TestValueDraws: an output sums its draws, and every input has one remainder draw.
 func TestValueDraws(t *testing.T) {
 	doc := edited(t, twoInputsOnchain(t), func(m map[string]any) {
 		m["outputs"] = []any{
@@ -72,7 +70,6 @@ func TestValueDraws(t *testing.T) {
 	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "two remainder draws on a")
 }
 
-// TestIndexedInputs: indexes reorder the slots.
 func TestIndexedInputs(t *testing.T) {
 	doc := edited(t, twoInputsOnchain(t), func(m map[string]any) {
 		in := m["inputs"].([]any)
@@ -91,8 +88,6 @@ func TestIndexedInputs(t *testing.T) {
 	require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 }
 
-// TestLeafTimelocks: CLTV sets nLockTime, CSV the input's nSequence, and stated values must satisfy
-// the leaf.
 func TestLeafTimelocks(t *testing.T) {
 	doc := edited(t, fixture(t, "minimal.json"), func(m map[string]any) {
 		releaseFn(m)["asm"] = []any{

@@ -32,10 +32,10 @@ type Config struct {
 	MinDelegationExpiry time.Duration
 	ExpiryInterval      time.Duration
 	PruneAfter          time.Duration // how long after expiry a spawned delegation is deleted
-	OffchainConcurrency int           // offchain attempts in flight at once
+	OffchainConcurrency int
 	AttemptTimeout      time.Duration // building and signing an offchain attempt
 	RetryDelay          time.Duration // before the coins of a failed attempt are tried again
-	IntentsPerBatch     int           // intents arkd takes per batch
+	IntentsPerBatch     int
 	IntentTimeout       time.Duration // an intent not selected by then is forgotten and queued again
 	Reserve             time.Duration // before expiry, the latest a coin enters a batch
 	BanDuration         time.Duration // the coins of an intent a batch failed on keep out of the queue

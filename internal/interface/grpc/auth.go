@@ -15,7 +15,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// AdminUser is an operator allowed on the admin port.
 type AdminUser struct {
 	Name         string
 	PasswordHash string
