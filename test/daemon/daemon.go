@@ -43,7 +43,6 @@ type Daemon struct {
 	stop     func()
 }
 
-// Start resets the database, boots the daemon on free ports and stops it with the test.
 // Defaults are off and the admin port takes no credentials unless an option says otherwise.
 func Start(t *testing.T, opts ...func(*config.Config)) *Daemon {
 	t.Helper()
@@ -56,7 +55,6 @@ func Start(t *testing.T, opts ...func(*config.Config)) *Daemon {
 	)
 }
 
-// DatabaseURL is the postgres the suites run against.
 func DatabaseURL() string {
 	if dsn := os.Getenv("EXECUTOR_DATABASE_URL"); dsn != "" {
 		return dsn
@@ -64,7 +62,6 @@ func DatabaseURL() string {
 	return "postgres://postgres@localhost:5432/executor?sslmode=disable"
 }
 
-// ResetDatabase empties the database at dsn and keeps it open until the test ends.
 func ResetDatabase(t *testing.T, dsn string) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("postgres", dsn)
@@ -81,11 +78,8 @@ func ScriptNum(n int64) string {
 	return hex.EncodeToString(b)
 }
 
-// Stop shuts the daemon down, leaving the database and the stand-ins as they are.
 func (d *Daemon) Stop() { d.stop() }
 
-// Restart stops the daemon and boots another over the same database and stand-ins, their counters
-// reset.
 func (d *Daemon) Restart(t *testing.T, opts ...func(*config.Config)) *Daemon {
 	t.Helper()
 	d.stop()
@@ -137,7 +131,6 @@ func WithDelegationExpiry(min, interval, pruneAfter time.Duration) func(*config.
 	}
 }
 
-// WithVtxosDelay makes every GetVtxos answer take d.
 func WithVtxosDelay(d time.Duration) func(*config.Config) {
 	return func(c *config.Config) { c.Ark.(*ark).vtxosDelay = d }
 }
@@ -159,7 +152,6 @@ func WithAdminUser(t *testing.T, name, password string) func(*config.Config) {
 	return func(c *config.Config) { c.AdminUsers = users }
 }
 
-// Dial connects to a gRPC server in the clear and closes with the test.
 func Dial(t *testing.T, addr string) *grpc.ClientConn {
 	t.Helper()
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -168,7 +160,6 @@ func Dial(t *testing.T, addr string) *grpc.ClientConn {
 	return conn
 }
 
-// FreePort is a TCP port nothing listens on.
 func FreePort(t *testing.T) int {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")

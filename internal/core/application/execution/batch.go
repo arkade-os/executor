@@ -59,7 +59,6 @@ func (r *registration) proofTxid() string {
 	return proof.Txid
 }
 
-// register asks the worker to register the entries' intents.
 func (b *batchWorker) register(entries []execution.Entry) {
 	select {
 	case b.commands <- entries:
@@ -134,7 +133,6 @@ func (b *batchWorker) quiesce(d time.Duration) {
 	}
 }
 
-// settled tells Stop that no batch holds our intents.
 func (b *batchWorker) settled() {
 	if b.inFlight == nil && b.idle != nil {
 		close(b.idle)
@@ -326,7 +324,6 @@ func (b *batchWorker) started(ev ports.BatchStarted) {
 	b.unfollow(r)
 }
 
-// unfollow stops the trees of a batch coming.
 func (b *batchWorker) unfollow(r *current) {
 	if b.s.ctx.Err() != nil {
 		return
@@ -336,7 +333,6 @@ func (b *batchWorker) unfollow(r *current) {
 	}
 }
 
-// signing sends our key's nonces when the batch asks it to cosign.
 func (b *batchWorker) signing(ev ports.TreeSigningStarted) {
 	r := b.inFlight
 	if r == nil || r.id != ev.ID {
@@ -371,7 +367,6 @@ func (b *batchWorker) signing(ev ports.TreeSigningStarted) {
 	r.session = session
 }
 
-// signatures answers the aggregated nonces with our partial signatures.
 func (b *batchWorker) signatures(ev ports.TreeNoncesAggregated) {
 	r := b.inFlight
 	if r == nil || r.id != ev.ID || r.session == nil {
@@ -388,7 +383,6 @@ func (b *batchWorker) signatures(ev ports.TreeNoncesAggregated) {
 	}
 }
 
-// finalization hands arkd the forfeits of every intent.
 func (b *batchWorker) finalization(ev ports.BatchFinalization) {
 	r := b.inFlight
 	if r == nil || r.id != ev.ID || r.session == nil {
@@ -422,8 +416,6 @@ func (b *batchWorker) finalization(ev ports.BatchFinalization) {
 	}
 }
 
-// forfeit has the emulator cosign the forfeits and the boarding inputs when the covenant needs it,
-// signs them and submits them.
 func (b *batchWorker) forfeit(
 	h *registration, forfeits []string, connectors tree.FlatTxTree, commitmentTx string,
 ) error {
@@ -515,7 +507,6 @@ func (b *batchWorker) expire(now time.Time) {
 	}
 }
 
-// enqueue puts the ready coins of an intent delegation in the queue; the plan decides when they go.
 func (s *Service) enqueue(ev intentReady) {
 	e := execution.NewEntry(ev.coins, s.limits.Reserve)
 	if _, ok := s.entries[e.DelegationID]; !ok {
@@ -529,8 +520,6 @@ func (s *Service) dequeue(delegationID int64) {
 	delete(s.entries, delegationID)
 }
 
-// withdraw takes the delegation's entry out of the queue while it is not reserved, only when it
-// holds one of outpoints if any are given, and gives its coins back.
 func (s *Service) withdraw(delegationID int64, outpoints ...string) {
 	e, ok := s.entries[delegationID]
 	if !ok || e.Reserved {

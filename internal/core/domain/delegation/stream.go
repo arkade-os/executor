@@ -44,7 +44,7 @@ type SpawnParams struct {
 	Output   []byte            // script of the streamed output
 	Captured map[string]string // what the trigger captured for it
 	Now      time.Time
-	Keys     template.Keys // Delegate is the stream's key
+	Keys     template.Keys
 	Decrypt  func([]byte) ([]byte, error)
 	Network  arklib.Network
 }
@@ -91,7 +91,6 @@ func NewStream(p StreamParams) (*Stream, error) {
 	return &Stream{TemplateID: p.Template.ID(), Variables: p.Variables, Status: StatusActive}, nil
 }
 
-// Given is what the stream's variables hold.
 func (s Stream) Given() (map[string][]byte, error) { return decodeVariables(s.Variables) }
 
 func (s *Stream) Cancel() error {

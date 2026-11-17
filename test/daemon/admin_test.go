@@ -116,7 +116,6 @@ func TestDefaultTemplates(t *testing.T) {
 		id = tpl.GetId()
 	}
 
-	// the operator's choice survives a restart
 	_, err = d.Admin.UpdateTemplate(
 		t.Context(), &executorv1.UpdateTemplateRequest{Id: id, Status: "disabled"},
 	)
@@ -168,8 +167,6 @@ func registerRenewal(t *testing.T, d *Daemon) (artifactID, templateID string) {
 	return registerShipped(t, d, "renew.json")
 }
 
-// registerShipped registers a template of templates/ with the artifacts it references; artifactID
-// is the DelegatedVtxo one.
 func registerShipped(t *testing.T, d *Daemon, name string) (artifactID, templateID string) {
 	t.Helper()
 	doc, err := os.ReadFile("../../pkg/template/testdata/" + name)
@@ -221,7 +218,6 @@ func basic(user, pass string) string {
 	return base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
 }
 
-// send gets url with basic credentials when user is set and drains the body.
 func send(t *testing.T, url, user, pass string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)

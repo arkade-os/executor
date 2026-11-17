@@ -142,7 +142,6 @@ func TestParseRejects(t *testing.T) {
 	require.ErrorIs(t, err, failure.ErrInvalidTemplate, "duplicate key")
 }
 
-// a program reference is a contract argument and nothing else
 func TestProgramOnlyInContractArguments(t *testing.T) {
 	doc := delegateArgument(t)
 	out := func(m map[string]any) map[string]any { return m["outputs"].([]any)[0].(map[string]any) }

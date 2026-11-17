@@ -10,8 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIssuesAndBurns: new issues take the first groups, a burn leaves its units unassigned and more
-// of an existing asset joins that asset's group.
 func TestIssuesAndBurns(t *testing.T) {
 	a1, a2 := hex.EncodeToString(assetID(1)), hex.EncodeToString(assetID(2))
 	doc := edited(t, mixedPaymentDoc(t, true), func(m map[string]any) {

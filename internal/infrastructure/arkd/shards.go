@@ -4,7 +4,7 @@ package arkd
 type shards struct {
 	size  int
 	sets  []map[string]struct{}
-	where map[string]int // the set of each script
+	where map[string]int
 }
 
 // place assigns scripts to sets with room, opening new ones as needed; the result lists the

@@ -165,7 +165,6 @@ func (i *Instance) positions(ext int) []int {
 	return out
 }
 
-// place orders outs, the template outputs then the extension, by pos and ext.
 func place(outs []*wire.TxOut, pos []int, ext int) []*wire.TxOut {
 	placed := make([]*wire.TxOut, len(outs))
 	for k, p := range pos {

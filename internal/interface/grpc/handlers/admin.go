@@ -355,7 +355,6 @@ func toAttempt(a delegation.Attempt, kind template.Type) *executorv1.Attempt {
 	}
 }
 
-// encodeCursor is the opaque cursor of c, empty at the top of the order.
 func encodeCursor(c ports.Cursor) string {
 	if c.ID == 0 {
 		return ""

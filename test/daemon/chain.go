@@ -24,7 +24,7 @@ type chain struct {
 	mu           sync.Mutex
 	utxos        map[string][]ports.Output
 	txs          map[string]*wire.MsgTx
-	times        map[int64]time.Time // block times by height
+	times        map[int64]time.Time
 	height       int64
 	down         bool
 	sub          *chainSub
@@ -43,8 +43,6 @@ type chainSub struct {
 	scripts map[string]struct{} // guarded by c.mu
 }
 
-// Fund puts a utxo in the mempool at script, paid by a transaction the daemon can fetch, and tells
-// the subscription; the outpoint comes back.
 func (c *chain) Fund(script string, amount uint64) string {
 	pkScript, err := hex.DecodeString(script)
 	if err != nil {
@@ -71,7 +69,6 @@ func (c *chain) Fund(script string, amount uint64) string {
 	return outpoint
 }
 
-// Mine adds n blocks, the first one holding what is in the mempool.
 func (c *chain) Mine(n int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -96,8 +93,6 @@ func (c *chain) Mine(n int) {
 	}
 }
 
-// SetMedianTime gives the last blocks the time at, which moves the median time past, and pushes the
-// tip.
 func (c *chain) SetMedianTime(at time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -107,14 +102,12 @@ func (c *chain) SetMedianTime(at time.Time) {
 	c.pushTip()
 }
 
-// Drop cuts the connection: nothing is pushed and nothing answers until Reconnect.
 func (c *chain) Drop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.down = true
 }
 
-// Reconnect brings the connection back; the subscription gets the tip and every status again.
 func (c *chain) Reconnect() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -124,14 +117,12 @@ func (c *chain) Reconnect() {
 	}
 }
 
-// UnspentCalls is how many times the daemon listed script.
 func (c *chain) UnspentCalls(script string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.unspentCalls[script]
 }
 
-// ResetCalls forgets the listings so far.
 func (c *chain) ResetCalls() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -185,7 +176,6 @@ func (c *chain) Transaction(_ context.Context, txid string) (*wire.MsgTx, error)
 	return tx, nil
 }
 
-// Broadcast takes the transaction into the mempool: what it spends leaves the utxos.
 func (c *chain) Broadcast(_ context.Context, tx *wire.MsgTx) (string, error) {
 	c.mu.Lock()
 	if c.refuse != nil {
@@ -200,10 +190,8 @@ func (c *chain) Broadcast(_ context.Context, tx *wire.MsgTx) (string, error) {
 	return tx.TxHash().String(), nil
 }
 
-// FeeRate is one satoshi per virtual byte.
 func (c *chain) FeeRate(context.Context) (float64, error) { return 1, nil }
 
-// RefuseBroadcast makes Broadcast fail with err, nil taking transactions again.
 func (c *chain) RefuseBroadcast(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -246,7 +234,6 @@ func (s *chainSub) Stop() {
 	}
 }
 
-// confirmed is the utxo at outpoint when a block holds it.
 func (c *chain) confirmed(outpoint string) (ports.Output, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -260,7 +247,6 @@ func (c *chain) confirmed(outpoint string) (ports.Output, bool) {
 	return ports.Output{}, false
 }
 
-// spend takes the utxo at outpoint away and tells the subscription.
 func (c *chain) spend(outpoint string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -280,7 +266,6 @@ func (c *chain) tip() delegationdomain.Tip {
 	}
 }
 
-// status is the hash of the script's utxos, empty when it has none.
 func (c *chain) status(script string) string {
 	utxos := slices.Clone(c.utxos[script])
 	if len(utxos) == 0 {

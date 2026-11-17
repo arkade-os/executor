@@ -25,35 +25,31 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// batchExpiry is what the stand-in gives every batch.
 var batchExpiry = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1024}
 
-// registered is an intent the stand-in holds for a batch.
 type registered struct {
 	id        string
-	outpoints []string // the vtxos it spends
+	outpoints []string
 	boardings []boardingInput
-	outputs   []*wire.TxOut // the offchain ones
+	outputs   []*wire.TxOut
 	cosigners []string
 }
 
-// boardingInput is an onchain input of an intent.
 type boardingInput struct {
 	outpoint wire.OutPoint
 	prevOut  *wire.TxOut
 }
 
-// batch is a batch in flight: who was selected, confirmed and what they sent.
 type batch struct {
 	id        string
 	selected  []*registered
 	confirmed map[string]bool
 	nonces    map[string]tree.TreeNonces
 	sigs      map[string]tree.TreePartialSigs
-	forfeits  map[string]int // forfeits received by vtxo outpoint
+	forfeits  map[string]int
 	boardings map[string]bool
-	boarding  int // intents with boarding inputs
-	signed    int // commitment transactions received with their boarding leaves
+	boarding  int
+	signed    int
 }
 
 // Sessions stand in for arkd's: every duration it takes the oldest registered intents, up to a cap,
@@ -66,18 +62,18 @@ type sessions struct {
 	batches   int
 	events    map[int]chan ports.BatchEvent
 	listeners int
-	failNext  string // fails the next batch with this reason once its intents confirmed
-	paused    bool   // no batch takes any intent
-	held      bool   // finalized batches do not land
+	failNext  string
+	paused    bool
+	held      bool
 	slow      time.Duration
-	lifetime  time.Duration // of the vtxos a batch creates
+	lifetime  time.Duration
 	calls     []string
 	commits   []string
 
-	immediate                            bool   // a registration starts a batch before it returns
-	blamed                               string // the outpoint whose intent the failure names
-	dropAfter                            bool   // a batch fails once its forfeits arrived
-	crashAtRegistration, crashAtForfeits bool   // the daemon's batch events end after the step
+	immediate                            bool
+	blamed                               string
+	dropAfter                            bool
+	crashAtRegistration, crashAtForfeits bool
 }
 
 // WithVtxoLifetime is how long the vtxos a batch creates live.
@@ -236,7 +232,6 @@ func (a *ark) SubmitSignedForfeitTxs(
 	return nil
 }
 
-// SlowPhases makes the stand-in wait d before it moves a batch to its next phase.
 func (a *ark) SlowPhases(d time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -249,7 +244,6 @@ func (a *ark) InBatch() bool {
 	return a.sessions.cur != nil
 }
 
-// RegisteredCoins lists the vtxos the registered intents spend, oldest intent first.
 func (a *ark) RegisteredCoins() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -260,50 +254,42 @@ func (a *ark) RegisteredCoins() []string {
 	return out
 }
 
-// FailNextBatch fails the next batch, once its intents confirmed, with reason.
 func (a *ark) FailNextBatch(reason string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessions.failNext = reason
 }
 
-// FailNextBatchBlaming fails the next batch with reason, naming the intent that spends outpoint.
 func (a *ark) FailNextBatchBlaming(outpoint, reason string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessions.failNext, a.sessions.blamed = reason, outpoint
 }
 
-// CrashAfterRegistration ends the batch events of the daemon once an intent is registered, while
-// on.
 func (a *ark) CrashAfterRegistration(on bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessions.crashAtRegistration = on
 }
 
-// CrashAfterForfeits ends the batch events of the daemon once forfeits arrived, while on.
 func (a *ark) CrashAfterForfeits(on bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessions.crashAtForfeits = on
 }
 
-// FailAfterForfeits makes batches fail once their forfeits arrived, while on: nothing is spent.
 func (a *ark) FailAfterForfeits(on bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessions.dropAfter = on
 }
 
-// PauseBatches makes the batches take no intent while on.
 func (a *ark) PauseBatches(on bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessions.paused = on
 }
 
-// HoldLanding keeps finalized batches from landing while on.
 func (a *ark) HoldLanding(on bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -316,7 +302,6 @@ func (a *ark) Registered() int {
 	return len(a.sessions.queue)
 }
 
-// Commitments lists the commitment txids of the batches that finalized.
 func (a *ark) Commitments() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -382,7 +367,6 @@ func (a *ark) register(proof, message string) error {
 	return nil
 }
 
-// runSessions takes a batch every duration until ctx ends.
 func (a *ark) runSessions(ctx context.Context) {
 	for {
 		a.mu.Lock()
@@ -406,7 +390,6 @@ func (a *ark) session(ctx context.Context, duration time.Duration) {
 	a.run(ctx, b, duration)
 }
 
-// announce tells the listeners which intents the batch selected.
 func (a *ark) announce(b *batch) {
 	selected := make([]string, len(b.selected))
 	for i, r := range b.selected {
@@ -415,7 +398,6 @@ func (a *ark) announce(b *batch) {
 	a.emit(ports.BatchStarted{ID: b.id, Selected: selected, BatchExpiry: batchExpiry})
 }
 
-// run asks the selected intents to confirm, then settles the batch.
 func (a *ark) run(ctx context.Context, b *batch, duration time.Duration) {
 	defer func() {
 		a.mu.Lock()
@@ -456,7 +438,6 @@ func (a *ark) run(ctx context.Context, b *batch, duration time.Duration) {
 	}
 }
 
-// take pops the oldest intents into the next batch, nil when there is none.
 func (a *ark) take() *batch {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -480,8 +461,6 @@ func (a *ark) take() *batch {
 	return b
 }
 
-// settle runs the batch of the intents that confirmed: trees, nonces, signatures, forfeits,
-// landing.
 func (a *ark) settle(
 	ctx context.Context, b *batch, taking []*registered, duration time.Duration,
 ) error {
@@ -674,8 +653,6 @@ func (a *ark) settle(
 	return nil
 }
 
-// land spends the vtxos of the intents and creates the ones of the leaves, then tells the
-// subscriptions.
 func (a *ark) land(commitment string, taking []*registered, vtxoTree *tree.TxTree) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -736,7 +713,6 @@ func (a *ark) crashLocked() {
 	}
 }
 
-// until polls cond until it holds or timeout passes; false on a timeout or when ctx ends.
 func (a *ark) until(ctx context.Context, timeout time.Duration, cond func() bool) bool {
 	deadline := time.Now().Add(timeout)
 	for {
@@ -785,8 +761,6 @@ func newSessions() sessions {
 	}
 }
 
-// ourFault blames all of taking when the reason says our nonces, signatures or forfeits were wrong
-// or late.
 func ourFault(reason string, taking []*registered) []string {
 	if !strings.Contains(reason, "nonce") && !strings.Contains(reason, "signature") &&
 		!strings.Contains(reason, "forfeit") {

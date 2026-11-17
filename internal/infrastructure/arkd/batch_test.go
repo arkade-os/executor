@@ -220,7 +220,6 @@ func connection(state clientlib.StreamConnectionState) clientlib.BatchEventChann
 	return clientlib.BatchEventChannel{Connection: &clientlib.StreamConnectionEvent{State: state}}
 }
 
-// flatTree is the transactions of a tree with n leaves, as arkd streams them.
 func flatTree(t *testing.T, n int) []tree.TxTreeNode {
 	t.Helper()
 	key, err := btcec.NewPrivateKey()

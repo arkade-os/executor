@@ -119,7 +119,6 @@ func streamParams(t *testing.T) StreamParams {
 	return StreamParams{Template: tmpl, MinExpiry: time.Hour, Encryption: true}
 }
 
-// the claim template with receiver_program left out of its trigger's binds
 func unboundTrigger(t *testing.T) *template.Template {
 	t.Helper()
 	var doc map[string]any

@@ -360,8 +360,6 @@ func checkClosure(
 	return nil, nil
 }
 
-// offchain.BuildTxs refuses heights and timestamps in one transaction; refusing here names the
-// delegation
 func sameDomain(lts []*arklib.AbsoluteLocktime) bool {
 	var first *arklib.AbsoluteLocktime
 	for _, lt := range lts {

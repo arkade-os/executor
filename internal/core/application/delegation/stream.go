@@ -17,7 +17,7 @@ const streamRetry = time.Second
 type active struct {
 	stream  delegation.Stream
 	trigger *template.Trigger
-	given   map[string][]byte // the stream's variables
+	given   map[string][]byte
 }
 
 // RegisterStream has the daemon run a template's trigger against arkd's transactions. The same

@@ -111,7 +111,6 @@ dl.kv dt { color: var(--muted); }
 pre.doc { margin: .5rem 0 0; padding: .75rem; max-height: 32rem; overflow: auto; background: var(--paper); border-radius: 6px; font: .8rem/1.45 var(--mono); }
 .asm { font: .8rem/1.6 var(--mono); word-break: break-word; }
 
-/* forecast timeline: log scale from now */
 .tl { position: relative; height: 4.2rem; margin: .4rem .8rem 1rem; }
 .tl .rail { position: absolute; left: 0; right: 0; top: 1.6rem; height: 2px; background: var(--line); }
 .tl .m { position: absolute; top: 1.6rem; transform: translate(-50%, -50%); width: var(--s); height: var(--s); padding: 0; border-radius: 50%; background: var(--accent-soft); border: 2px solid var(--accent); }
@@ -120,7 +119,6 @@ pre.doc { margin: .5rem 0 0; padding: .75rem; max-height: 32rem; overflow: auto;
 .tl .tick { position: absolute; top: 2.3rem; transform: translateX(-50%); font-size: .7rem; color: var(--faint); white-space: nowrap; }
 .tl .tick::before { content: ""; position: absolute; left: 50%; top: -.45rem; height: .3rem; border-left: 1px solid var(--line); }
 
-/* a coin's life from now to its expiry */
 .life { position: relative; height: .55rem; border-radius: 99px; background: var(--wait); overflow: hidden; min-width: 8rem; }
 .life i { position: absolute; top: 0; bottom: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .75rem; color: var(--muted); margin-top: .5rem; }
@@ -145,7 +143,6 @@ dialog textarea { min-height: 14rem; font: .8rem/1.4 var(--mono); }
 dialog .actions { display: flex; justify-content: flex-end; gap: .5rem; }
 dialog .msg { color: var(--bad); font-size: .85rem; }
 
-/* phones: the nav takes its own row under the brand and the health pill */
 @media (max-width: 640px) {
   header { flex-wrap: wrap; height: auto; gap: 0 1rem; padding-top: .45rem; }
   nav { order: 3; flex-basis: 100%; }
@@ -176,7 +173,6 @@ dialog .msg { color: var(--bad); font-size: .85rem; }
 const $ = (selector, root = document) => root.querySelector(selector);
 const view = $('#view');
 
-// formatting
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (value) => Number(value || 0);
 const now = () => Date.now() / 1000;
@@ -192,13 +188,10 @@ function span(seconds) {
   return `${(s / 86400).toFixed(s < 864000 ? 1 : 0).replace(/\.0$/, '')}d`;
 }
 const rel = (ts) => (!num(ts) ? '-' : num(ts) - now() >= 0 ? `in ${span(num(ts) - now())}` : `${span(now() - num(ts))} ago`);
-// rel with the date on hover
 const at = (ts) => (num(ts) ? `<span title="${esc(date(ts))}">${esc(rel(ts))}</span>` : '<span class="muted">-</span>');
 const tag = (text, kind = '') => (text ? `<span class="tag ${kind}">${esc(text)}</span>` : '');
-// copy shows a value shortened, linked when href is set, with a copy button
 const copy = (text, n = 10, href = '') => (!text ? '<span class="muted">-</span>'
   : `${href ? `<a class="mono" href="${esc(href)}" target="_blank" rel="noopener" title="Open ${esc(text)} in the explorer">${esc(short(text, n))}</a>` : `<span class="mono" title="${esc(text)}">${esc(short(text, n))}</span>`} <button class="mini" data-copy="${esc(text)}">copy</button>`);
-// explorers by network: ark addresses and transactions on arkade's, onchain ones on mempool's
 const EXPLORERS = {
   bitcoin: { ark: 'https://arkade.space', chain: 'https://mempool.space' },
   mutinynet: { ark: 'https://explorer.mutinynet.arkade.sh', chain: 'https://mutinynet.com' },
@@ -213,7 +206,6 @@ function explorer(value, onchain = false) {
 const tx = (value, n = 8, onchain = false) => copy(value, n, explorer(value, onchain));
 const go = (hash, label) => `<a href="#${esc(hash)}">${label}</a>`;
 
-// health checks by API name: the name shown and what it watches
 const CHECKS = {
   db: ['db', 'Postgres'], arkd: ['arkd', 'the Ark server'], electrum: ['electrum', 'the chain indexer, for onchain coins'],
   emulator: ['emulator', 'the covenant signer'], loop: ['scheduler', 'runs coins as they come due; fails when work is due and nothing ran'],
@@ -222,7 +214,6 @@ const checkName = (name) => CHECKS[name]?.[0] || name;
 const statusKind = { active: 'ok', cancelled: 'bad', expired: 'warn', done: 'accent', disabled: 'bad', present: 'ok', spent: '' };
 const attemptKind = { succeeded: 'ok', failed: 'bad', submitted: 'warn' };
 
-// state shared by the views
 const state = { info: null, status: null, templates: [], artifacts: [], streams: [], health: [], open: new Set() };
 
 async function api(path, options = {}) {
@@ -256,19 +247,16 @@ function fail(error) {
   $('#error').hidden = false;
 }
 
-// template documents by id, raw and parsed
 const parsed = new Map(), documents = new Map();
 const doc = (t) => (t && parsed.get(t.id)) || {};
 const templateOf = (id) => state.templates.find((t) => t.id === id);
 const artifactName = (a) => { try { return JSON.parse(a.document || '{}').contractName || ''; } catch { return ''; } };
-// what a template does, from its document
 function templateKind(t) {
   const d = doc(t);
   if (d.trigger) return 'stream claim';
   if ((d.inputs || []).some((i) => i.type === 'onchain')) return 'boarding';
   return t?.type === 'proof' ? 'renewal' : t?.type === 'virtual' ? 'spend' : 'unknown';
 }
-// what a delegation does: a stream spawned it, it boards a deposit, or its template's kind
 function kindOf(d) {
   if (num(d.streamId)) return 'stream claim';
   if ((d.inputs || []).some((i) => i.onchain)) return 'boarding';
@@ -277,7 +265,6 @@ function kindOf(d) {
 const templateLabel = (id) => { const t = templateOf(id); return `${t ? templateKind(t) : 'template'} <span class="mono muted">${esc(short(id, 6))}</span>`; };
 const templateLink = (id) => go(`registry/template/${id}`, templateLabel(id));
 
-// scripts, decoded for reading
 const OPS = { 0x75: 'DROP', 0x76: 'DUP', 0x87: 'EQUAL', 0x88: 'EQUALVERIFY', 0x82: 'SIZE', 0x69: 'VERIFY', 0xa8: 'SHA256', 0xa9: 'HASH160', 0xac: 'CHECKSIG',
   0xad: 'CHECKSIGVERIFY', 0xae: 'CHECKMULTISIG', 0xb1: 'CHECKLOCKTIMEVERIFY', 0xb2: 'CHECKSEQUENCEVERIFY', 0xba: 'CHECKSIGADD', 0xa2: 'GREATERTHANOREQUAL' };
 const bytes = (hex) => Uint8Array.from(String(hex).match(/../g) ?? [], (h) => parseInt(h, 16));
@@ -309,7 +296,6 @@ function scriptWords(hex, variables) {
   }
   return out.join(' ');
 }
-// a variable's value, read by its type and name
 function variable(name, type, hex) {
   if (type !== 'int') return copy(hex, 12);
   const n = scriptNum(bytes(hex));
@@ -322,7 +308,6 @@ function variablesList(variables, templateId) {
   return entries.length ? `<dl class="kv">${entries.map(([k, v]) => `<dt class="mono">${esc(k)}</dt><dd>${variable(k, types[k], v)}</dd>`).join('')}</dl>` : '<p class="empty">No variable.</p>';
 }
 
-// triggers, described in words
 const DAEMON_KEYS = { ENCRYPTION_KEY: "this daemon's encryption key", SERVER_KEY: "arkd's server key", EMULATOR_KEY: "the emulator's key", COSIGNER_KEY: "this daemon's cosigner key" };
 function source(s) {
   if (s === 'output:taptree') return "the matched output's taptree";
@@ -357,7 +342,6 @@ function table(columns, rows, rowAttributes = () => '') {
 const stat = (label, fig, sub = '', alert = false, hash = '') => `<${hash ? `a href="#${hash}"` : 'div'} class="stat ${alert ? 'alert' : ''}">
   <span class="label">${label}</span><span class="fig">${fig}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</${hash ? 'a' : 'div'}>`;
 
-// the header pill: health first, then the next batch
 function renderPulse() {
   const down = state.health.filter((e) => !e.healthy), next = (state.status?.batches || [])[0];
   $('#pulse').className = down.length ? 'down' : '';
@@ -490,7 +474,6 @@ const views = {
   },
 };
 
-// delegations
 const listState = { status: 'active', templateId: '', streamId: '', rows: [], cursor: '' };
 async function delegationList() {
   await load('templates', 'streams', 'info');
@@ -542,7 +525,6 @@ async function delegationList() {
   await fill();
 }
 
-// a coin's life from now: waiting until due, eligible until its deadline, then the reserve until expiry
 function lifeBar(c, batchAt, reserve) {
   const t = now(), dies = num(c.expiresAt);
   if (!dies) return `<span class="muted small">onchain, ${esc(count(c.confirmations, 'confirmation'))}</span>`;
@@ -568,7 +550,6 @@ async function delegationDetail(key) {
   const present = coins.filter((c) => c.status === 'present');
   const onchain = new Set(coins.filter((c) => !num(c.expiresAt)).map((c) => c.outpoint));
   const held = present.reduce((a, c) => a + num(c.amount), 0);
-  // a coin rides the first forecast batch of its delegation at or after its due
   const batchOf = (c) => (num(c.expiresAt) ? mine.find((e) => num(e.at) >= num(c.due))?.at : 0);
   const kind = kindOf(d), failed = attempts.filter((a) => a.status === 'failed');
   const actions = d.status === 'active' ? `<button class="danger" data-cancel="${d.id}">Cancel</button>`
@@ -626,7 +607,6 @@ async function delegationDetail(key) {
     </section>`;
 }
 
-// streams
 function streamCard(x, detailed) {
   const t = templateOf(x.templateId), trigger = doc(t).trigger;
   return `<div class="stream">
@@ -682,7 +662,6 @@ async function streamDetail(id) {
   await fill();
 }
 
-// registry
 function registryHome() {
   const usedBy = {};
   for (const t of state.templates) for (const a of t.artifactIds || []) (usedBy[a] ||= []).push(t.id);
@@ -795,7 +774,6 @@ function documentPanel(text) {
     <div class="toolbar" style="margin:.5rem 0 0"><button data-copy="${esc(pretty)}">Copy JSON</button></div><pre class="doc">${esc(pretty)}</pre></details></section>`;
 }
 
-// registration: kept out of the way, in a modal
 function openRegister(kind) {
   const triggers = state.templates.filter((t) => doc(t).trigger && t.status === 'active');
   const modal = $('#modal');
@@ -842,7 +820,6 @@ function openRegister(kind) {
   if (!modal.open) modal.showModal();
 }
 
-// routing and actions
 let timer;
 async function show() {
   clearTimeout(timer);
@@ -857,7 +834,6 @@ async function show() {
   }
   if (current !== 'overview') await load('status', 'health').catch(() => {});
   renderPulse();
-  // the overview follows the loop; the other views refresh on demand
   if (current === 'overview' && !$('#modal').open) timer = setTimeout(show, 5000);
   else timer = setTimeout(() => load('status', 'health').then(renderPulse).catch(() => {}), 15000);
 }

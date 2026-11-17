@@ -8,7 +8,7 @@ ARK=${ARKD_URL:-http://localhost:7070}
 PASSWORD=${ARKD_WALLET_PASSWORD:-password}
 TARGET_BTC=${ARKD_WALLET_BTC:-15}
 
-wait_for() { # url jq-filter expected
+wait_for() {
   for _ in $(seq 1 120); do
     if curl -sf -m 3 "$1" 2>/dev/null | grep -q "$2"; then return 0; fi
     sleep 2

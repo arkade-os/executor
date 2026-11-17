@@ -93,7 +93,6 @@ func (s *Service) spendOffchain(coins []delegation.Coin) {
 	s.send(attemptDone{attempt: a})
 }
 
-// build fetches the sources of the coins and builds the signed transaction over them.
 func (s *Service) build(
 	ctx context.Context, inst *delegationapp.Instance, coins []delegation.Coin,
 ) ([]delegation.Tx, []*wire.MsgTx, error) {
@@ -116,8 +115,6 @@ func (s *Service) build(
 	return built, sources, nil
 }
 
-// sources fetches the transactions that created the coins: the virtual ones from arkd, the onchain
-// from the chain.
 func (s *Service) sources(
 	ctx context.Context, coins []delegation.Coin,
 ) (map[string]*wire.MsgTx, error) {

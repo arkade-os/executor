@@ -58,7 +58,6 @@ func TestCoinUpsertSpent(t *testing.T) {
 	c.Status, c.SpentBy = delegation.Spent, "tx2"
 	require.Equal(t, []delegation.Coin{c}, got)
 
-	// a spent coin reported present again is present again
 	c.Status, c.SpentBy = delegation.Present, ""
 	require.NoError(t, repo.Upsert(t.Context(), c))
 	require.Equal(t, []delegation.Coin{c}, presentAt(t, repo, "5120aa"))

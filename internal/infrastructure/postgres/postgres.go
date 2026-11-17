@@ -18,7 +18,6 @@ import (
 //go:embed migration/*.sql
 var migrations embed.FS
 
-// DB is the pool every repository works over, migrated on Open.
 type DB struct {
 	db      *sql.DB
 	querier *queries.Queries

@@ -23,8 +23,8 @@ type Status struct {
 	Batches    []BatchForecast
 	// entries are the queued entries the forecast starts from.
 	entries   []execution.Entry
-	Coins     int    // present coins watched
-	Amount    uint64 // of those coins
+	Coins     int // present coins watched
+	Amount    uint64
 	Succeeded uint64 // attempts ended since the daemon started
 	Failed    uint64
 	// TemplateFailures counts the failed attempts charged to their template since the daemon
@@ -100,7 +100,6 @@ func (s *Service) ChainConnected() error {
 	return nil
 }
 
-// forecast plans the published entries with every present coin not yet due.
 func (s *Service) forecast(ctx context.Context, st *Status) error {
 	now := time.Now()
 	entries := slices.Clone(st.entries)
@@ -117,12 +116,10 @@ func (s *Service) forecast(ctx context.Context, st *Status) error {
 	return nil
 }
 
-// plan lays out the queued entries.
 func (s *Service) plan(now time.Time) execution.Plan {
 	return execution.NewPlan(slices.Collect(maps.Values(s.entries)), s.session, now)
 }
 
-// counts is how many entries are reserved and how many wait.
 func (s *Service) counts() (reserved, queued int) {
 	for _, e := range s.entries {
 		if e.Reserved {

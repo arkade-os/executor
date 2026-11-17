@@ -27,9 +27,9 @@ const (
 
 // timings are the client's clocks; tests shorten them.
 type timings struct {
-	request time.Duration // longest wait for an answer
+	request time.Duration
 	ping    time.Duration // idle servers drop clients after about ten minutes
-	backoff time.Duration // first wait before a reconnect, doubling to maxBackoff
+	backoff time.Duration
 }
 
 var defaultTimings = timings{request: 30 * time.Second, ping: time.Minute, backoff: time.Second}
@@ -59,8 +59,6 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-// client keeps one connection to the server, matches answers to requests and queues notifications.
-// After a drop it dials again and runs onReconnect on the new connection.
 type client struct {
 	dial        func(ctx context.Context) (net.Conn, error)
 	times       timings
@@ -76,7 +74,6 @@ type client struct {
 	cur *session
 }
 
-// session is one connection: its writer lock, the requests waiting for an answer and its end.
 type session struct {
 	conn      net.Conn
 	wmu       sync.Mutex
@@ -152,7 +149,6 @@ func (c *client) call(ctx context.Context, method string, params ...any) (json.R
 	return out[0], nil
 }
 
-// batch sends the calls as one JSON-RPC batch and returns their results in order.
 func (c *client) batch(ctx context.Context, calls []call) ([]json.RawMessage, error) {
 	s := c.session()
 	if s == nil {
@@ -182,7 +178,6 @@ func (c *client) connect() error {
 	return nil
 }
 
-// keep dials again whenever the connection ends, waiting longer after each failure.
 func (c *client) keep() {
 	defer c.wg.Done()
 	backoff := c.times.backoff
@@ -309,8 +304,6 @@ func (s *session) write(v any) error {
 	return err
 }
 
-// read routes each line to the request it answers or to the notification queue, until the
-// connection ends.
 func (s *session) read(c *client) {
 	defer c.wg.Done()
 	defer s.close()
@@ -351,8 +344,6 @@ func (s *session) route(c *client, m message) {
 	}
 }
 
-// keepAlive pings so that an idle server does not drop us, and drops a connection that stops
-// answering.
 func (s *session) keepAlive(c *client) {
 	defer c.wg.Done()
 	t := time.NewTicker(c.times.ping)
@@ -414,7 +405,6 @@ func newClient(rawURL string, times timings) (*client, error) {
 	return c, nil
 }
 
-// dialer returns how to reach rawURL: tcp:// plain, ssl:// and tls:// encrypted.
 func dialer(rawURL string) (func(context.Context) (net.Conn, error), error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {

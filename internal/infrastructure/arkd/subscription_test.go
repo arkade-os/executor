@@ -102,7 +102,6 @@ func TestScriptEventSpentByFallsBackToItsTxid(t *testing.T) {
 	require.Equal(t, "ark", ev.Outputs[2].SpentBy)
 }
 
-// fakeIndexer records subscriptions; streams are keyed by the subscription id.
 type fakeIndexer struct {
 	clientlib.Indexer
 	sizes     []int

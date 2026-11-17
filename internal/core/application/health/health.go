@@ -64,7 +64,6 @@ func (c *Checker) Check(ctx context.Context) []Entry {
 	return entries
 }
 
-// Healthy is true when no entry failed.
 func Healthy(entries []Entry) bool {
 	return !slices.ContainsFunc(entries, func(e Entry) bool { return e.Err != nil })
 }

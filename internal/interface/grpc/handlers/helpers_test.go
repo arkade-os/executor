@@ -11,8 +11,6 @@ import (
 	"github.com/arkade-os/executor/internal/core/domain/registry"
 )
 
-// artifacts is an in-memory registry.ArtifactRepository; Delete checks the references held by
-// templates.
 type artifacts struct {
 	mu        sync.Mutex
 	rows      map[string]registry.Artifact

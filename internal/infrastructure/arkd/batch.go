@@ -16,13 +16,12 @@ import (
 // blockExpiryLimit is the first batch expiry arkd gives in seconds rather than blocks.
 const blockExpiryLimit = 512
 
-// trees collects the transactions of the trees, which arkd streams one by one.
 type trees struct {
 	intents                 *intents
-	batch                   string   // the batch our intents are in
-	ours                    []intent // the ones it selected
+	batch                   string
+	ours                    []intent
 	vtxoTree, connectorTree []tree.TxTreeNode
-	connectors              map[string]*psbt.Packet // coin outpoint to its connector leaf
+	connectors              map[string]*psbt.Packet
 }
 
 func (c *Client) BatchEvents(ctx context.Context) (<-chan ports.BatchEvent, func(), error) {
@@ -62,7 +61,6 @@ func (c *Client) UpdateTopics(ctx context.Context, add, remove []string) error {
 	return err
 }
 
-// convert turns a client-lib event into the domain's, nil when the daemon has no use for it.
 func (r *trees) convert(ev clientlib.BatchEventChannel) ports.BatchEvent {
 	if ev.Err != nil {
 		log.WithError(ev.Err).Warn("batch event stream")
@@ -136,7 +134,6 @@ func (r *trees) convert(ev clientlib.BatchEventChannel) ports.BatchEvent {
 	return nil
 }
 
-// assign records the connector leaf arkd assigned to the coins in the topic of its event.
 func (r *trees) assign(e clientlib.TreeTxEvent) {
 	leaf, err := psbt.NewFromRawBytes(strings.NewReader(e.Node.Tx), true)
 	if err != nil {

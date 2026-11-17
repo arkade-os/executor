@@ -131,7 +131,6 @@ SELECT * FROM streams WHERE id = @id;
 SELECT * FROM streams WHERE @status::text = '' OR status = @status::text ORDER BY id;
 
 -- name: ListSpawned :many
--- what each stream spawned: delegations, the active ones and when the last one was
 SELECT stream_id::bigint AS stream_id, COUNT(*)::bigint AS spawned, COUNT(*) FILTER (WHERE status = 'active')::bigint AS active,
     MAX(created_at)::timestamptz AS last_at
 FROM delegations WHERE stream_id IS NOT NULL GROUP BY stream_id;
@@ -154,18 +153,15 @@ SELECT * FROM coins WHERE delegation_id = @delegation_id ORDER BY created_at, ou
 SELECT * FROM coins WHERE script = ANY (@scripts::text[]) AND status = 'present' ORDER BY created_at, outpoint;
 
 -- name: ListOnchainCoins :many
--- the present onchain coins of the active delegations
 SELECT coins.* FROM coins JOIN delegations ON delegations.id = coins.delegation_id
 WHERE coins.status = 'present' AND coins.onchain AND delegations.status = 'active';
 
 -- name: MoveCoins :many
--- gives the present coins at script to the claim's delegation
 UPDATE coins SET delegation_id = @delegation_id, input = @input, updated_at = now()
 WHERE script = @script AND status = 'present' AND (delegation_id, input) <> (@delegation_id, @input)
 RETURNING *;
 
 -- name: ListStrandedScripts :many
--- the scripts an active delegation watches that hold present coins of an inactive one
 SELECT DISTINCT coins.script FROM coins JOIN delegations ON delegations.id = coins.delegation_id
 WHERE coins.status = 'present' AND delegations.status <> 'active' AND EXISTS (
     SELECT 1 FROM claims JOIN delegations a ON a.id = claims.delegation_id WHERE claims.script = coins.script AND a.status = 'active'
@@ -220,7 +216,6 @@ ORDER BY coins.ready_at
 LIMIT 1;
 
 -- name: TotalPresentCoins :one
--- the present coins of active delegations and their amount
 SELECT count(*)::int AS coins, coalesce(sum(coins.amount), 0)::bigint AS amount
 FROM coins JOIN delegations ON delegations.id = coins.delegation_id
 WHERE coins.status = 'present' AND delegations.status = 'active';
@@ -229,7 +224,6 @@ WHERE coins.status = 'present' AND delegations.status = 'active';
 INSERT INTO claims (delegation_id, input, script, onchain, locktime) VALUES (@delegation_id, @input, @script, @onchain, @locktime);
 
 -- name: ListClaimsAtScripts :many
--- the claims of the active delegations watching scripts
 SELECT claims.script, claims.delegation_id, claims.input, claims.onchain, claims.locktime, (delegations.stream_id IS NOT NULL)::boolean AS spawned
 FROM claims JOIN delegations ON delegations.id = claims.delegation_id
 WHERE claims.script = ANY (@scripts::text[]) AND delegations.status = 'active'
@@ -242,7 +236,6 @@ WHERE delegations.status = 'active' AND claims.onchain = @onchain
 ORDER BY claims.script;
 
 -- name: GetWatchedStatus :one
--- the stored status hash of script, and whether an active delegation watches it onchain
 SELECT coalesce((SELECT status FROM script_status WHERE script_status.script = @script), '')::text AS status,
     EXISTS (
         SELECT 1 FROM claims JOIN delegations ON delegations.id = claims.delegation_id

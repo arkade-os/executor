@@ -121,7 +121,6 @@ func TestOutagesDoNotCountAndASuccessResetsTheFailures(t *testing.T) {
 	require.Equal(t, "active", getTemplate(t, d, templateID).Status)
 }
 
-// refusedDelegation registers the renewal template and a delegation whose coin is due at once.
 func refusedDelegation(t *testing.T, d *Daemon) (string, delegation) {
 	t.Helper()
 	_, templateID := registerRenewal(t, d)

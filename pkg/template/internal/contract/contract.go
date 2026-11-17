@@ -30,7 +30,6 @@ type Contract struct {
 	Proofs     map[[2]string]*psbt.TaprootTapLeafScript // {function, leaf} -> leaf with control block
 }
 
-// maxTaptreeBytes bounds a given taptree.
 const maxTaptreeBytes = 8 << 10
 
 // Build assembles the covenants and leaves of def with args and keys. When taptree is given, the

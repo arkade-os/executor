@@ -15,14 +15,12 @@ import (
 // ourFaults are what a failed batch says when we did not send in time, or refused its batch.
 var ourFaults = []string{"nonce", "signature", "forfeit", "refus"}
 
-// intents maps the proof txids that name our intents in the core to arkd's intent ids.
 type intents struct {
 	mu      sync.Mutex
 	ids     map[string]string
-	pending int // registrations whose id arkd has not returned yet
+	pending int
 }
 
-// intent is one of ours: its proof txid and arkd's id.
 type intent struct{ proofTxid, id string }
 
 func (m *intents) begin() {
@@ -31,7 +29,6 @@ func (m *intents) begin() {
 	m.pending++
 }
 
-// end closes a registration begun, recording arkd's id unless it failed.
 func (m *intents) end(proofTxid, id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -65,7 +62,6 @@ func (m *intents) id(proofTxid string) (string, bool) {
 	return id, ok
 }
 
-// selected returns the intents of ours whose hashed id a batch lists.
 func (m *intents) selected(hashes []string) []intent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -95,9 +91,6 @@ func proofTxids(ours []intent) []string {
 	return out
 }
 
-// blamed lists the proof txids of the intents a failed batch is held against: the ones its reason
-// names, else all of ours when it says our nonces, signatures or forfeits were wrong or late, or we
-// refused.
 func blamed(reason string, ours []intent) []string {
 	var named []string
 	for _, in := range ours {

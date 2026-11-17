@@ -22,7 +22,6 @@ type Client struct {
 	emulator emulatorclient.TransportClient
 }
 
-// NewClient dials url; https:// enables TLS.
 func NewClient(url string) (*Client, error) {
 	target, creds := grpcTarget(url)
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(creds))

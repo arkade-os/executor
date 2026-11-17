@@ -29,7 +29,6 @@ const maxRequestBodySize = 1 << 20
 //go:embed web/index.html
 var index []byte
 
-// Server serves gRPC and its JSON gateway over h2c on the public and the admin port.
 type Server struct {
 	public, admin *port
 }
@@ -41,17 +40,14 @@ type port struct {
 	conn     *grpc.ClientConn
 }
 
-// Options configures the two ports; a port of 0 picks a free one.
 type Options struct {
 	PublicPort, AdminPort int
-	PublicRateLimit       int // requests per second per client address on the public port, 0 for no limit
+	PublicRateLimit       int
 	Users                 []AdminUser
 	Status                StatusSource
 	Health                handlers.Health
 }
 
-// Listen binds both ports. The admin port serves AdminService as well, the operator UI, /metrics
-// and /healthz, and, when there are users, checks their credentials on every call.
 func Listen(
 	ctx context.Context, opts Options, executor *handlers.Executor, admin *handlers.Admin,
 ) (*Server, error) {
@@ -91,7 +87,6 @@ func Listen(
 func (s *Server) PublicAddr() string { return s.public.listener.Addr().String() }
 func (s *Server) AdminAddr() string  { return s.admin.listener.Addr().String() }
 
-// Serve blocks until Stop or until a port fails.
 func (s *Server) Serve() error {
 	errs := make(chan error, 2)
 	for _, p := range []*port{s.public, s.admin} {
@@ -119,7 +114,6 @@ func (p *port) close() {
 	_ = p.conn.Close()
 }
 
-// listen serves on portNumber; without pages it is the public port, which allows any origin.
 func listen(
 	portNumber int, register func(*grpc.Server, *gateway.ServeMux, *grpc.ClientConn),
 	pages http.Handler, interceptors ...grpc.UnaryServerInterceptor,
@@ -243,7 +237,6 @@ func restError(
 	gateway.DefaultHTTPErrorHandler(ctx, mux, m, w, r, err)
 }
 
-// logUnary logs failures as warnings, the rest at debug level.
 func logUnary(
 	ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 ) (any, error) {

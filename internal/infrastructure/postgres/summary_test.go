@@ -128,9 +128,6 @@ func TestSummariesOfNothing(t *testing.T) {
 	require.Empty(t, list)
 }
 
-// testSummaries stores five delegations: soon holds two coins, the first due in an hour, and two
-// failed attempts, tied one coin due at the same time as that one, later one coin due after, empty
-// none and spent only a spent one.
 func testSummaries(t *testing.T) (*SummaryRepository, map[string]int64) {
 	t.Helper()
 	db := testDB(t)

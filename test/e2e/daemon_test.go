@@ -34,11 +34,10 @@ type executor struct {
 	client  executorv1.ExecutorServiceClient
 	admin   executorv1.AdminServiceClient
 	indexer clientlib.Indexer
-	url     string // public REST base
-	stop    func() // returns once the batch in flight has ended
+	url     string
+	stop    func()
 }
 
-// start boots a daemon over an empty database; the tweaks adjust its config.
 func start(t *testing.T, tweak ...func(*config.Config)) executor {
 	t.Helper()
 	cosigner, err := btcec.NewPrivateKey()
@@ -53,7 +52,6 @@ func start(t *testing.T, tweak ...func(*config.Config)) executor {
 	return boot(t, cfg, tweak)
 }
 
-// restart boots another daemon over the database of d.
 func (d executor) restart(t *testing.T, tweak ...func(*config.Config)) executor {
 	t.Helper()
 	return boot(t, d.cfg, tweak)

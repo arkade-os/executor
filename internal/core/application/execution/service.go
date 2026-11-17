@@ -28,7 +28,7 @@ import (
 const (
 	pageSize    = 1000
 	stopMargin  = 10 * time.Second // on top of a session's duration, what Stop waits for the batch in flight
-	maxListings = 8                // unspent listings at once
+	maxListings = 8
 )
 
 var (
@@ -37,7 +37,7 @@ var (
 )
 
 type Limits struct {
-	OffchainConcurrency int           // offchain attempts in flight at once
+	OffchainConcurrency int
 	AttemptTimeout      time.Duration // building and signing an offchain attempt
 	RetryDelay          time.Duration // before the coins of a failed attempt are ready again
 	IntentsPerBatch     int           // intents arkd takes per batch
@@ -69,7 +69,7 @@ type Service struct {
 	chainSub    ports.ChainSubscription
 	tip         delegation.Tip
 	inflight    map[string]string // the status each script is being listed for
-	listing     chan struct{}     // the unspent listings in flight
+	listing     chan struct{}
 	events      chan any
 	ctx         context.Context
 	stop        context.CancelFunc
@@ -100,7 +100,6 @@ type pending struct {
 	landBy  time.Time         // when a batched attempt of a previous run must have landed, zero for the others
 }
 
-// reconnected says the subscription may have missed events.
 type reconnected struct{}
 
 type reconcileDone struct{}
@@ -165,8 +164,6 @@ func NewService(
 	return s
 }
 
-// Start loads the pending attempts, watches the active delegations and runs the loop; the pending
-// attempts are asked about and the first reconcile runs behind.
 func (s *Service) Start(ctx context.Context) error {
 	s.ctx, s.stop = context.WithCancel(ctx)
 	s.done = make(chan struct{})
@@ -235,8 +232,6 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop registers no more intents, waits for the batch in flight to end, then ends the loop and
-// waits for it and its workers.
 func (s *Service) Stop() {
 	if s.stop == nil {
 		return
@@ -252,17 +247,14 @@ func (s *Service) Coins(ctx context.Context, delegationID int64) ([]delegation.C
 	return s.coins.ListByDelegation(ctx, delegationID)
 }
 
-// Summaries lists the delegations by the earliest due of their coins.
 func (s *Service) Summaries(ctx context.Context, f ports.SummaryFilter) ([]ports.Summary, error) {
 	return s.summaries.List(ctx, f)
 }
 
-// Spawned returns what each stream spawned, by stream id.
 func (s *Service) Spawned(ctx context.Context) (map[int64]ports.Spawned, error) {
 	return s.summaries.Spawned(ctx)
 }
 
-// Attempts lists the attempts of a delegation newest first, below cursor when not zero.
 func (s *Service) Attempts(
 	ctx context.Context, delegationID, cursor int64, limit int,
 ) ([]delegation.Attempt, error) {
@@ -361,8 +353,6 @@ func (s *Service) handle(ev any, now time.Time) {
 	}
 }
 
-// dispatch starts a worker for every ready delegation, registers what the plan says is due and arms
-// the timer for the next one.
 func (s *Service) dispatch(now time.Time) {
 	s.dispatched = now
 	for {
@@ -417,7 +407,6 @@ func (s *Service) dispatch(now time.Time) {
 	}
 }
 
-// track is the pending entry of an attempt, created on its first report.
 func (s *Service) track(a delegation.Attempt) *pending {
 	p, ok := s.pending[a.ID]
 	if !ok {
@@ -471,7 +460,6 @@ func (s *Service) succeed(p *pending) {
 	log.WithFields(fields).Info("attempt succeeded")
 }
 
-// record tells the template of the delegation how an attempt ended.
 func (s *Service) record(delegationID int64, success bool) {
 	d, err := s.delegations.GetDelegation(s.ctx, delegationID)
 	if err == nil {
@@ -491,7 +479,6 @@ func (s *Service) record(delegationID int64, success bool) {
 	}
 }
 
-// landing matches a spent coin with the pending attempts holding it.
 func (s *Service) landing(c delegation.Coin, now time.Time) {
 	for _, p := range s.pending {
 		if slices.Contains(p.attempt.Coins, c.Outpoint) {
@@ -623,7 +610,6 @@ func (s *Service) follow(d delegation.Delegation) {
 	}
 }
 
-// rehome gives the coins at scripts to their owners.
 func (s *Service) rehome(scripts []string) error {
 	if len(scripts) == 0 {
 		return nil
@@ -684,7 +670,6 @@ func (s *Service) chainEvent(ev ports.ChainEvent, now time.Time) {
 	s.wg.Go(func() { s.list(ev.Script, ev.Status) })
 }
 
-// list asks the chain for the utxos at script and feeds them back to the loop.
 func (s *Service) list(script, status string) {
 	select {
 	case s.listing <- struct{}{}:
@@ -812,7 +797,6 @@ func (s *Service) update(
 	return len(watched) > 0
 }
 
-// release gives the coins back, ready again from retry.
 func (s *Service) release(outpoints []string, retry time.Time) {
 	if err := s.coins.Release(s.ctx, outpoints, retry); err != nil && s.ctx.Err() == nil {
 		log.WithError(err).Error("release coins")
@@ -851,7 +835,6 @@ func (s *Service) due(c delegation.Coin, now time.Time) time.Time {
 	return dueAt(inst.Template, c, now)
 }
 
-// dueAt is when the template instance becomes eligible to spend c.
 func dueAt(inst *template.Instance, c delegation.Coin, now time.Time) time.Time {
 	src := &template.Source{
 		Amount: c.Amount, Expiry: c.ExpiresAt, CreatedAt: c.CreatedAt, Confirms: c.Confirmations,
@@ -862,7 +845,6 @@ func dueAt(inst *template.Instance, c delegation.Coin, now time.Time) time.Time 
 	return inst.DueAt(c.Input, src, now)
 }
 
-// scriptsOf lists the scripts of outputs, once each.
 func scriptsOf(outputs []ports.Output) []string {
 	var out []string
 	for _, o := range outputs {
