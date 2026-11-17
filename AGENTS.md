@@ -41,6 +41,8 @@ says what it does. The Run section of `README.md` covers local setup and the e2e
 `go test -run '^TestName$' ./path/to/pkg/` — most packages need no postgres; the postgres tests
 need `make pg` first (CI sets `EXECUTOR_DATABASE_URL` instead).
 
+For workflow verification, read [`skills/verify-executor/SKILL.md`](skills/verify-executor/SKILL.md).
+
 ## Linting
 
 `make lint` runs golangci-lint with `.golangci.yml` in both the root module and `pkg/template`;
