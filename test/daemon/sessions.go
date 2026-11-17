@@ -629,9 +629,19 @@ func (a *ark) settle(
 	}
 
 	a.pause()
+	assigned := map[string]*psbt.Packet{}
+	if connectorTree != nil {
+		connectors := connectorTree.Leaves()
+		for _, r := range taking {
+			for _, op := range r.outpoints {
+				assigned[op] = connectors[len(assigned)]
+			}
+		}
+	}
 	a.emit(
 		ports.BatchFinalization{
 			ID: b.id, CommitmentTx: rawCommitment, ConnectorTree: connectorTree,
+			Connectors: assigned,
 		},
 	)
 	owed := func() bool {

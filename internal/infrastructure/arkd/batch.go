@@ -2,12 +2,14 @@ package arkd
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/executor/internal/core/ports"
+	"github.com/btcsuite/btcd/psbt/v2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -20,6 +22,7 @@ type trees struct {
 	batch                   string   // the batch our intents are in
 	ours                    []intent // the ones it selected
 	vtxoTree, connectorTree []tree.TxTreeNode
+	connectors              map[string]*psbt.Packet // coin outpoint to its connector leaf
 }
 
 func (c *Client) BatchEvents(ctx context.Context) (<-chan ports.BatchEvent, func(), error) {
@@ -73,7 +76,7 @@ func (r *trees) convert(ev clientlib.BatchEventChannel) ports.BatchEvent {
 	}
 	switch e := ev.Event.(type) {
 	case clientlib.BatchStartedEvent:
-		r.vtxoTree, r.connectorTree = nil, nil
+		r.vtxoTree, r.connectorTree, r.connectors = nil, nil, nil
 		r.intents.settle(time.Second)
 		r.batch, r.ours = e.Id, r.intents.selected(e.HashedIntentIds)
 		expiry := arklib.RelativeLocktime{
@@ -88,6 +91,9 @@ func (r *trees) convert(ev clientlib.BatchEventChannel) ports.BatchEvent {
 			r.vtxoTree = append(r.vtxoTree, e.Node)
 		} else {
 			r.connectorTree = append(r.connectorTree, e.Node)
+			if len(e.Node.Children) == 0 {
+				r.assign(e)
+			}
 		}
 	case clientlib.TreeSigningStartedEvent:
 		if len(r.vtxoTree) == 0 {
@@ -113,7 +119,9 @@ func (r *trees) convert(ev clientlib.BatchEventChannel) ports.BatchEvent {
 				return nil
 			}
 		}
-		return ports.BatchFinalization{ID: e.Id, CommitmentTx: e.Tx, ConnectorTree: connectors}
+		return ports.BatchFinalization{
+			ID: e.Id, CommitmentTx: e.Tx, ConnectorTree: connectors, Connectors: r.connectors,
+		}
 	case clientlib.BatchFinalizedEvent:
 		r.end(e.Id)
 		return ports.BatchFinalized{ID: e.Id, CommitmentTxid: e.Txid}
@@ -126,6 +134,21 @@ func (r *trees) convert(ev clientlib.BatchEventChannel) ports.BatchEvent {
 		return ports.BatchFailed{ID: e.Id, Reason: e.Reason, Blamed: blame}
 	}
 	return nil
+}
+
+// assign records the connector leaf arkd assigned to the coins in the topic of its event.
+func (r *trees) assign(e clientlib.TreeTxEvent) {
+	leaf, err := psbt.NewFromRawBytes(strings.NewReader(e.Node.Tx), true)
+	if err != nil {
+		log.WithError(err).WithField("batch", e.Id).Warn("connector of a batch")
+		return
+	}
+	if r.connectors == nil {
+		r.connectors = map[string]*psbt.Packet{}
+	}
+	for _, coin := range e.Topic {
+		r.connectors[coin] = leaf
+	}
 }
 
 func (r *trees) end(batch string) {

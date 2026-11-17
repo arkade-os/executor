@@ -9,6 +9,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/executor/internal/core/domain/execution"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
 )
 
 type ArkInfo struct {
@@ -70,10 +71,13 @@ type TreeNoncesAggregated struct {
 }
 
 // BatchFinalization asks for the forfeits; ConnectorTree is nil when no vtxo is settled.
+// Connectors maps a coin outpoint to the connector leaf arkd assigned to it: arkd rejects a
+// forfeit spending a connector of another intent.
 type BatchFinalization struct {
 	ID            string
 	CommitmentTx  string
 	ConnectorTree *tree.TxTree
+	Connectors    map[string]*psbt.Packet
 }
 
 type BatchFinalized struct {

@@ -394,7 +394,6 @@ func (b *batchWorker) finalization(ev ports.BatchFinalization) {
 	if r == nil || r.id != ev.ID || r.session == nil {
 		return
 	}
-	var connectors []*psbt.Packet
 	var flat tree.FlatTxTree
 	if ev.ConnectorTree != nil {
 		var err error
@@ -402,23 +401,16 @@ func (b *batchWorker) finalization(ev ports.BatchFinalization) {
 			b.abort(err)
 			return
 		}
-		connectors = ev.ConnectorTree.Leaves()
 	}
 	forfeits := make([][]string, len(r.intents))
 	for i, h := range r.intents {
-		n := h.intent.Forfeited()
-		if len(connectors) < n {
-			b.abort(fmt.Errorf("got %d connectors for %d vtxos", len(connectors), n))
-			return
-		}
 		var err error
 		if forfeits[i], err = h.intent.Forfeits(
-			connectors[:n], b.s.info.ForfeitOutputScript,
+			ev.Connectors, b.s.info.ForfeitOutputScript,
 		); err != nil {
 			b.abort(err)
 			return
 		}
-		connectors = connectors[n:]
 	}
 	var g errgroup.Group
 	g.SetLimit(cap(b.s.slots))

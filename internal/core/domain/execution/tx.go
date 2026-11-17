@@ -235,22 +235,22 @@ func BuildIntent(
 	return in, nil
 }
 
-// Forfeits builds one forfeit per forfeited input, each spending its coin and a connector.
-func (in *Intent) Forfeits(connectors []*psbt.Packet, forfeitScript []byte) ([]string, error) {
+// Forfeits builds one forfeit per forfeited input, each spending its coin and the connector
+// arkd assigned to it, keyed by the coin outpoint.
+func (in *Intent) Forfeits(
+	connectors map[string]*psbt.Packet, forfeitScript []byte,
+) ([]string, error) {
 	tx := in.Tx.UnsignedTx
-	if len(connectors) < in.Forfeited() {
-		return nil, fmt.Errorf("got %d connectors for %d vtxos", len(connectors), in.Forfeited())
-	}
 	var forfeits []string
 	for i, txin := range tx.TxIn {
 		if !in.forfeited(i) {
 			continue
 		}
-		next := len(forfeits)
-		if connectors[next] == nil || connectors[next].UnsignedTx == nil {
-			return nil, fmt.Errorf("connector %d is missing", next)
+		assigned := connectors[txin.PreviousOutPoint.String()]
+		if assigned == nil || assigned.UnsignedTx == nil {
+			return nil, fmt.Errorf("connector is missing for vtxo %s", txin.PreviousOutPoint)
 		}
-		connector := connectors[next].UnsignedTx
+		connector := assigned.UnsignedTx
 		vout := slices.IndexFunc(connector.TxOut, func(out *wire.TxOut) bool {
 			return !bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT)
 		})

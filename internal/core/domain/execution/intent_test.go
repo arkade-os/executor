@@ -153,26 +153,32 @@ func TestIntentForfeitSpendsTheVtxoIntoItsBatchConnector(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-	b := newBatch(t, []*wire.TxOut{in.Outputs[0]}, 1)
+	b := newBatch(t, []*wire.TxOut{in.Outputs[0]}, 2)
+	assigned := b.ConnectorTree.Leaves()[1]
 
-	forfeits, err := in.Forfeits(b.ConnectorTree.Leaves(), b.forfeitScript)
+	forfeits, err := in.Forfeits(
+		map[string]*psbt.Packet{
+			"someone else": b.ConnectorTree.Leaves()[0], r.coin.Outpoint: assigned,
+		},
+		b.forfeitScript,
+	)
 	require.NoError(t, err)
 	require.Len(t, forfeits, 1)
 	forfeit, err := psbt.NewFromRawBytes(strings.NewReader(forfeits[0]), true)
 	require.NoError(t, err)
 	require.Equal(t, r.coin.Outpoint, forfeit.UnsignedTx.TxIn[0].PreviousOutPoint.String())
-	connector := b.ConnectorTree.Leaves()[0].UnsignedTx
+	connector := assigned.UnsignedTx
 	require.Equal(t, connector.TxHash(), forfeit.UnsignedTx.TxIn[1].PreviousOutPoint.Hash)
 	require.Equal(t, b.forfeitScript, forfeit.UnsignedTx.TxOut[0].PkScript)
 	require.Equal(t, in.Tx.Inputs[0].TaprootLeafScript, forfeit.Inputs[0].TaprootLeafScript)
 	require.Empty(t, forfeit.Inputs[1].TaprootLeafScript)
 
 	_, err = in.Forfeits(nil, b.forfeitScript)
-	require.ErrorContains(t, err, "got 0 connectors for 1 vtxos")
-	_, err = in.Forfeits([]*psbt.Packet{nil}, b.forfeitScript)
-	require.ErrorContains(t, err, "connector 0 is missing")
+	require.ErrorContains(t, err, "connector is missing for vtxo "+r.coin.Outpoint)
+	_, err = in.Forfeits(map[string]*psbt.Packet{r.coin.Outpoint: nil}, b.forfeitScript)
+	require.ErrorContains(t, err, "connector is missing for vtxo "+r.coin.Outpoint)
 	anchorOnly := &psbt.Packet{UnsignedTx: wire.NewMsgTx(3)}
-	_, err = in.Forfeits([]*psbt.Packet{anchorOnly}, b.forfeitScript)
+	_, err = in.Forfeits(map[string]*psbt.Packet{r.coin.Outpoint: anchorOnly}, b.forfeitScript)
 	require.ErrorContains(t, err, "connector not found")
 }
 
@@ -213,7 +219,9 @@ func TestForfeitsSkipTheBoardingInputs(t *testing.T) {
 	mixed.Tx, mixed.Boarding = tx, []bool{true, false}
 	require.Equal(t, 1, mixed.Vtxos())
 
-	forfeits, err := mixed.Forfeits(b.ConnectorTree.Leaves(), b.forfeitScript)
+	forfeits, err := mixed.Forfeits(
+		map[string]*psbt.Packet{r.coin.Outpoint: b.ConnectorTree.Leaves()[0]}, b.forfeitScript,
+	)
 	require.NoError(t, err)
 	require.Len(t, forfeits, 1)
 	forfeit, err := psbt.NewFromRawBytes(strings.NewReader(forfeits[0]), true)
@@ -223,7 +231,7 @@ func TestForfeitsSkipTheBoardingInputs(t *testing.T) {
 		"the vtxo, not the boarding input",
 	)
 	_, err = mixed.Forfeits(nil, b.forfeitScript)
-	require.ErrorContains(t, err, "got 0 connectors for 1 vtxos")
+	require.ErrorContains(t, err, "connector is missing for vtxo "+r.coin.Outpoint)
 }
 
 func TestForfeitsSkipTheSweptInputs(t *testing.T) {

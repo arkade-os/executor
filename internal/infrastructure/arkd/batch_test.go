@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -46,8 +47,16 @@ func TestConvertBatchEvents(t *testing.T) {
 	for _, n := range vtxoNodes {
 		require.Nil(t, r.convert(event(clientlib.TreeTxEvent{Id: "b", BatchIndex: 0, Node: n})))
 	}
-	for _, n := range connectorNodes {
-		require.Nil(t, r.convert(event(clientlib.TreeTxEvent{Id: "b", BatchIndex: 1, Node: n})))
+	assigned := map[string]string{}
+	for i, n := range connectorNodes {
+		coin := fmt.Sprintf("coin:%d", i)
+		if len(n.Children) == 0 {
+			assigned[coin] = n.Txid
+		}
+		n.Txid = "" // arkd sends the transaction only
+		require.Nil(t, r.convert(event(
+			clientlib.TreeTxEvent{Id: "b", BatchIndex: 1, Node: n, Topic: []string{coin}},
+		)))
 	}
 	signing := r.convert(
 		event(
@@ -70,6 +79,13 @@ func TestConvertBatchEvents(t *testing.T) {
 	finalization := r.convert(event(clientlib.BatchFinalizationEvent{Id: "b", Tx: "tx"})).(ports.BatchFinalization)
 	require.Equal(t, "tx", finalization.CommitmentTx)
 	require.Len(t, finalization.ConnectorTree.Leaves(), 2)
+	require.Len(t, assigned, 2)
+	for coin, txid := range assigned {
+		require.Equal(
+			t, txid, finalization.Connectors[coin].UnsignedTx.TxID(),
+			"each coin gets the leaf arkd assigned to it",
+		)
+	}
 	require.Equal(
 		t, ports.BatchFinalized{ID: "b", CommitmentTxid: "c"},
 		r.convert(event(clientlib.BatchFinalizedEvent{Id: "b", Txid: "c"})),
@@ -88,6 +104,11 @@ func TestConvertBatchEvents(t *testing.T) {
 		t,
 		r.convert(event(clientlib.BatchFinalizationEvent{Id: "next"})).(ports.BatchFinalization).ConnectorTree,
 		"no vtxo to forfeit",
+	)
+	next := r.convert(event(clientlib.BatchFinalizationEvent{Id: "next"}))
+	require.Empty(
+		t, next.(ports.BatchFinalization).Connectors,
+		"the assignments of the previous batch are dropped",
 	)
 	r.connectorTree = []tree.TxTreeNode{{Txid: "broken"}}
 	require.Nil(t, r.convert(event(clientlib.BatchFinalizationEvent{Id: "next"})))
