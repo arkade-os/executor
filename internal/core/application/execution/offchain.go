@@ -197,9 +197,6 @@ func refusal(ctx context.Context, err error) error {
 	return err
 }
 
-// chargesTemplate says a failed attempt counts against its template: the template could not build
-// it, or arkd or the emulator refused it. Outages, the daemon's own shutdown and sources fees or
-// dust refuse do not.
 func rotates(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
@@ -208,6 +205,9 @@ func rotates(err error) bool {
 		errors.Is(err, execution.ErrBadTx) || errors.Is(err, errRefused)
 }
 
+// chargesTemplate says a failed attempt counts against its template: the template could not build
+// it, or arkd or the emulator refused it. Outages, the daemon's own shutdown and sources fees or
+// dust refuse do not.
 func chargesTemplate(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, template.ErrUnaffordable) {
