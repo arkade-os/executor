@@ -2,6 +2,7 @@
 package execution
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -194,6 +195,7 @@ func (s *Service) Start(ctx context.Context) error {
 		return err
 	}
 	for _, a := range attempts {
+		s.rebroadcast(a)
 		if err := s.await(s.track(a)); err != nil {
 			return err
 		}
@@ -395,6 +397,11 @@ func (s *Service) dispatch(now time.Time) {
 			next = at
 		}
 	}
+	if at, err := s.coins.NextBackoff(s.ctx, now); err != nil && s.ctx.Err() == nil {
+		log.WithError(err).Error("next tuple backoff")
+	} else {
+		earlier(at)
+	}
 	earlier(plan.NextRegistration(now))
 	for _, p := range s.pending {
 		earlier(p.landBy)
@@ -434,18 +441,21 @@ func (s *Service) failed(ev attemptFailed, now time.Time) {
 		s.record(a.DelegationID, false)
 	}
 	s.dequeue(a.DelegationID)
-	s.release(a.Coins, now.Add(ev.retryIn))
+	if rotates(ev.err) {
+		if err := s.coins.Backoff(
+			s.ctx, a.DelegationID, a.Coins, now.Add(s.limits.RetryDelay),
+		); err != nil && s.ctx.Err() == nil {
+			log.WithError(err).WithField("delegation", a.DelegationID).Error("backoff tuple")
+		}
+		s.release(a.Coins, now)
+	} else {
+		s.release(a.Coins, now.Add(ev.retryIn))
+	}
 	log.WithError(ev.err).WithFields(fields).Warn("attempt failed")
 }
 
 func (s *Service) succeed(p *pending) {
 	a := p.attempt
-	for _, by := range p.spent {
-		if len(a.Spenders()) == 0 && by != "" {
-			_, batched := a.Proof()
-			a.AddTx(delegation.Tx{Txid: by, Onchain: batched, Spends: true})
-		}
-	}
 	fields := log.Fields{"delegation": a.DelegationID, "txid": strings.Join(a.Spenders(), ",")}
 	if err := a.Succeeded(); err != nil {
 		log.WithError(err).WithFields(fields).Error("land attempt")
@@ -488,34 +498,196 @@ func (s *Service) landing(c delegation.Coin, now time.Time) {
 	}
 }
 
-// settle succeeds p once every coin is seen spent by its transaction and nothing is left to do at
-// arkd. It fails p when another transaction spent a coin, or when an attempt of a previous run
-// still has coins unspent at landBy; a batched attempt knows its transaction late.
 func (s *Service) settle(p *pending, now time.Time) {
+	if conflict := s.attribute(p); conflict != "" {
+		s.failed(attemptFailed{
+			attempt: p.attempt,
+			err:     fmt.Errorf("coin %s spent by another transaction", conflict),
+			retryIn: s.retryIn(p.attempt, false),
+		}, now)
+		return
+	}
+	spenders := p.attempt.Spenders()
 	for outpoint, by := range p.spent {
-		if spenders := p.attempt.Spenders(); len(spenders) > 0 && by != "" &&
-			!slices.Contains(spenders, by) {
-			s.failed(
-				attemptFailed{
-					attempt: p.attempt, err: fmt.Errorf("coin %s spent by %s", outpoint, by),
-					retryIn: s.retryIn(p.attempt, false),
-				},
-				now,
-			)
+		if by == "" {
+			continue
+		}
+		if len(spenders) > 0 && !slices.Contains(spenders, by) {
+			s.failed(attemptFailed{
+				attempt: p.attempt, err: fmt.Errorf("coin %s spent by %s", outpoint, by),
+				retryIn: s.retryIn(p.attempt, false),
+			}, now)
 			return
 		}
 	}
+	s.nameOnchainSpends(p)
+	if by, kind := observedSpend(p); kind == spendConflict {
+		s.failed(attemptFailed{
+			attempt: p.attempt, err: errors.New("coins spent by different transactions"),
+			retryIn: s.retryIn(p.attempt, false),
+		}, now)
+		return
+	} else if kind == spendAgreed && len(spenders) == 0 && !p.busy {
+		_, batched := p.attempt.Proof()
+		p.attempt.AddTx(delegation.Tx{Txid: by, Onchain: batched, Spends: true})
+		spenders = p.attempt.Spenders()
+	}
+	matched := 0
+	for _, op := range p.attempt.Coins {
+		if by := p.spent[op]; by != "" && slices.Contains(spenders, by) {
+			matched++
+		}
+	}
 	switch {
-	case !p.busy && len(p.spent) == len(p.attempt.Coins):
+	case !p.busy && len(p.attempt.Coins) > 0 && matched == len(p.attempt.Coins):
 		s.succeed(p)
 	case !p.landBy.IsZero() && !now.Before(p.landBy):
-		s.failed(
-			attemptFailed{
-				attempt: p.attempt, err: errNotLanded, retryIn: s.retryIn(p.attempt, true),
-			},
-			now,
-		)
+		if s.confirmedSpend(p) {
+			s.succeed(p)
+			return
+		}
+		s.failed(attemptFailed{
+			attempt: p.attempt, err: errNotLanded, retryIn: s.retryIn(p.attempt, true),
+		}, now)
 	}
+}
+
+const (
+	spendIncomplete = iota
+	spendAgreed
+	spendConflict
+)
+
+func (s *Service) nameOnchainSpends(p *pending) {
+	if s.chain == nil || s.coins == nil || p.busy || len(p.attempt.Spenders()) > 0 {
+		return
+	}
+	var missing []string
+	for _, op := range p.attempt.Coins {
+		if by, seen := p.spent[op]; seen && by == "" {
+			missing = append(missing, op)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	coins, err := s.coins.ListByDelegation(s.ctx, p.attempt.DelegationID)
+	if err != nil {
+		return
+	}
+	byOutpoint := make(map[string]delegation.Coin, len(coins))
+	for _, c := range coins {
+		byOutpoint[c.Outpoint] = c
+	}
+	for _, op := range missing {
+		c, ok := byOutpoint[op]
+		if !ok || !c.Onchain || c.Script == "" {
+			continue
+		}
+		txid, err := s.chain.Spender(s.ctx, c.Script, op)
+		if err != nil || txid == "" {
+			continue
+		}
+		p.spent[op] = txid
+	}
+}
+
+func observedSpend(p *pending) (string, int) {
+	if len(p.attempt.Coins) == 0 {
+		return "", spendIncomplete
+	}
+	var agreed string
+	for _, op := range p.attempt.Coins {
+		by := p.spent[op]
+		if by == "" {
+			return "", spendIncomplete
+		}
+		if agreed == "" {
+			agreed = by
+			continue
+		}
+		if by != agreed {
+			return "", spendConflict
+		}
+	}
+	return agreed, spendAgreed
+}
+
+func (s *Service) confirmedSpend(p *pending) bool {
+	if s.attribute(p) != "" {
+		return false
+	}
+	spenders := p.attempt.Spenders()
+	if len(spenders) == 0 || len(p.spent) != len(p.attempt.Coins) {
+		return false
+	}
+	for _, op := range p.attempt.Coins {
+		if !slices.Contains(spenders, p.spent[op]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Service) attribute(p *pending) string {
+	empty := false
+	for _, by := range p.spent {
+		if by == "" {
+			empty = true
+			break
+		}
+	}
+	if !empty {
+		return ""
+	}
+	spenders := p.attempt.Spenders()
+	if len(spenders) != 1 {
+		return ""
+	}
+	tx, err := s.chain.Transaction(s.ctx, spenders[0])
+	if err != nil || tx == nil {
+		return ""
+	}
+	ins := map[string]bool{}
+	for _, in := range tx.TxIn {
+		ins[in.PreviousOutPoint.String()] = true
+	}
+	for _, op := range p.attempt.Coins {
+		by, seen := p.spent[op]
+		if !seen || by != "" {
+			continue
+		}
+		if ins[op] {
+			p.spent[op] = spenders[0]
+			continue
+		}
+		return op
+	}
+	return ""
+}
+
+func (s *Service) rebroadcast(a delegation.Attempt) {
+	for _, tx := range a.Txs {
+		if !tx.Onchain || !tx.Spends || len(tx.Raw) == 0 {
+			continue
+		}
+		msg := &wire.MsgTx{}
+		if err := msg.Deserialize(bytes.NewReader(tx.Raw)); err != nil || !witnessTx(msg) {
+			continue
+		}
+		if _, err := s.chain.Broadcast(s.ctx, msg); err != nil && s.ctx.Err() == nil {
+			log.WithError(err).WithField("txid", tx.Txid).Warn("rebroadcast")
+		}
+	}
+}
+
+func witnessTx(tx *wire.MsgTx) bool {
+	for _, in := range tx.TxIn {
+		if len(in.Witness) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // retryIn is how long the coins of a pending attempt wait: a batched attempt waits for the next
@@ -549,16 +721,21 @@ func (s *Service) await(p *pending) error {
 // owners.
 func (s *Service) follow(d delegation.Delegation) {
 	active := d.Status == delegation.StatusActive
+	if active {
+		if err := s.coins.ClearDelegationBackoff(s.ctx, d.ID); err != nil && s.ctx.Err() == nil {
+			log.WithError(err).WithField("id", d.ID).Error("clear delegation backoff")
+		}
+	}
 	if !active {
 		s.withdraw(d.ID)
 	}
-	onchain := map[string]bool{}
+	var scripts []string
 	for _, in := range d.Inputs {
-		if in.Script != "" {
-			onchain[in.Script] = in.Onchain
+		if in.Script != "" && !slices.Contains(scripts, in.Script) {
+			scripts = append(scripts, in.Script)
 		}
 	}
-	scripts := slices.Sorted(maps.Keys(onchain))
+	slices.Sort(scripts)
 	watched, err := s.coins.Watched(s.ctx, scripts)
 	if err == nil {
 		err = s.move(watched)
@@ -571,22 +748,37 @@ func (s *Service) follow(d delegation.Delegation) {
 	}
 	claimed := map[string]delegation.Watched{}
 	for _, w := range watched {
-		claimed[w.Script] = w
+		claimed[scriptKey(w.Script, w.Onchain)] = w
 	}
 	var arkAdd, arkRemove, chainAdd, chainRemove []string
-	for _, script := range scripts {
+	seen := map[string]bool{}
+	for _, in := range d.Inputs {
+		if in.Script == "" {
+			continue
+		}
+		key := scriptKey(in.Script, in.Onchain)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		add, remove := &arkAdd, &arkRemove
-		if onchain[script] {
+		if in.Onchain {
 			add, remove = &chainAdd, &chainRemove
 		}
-		w, ok := claimed[script]
+		w, ok := claimed[key]
 		switch {
 		case !active && !ok:
-			*remove = append(*remove, script)
-		case active && ok && !slices.ContainsFunc(w.Claims, func(c delegation.Claim) bool { return c.DelegationID != d.ID }):
-			*add = append(*add, script)
+			*remove = append(*remove, in.Script)
+		case active && ok && !slices.ContainsFunc(w.Claims, func(c delegation.Claim) bool {
+			return c.DelegationID != d.ID
+		}):
+			*add = append(*add, in.Script)
 		}
 	}
+	slices.Sort(arkAdd)
+	slices.Sort(arkRemove)
+	slices.Sort(chainAdd)
+	slices.Sort(chainRemove)
 	if len(arkAdd)+len(arkRemove)+len(chainAdd)+len(chainRemove) == 0 {
 		return
 	}
@@ -628,6 +820,9 @@ func (s *Service) move(watched []delegation.Watched) error {
 			return err
 		}
 		for _, c := range moved {
+			if err := s.coins.ClearBackoff(s.ctx, c.Outpoint); err != nil && s.ctx.Err() == nil {
+				log.WithError(err).WithField("outpoint", c.Outpoint).Error("clear tuple backoff")
+			}
 			log.WithFields(log.Fields{"outpoint": c.Outpoint, "delegation": c.DelegationID}).
 				Debug("coin moved")
 		}
@@ -808,6 +1003,12 @@ func (s *Service) persist(changes []delegation.Coin, now time.Time) {
 		if c.Status == delegation.Present && c.Due.IsZero() {
 			changes[i].Due = s.due(c, now)
 		}
+		if c.Onchain && c.Height > 0 && c.ConfirmedMTP.IsZero() && c.Status == delegation.Present {
+			mtp, err := s.chain.MedianTime(s.ctx, c.Height-1)
+			if err == nil {
+				changes[i].ConfirmedMTP = mtp
+			}
+		}
 	}
 	// stored before anything lands on them, so a succeeded attempt never shows a present coin
 	if err := s.coins.Upsert(s.ctx, changes...); err != nil && s.ctx.Err() == nil {
@@ -820,6 +1021,9 @@ func (s *Service) persist(changes []delegation.Coin, now time.Time) {
 			continue
 		}
 		log.WithFields(fields).WithField("spent_by", c.SpentBy).Debug("coin spent")
+		if err := s.coins.ClearBackoff(s.ctx, c.Outpoint); err != nil && s.ctx.Err() == nil {
+			log.WithError(err).WithField("outpoint", c.Outpoint).Error("clear tuple backoff")
+		}
 		s.withdraw(c.DelegationID, c.Outpoint)
 		s.landing(c, now)
 	}
@@ -853,6 +1057,13 @@ func scriptsOf(outputs []ports.Output) []string {
 		}
 	}
 	return out
+}
+
+func scriptKey(script string, onchain bool) string {
+	if onchain {
+		return script + ":1"
+	}
+	return script + ":0"
 }
 
 func outpointsOf(coins []delegation.Coin) []string {

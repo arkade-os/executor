@@ -252,9 +252,10 @@ func (x *RegisterDelegationResponse) GetDelegation() *Delegation {
 }
 
 type GetDelegationRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Address       string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// address matches any input address of the delegation.
+	Address       string `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1011,19 +1012,18 @@ type Delegation struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Fingerprint string                 `protobuf:"bytes,2,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
-	Address     string                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
-	TemplateId  string                 `protobuf:"bytes,4,opt,name=template_id,json=templateId,proto3" json:"template_id,omitempty"`
-	Variables   map[string]string      `protobuf:"bytes,5,rep,name=variables,proto3" json:"variables,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Inputs      []*Input               `protobuf:"bytes,6,rep,name=inputs,proto3" json:"inputs,omitempty"`
+	TemplateId  string                 `protobuf:"bytes,3,opt,name=template_id,json=templateId,proto3" json:"template_id,omitempty"`
+	Variables   map[string]string      `protobuf:"bytes,4,rep,name=variables,proto3" json:"variables,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Inputs      []*Input               `protobuf:"bytes,5,rep,name=inputs,proto3" json:"inputs,omitempty"`
 	// stream_id is the stream that spawned the delegation, 0 when a client registered it.
-	StreamId int64 `protobuf:"varint,7,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
+	StreamId int64 `protobuf:"varint,6,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
 	// expires_at is unix seconds, 0 when the delegation never expires.
-	ExpiresAt int64 `protobuf:"varint,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ExpiresAt int64 `protobuf:"varint,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	// status is active, cancelled, expired or done.
-	Status string `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	Status string `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
 	// created_at and updated_at are unix seconds.
-	CreatedAt     int64 `protobuf:"varint,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     int64 `protobuf:"varint,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt     int64 `protobuf:"varint,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     int64 `protobuf:"varint,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1068,13 +1068,6 @@ func (x *Delegation) GetId() int64 {
 func (x *Delegation) GetFingerprint() string {
 	if x != nil {
 		return x.Fingerprint
-	}
-	return ""
-}
-
-func (x *Delegation) GetAddress() string {
-	if x != nil {
-		return x.Address
 	}
 	return ""
 }
@@ -1145,6 +1138,7 @@ type Input struct {
 	Tapscripts []string `protobuf:"bytes,4,rep,name=tapscripts,proto3" json:"tapscripts,omitempty"`
 	// locktime is the absolute locktime of the input's spend leaf, 0 without one.
 	Locktime      uint32 `protobuf:"varint,5,opt,name=locktime,proto3" json:"locktime,omitempty"`
+	Address       string `protobuf:"bytes,6,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1212,6 +1206,13 @@ func (x *Input) GetLocktime() uint32 {
 		return x.Locktime
 	}
 	return 0
+}
+
+func (x *Input) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
 }
 
 // Coin is a vtxo found at a delegation's input.
@@ -1392,28 +1393,27 @@ const file_executor_v1_service_proto_rawDesc = "" +
 	"created_at\x18\b \x01(\x03R\tcreatedAt\"/\n" +
 	"\x05Param\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04type\x18\x02 \x01(\tR\x04type\"\xbb\x03\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\"\xa1\x03\n" +
 	"\n" +
 	"Delegation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12 \n" +
-	"\vfingerprint\x18\x02 \x01(\tR\vfingerprint\x12\x18\n" +
-	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x1f\n" +
-	"\vtemplate_id\x18\x04 \x01(\tR\n" +
+	"\vfingerprint\x18\x02 \x01(\tR\vfingerprint\x12\x1f\n" +
+	"\vtemplate_id\x18\x03 \x01(\tR\n" +
 	"templateId\x12D\n" +
-	"\tvariables\x18\x05 \x03(\v2&.executor.v1.Delegation.VariablesEntryR\tvariables\x12*\n" +
-	"\x06inputs\x18\x06 \x03(\v2\x12.executor.v1.InputR\x06inputs\x12\x1b\n" +
-	"\tstream_id\x18\a \x01(\x03R\bstreamId\x12\x1d\n" +
+	"\tvariables\x18\x04 \x03(\v2&.executor.v1.Delegation.VariablesEntryR\tvariables\x12*\n" +
+	"\x06inputs\x18\x05 \x03(\v2\x12.executor.v1.InputR\x06inputs\x12\x1b\n" +
+	"\tstream_id\x18\x06 \x01(\x03R\bstreamId\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\b \x01(\x03R\texpiresAt\x12\x16\n" +
-	"\x06status\x18\t \x01(\tR\x06status\x12\x1d\n" +
+	"expires_at\x18\a \x01(\x03R\texpiresAt\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\n" +
-	" \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"created_at\x18\t \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\v \x01(\x03R\tupdatedAt\x1a<\n" +
+	"updated_at\x18\n" +
+	" \x01(\x03R\tupdatedAt\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x89\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa3\x01\n" +
 	"\x05Input\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aonchain\x18\x02 \x01(\bR\aonchain\x12\x16\n" +
@@ -1421,7 +1421,8 @@ const file_executor_v1_service_proto_rawDesc = "" +
 	"\n" +
 	"tapscripts\x18\x04 \x03(\tR\n" +
 	"tapscripts\x12\x1a\n" +
-	"\blocktime\x18\x05 \x01(\rR\blocktime\"\xda\x01\n" +
+	"\blocktime\x18\x05 \x01(\rR\blocktime\x12\x18\n" +
+	"\aaddress\x18\x06 \x01(\tR\aaddress\"\xda\x01\n" +
 	"\x04Coin\x12\x1a\n" +
 	"\boutpoint\x18\x01 \x01(\tR\boutpoint\x12\x14\n" +
 	"\x05input\x18\x02 \x01(\x05R\x05input\x12\x16\n" +

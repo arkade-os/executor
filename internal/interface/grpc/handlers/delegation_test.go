@@ -28,7 +28,7 @@ func TestRegisterDelegationThenGet(t *testing.T) {
 	d := reg.GetDelegation()
 	require.NotZero(t, d.GetId())
 	require.Len(t, d.GetFingerprint(), 64)
-	require.NotEmpty(t, d.GetAddress())
+	require.NotEmpty(t, d.GetInputs()[0].GetAddress())
 	require.Equal(t, id, d.GetTemplateId())
 	require.Len(t, d.GetInputs(), 1)
 	require.Equal(t, "funds", d.GetInputs()[0].GetName())
@@ -41,9 +41,9 @@ func TestRegisterDelegationThenGet(t *testing.T) {
 
 	got, err := h.GetDelegation(t.Context(), &executorv1.GetDelegationRequest{Id: d.GetId()})
 	require.NoError(t, err)
-	require.Equal(t, d.GetAddress(), got.GetDelegation().GetAddress())
+	require.Equal(t, d.GetInputs()[0].GetAddress(), got.GetDelegation().GetInputs()[0].GetAddress())
 	got, err = h.GetDelegation(
-		t.Context(), &executorv1.GetDelegationRequest{Address: d.GetAddress()},
+		t.Context(), &executorv1.GetDelegationRequest{Address: d.GetInputs()[0].GetAddress()},
 	)
 	require.NoError(t, err)
 	require.Equal(t, d.GetId(), got.GetDelegation().GetId())
@@ -94,12 +94,6 @@ func TestRegisterDelegationErrors(t *testing.T) {
 		t.Context(), &executorv1.RegisterDelegationRequest{TemplateId: release},
 	)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err), "a leaf naming the cosigner key")
-
-	two := registerDocument(t, h, "../../../../pkg/template/testdata/counter.json")
-	_, err = h.RegisterDelegation(
-		t.Context(), &executorv1.RegisterDelegationRequest{TemplateId: two},
-	)
-	require.Equal(t, codes.InvalidArgument, status.Code(err), "two inputs")
 
 	require.NoError(t, h.registry.SetTemplateStatus(t.Context(), id, "disabled"))
 	_, err = h.RegisterDelegation(
@@ -159,7 +153,7 @@ func TestGetDelegationListsCoins(t *testing.T) {
 	require.NoError(t, coins.Upsert(t.Context(), present, spent, other))
 
 	got, err = h.GetDelegation(
-		t.Context(), &executorv1.GetDelegationRequest{Address: d.GetAddress()},
+		t.Context(), &executorv1.GetDelegationRequest{Address: d.GetInputs()[0].GetAddress()},
 	)
 	require.NoError(t, err)
 	require.Len(t, got.GetCoins(), 2)

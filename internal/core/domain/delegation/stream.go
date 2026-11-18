@@ -119,8 +119,13 @@ func Spawn(p SpawnParams) (*Delegation, error) {
 	if err != nil {
 		return nil, err
 	}
-	if d.Inputs[0].Script != hex.EncodeToString(p.Output) {
-		return nil, fmt.Errorf("%w: it locks %s", ErrIneligible, d.Inputs[0].Script)
+	slot := p.Template.Triggers()[0].Input()
+	if slot < 0 || slot >= len(d.Inputs) || d.Inputs[slot].Script != hex.EncodeToString(p.Output) {
+		locked := ""
+		if slot >= 0 && slot < len(d.Inputs) {
+			locked = d.Inputs[slot].Script
+		}
+		return nil, fmt.Errorf("%w: it locks %s", ErrIneligible, locked)
 	}
 	return d, nil
 }

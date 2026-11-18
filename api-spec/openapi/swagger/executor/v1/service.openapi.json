@@ -105,6 +105,7 @@
           {
             "name": "address",
             "in": "query",
+            "description": "address matches any input address of the delegation.",
             "schema": {
               "type": "string"
             }
@@ -137,7 +138,7 @@
         "tags": [
           "ExecutorService"
         ],
-        "description": "RegisterDelegation binds a one-input template to variables: the daemon acts on every coin landing at\nthe derived address until expires_at. Registering an active delegation again returns it unchanged.",
+        "description": "RegisterDelegation binds a template to variables. The daemon acts on coins landing at the\ntemplate's input addresses until expires_at. Registering an active delegation again returns it\nunchanged.",
         "operationId": "ExecutorService_RegisterDelegation",
         "requestBody": {
           "content": {
@@ -403,9 +404,6 @@
         "title": "Delegation",
         "type": "object",
         "properties": {
-          "address": {
-            "type": "string"
-          },
           "createdAt": {
             "type": "integer",
             "description": "created_at and updated_at are unix seconds.",
@@ -476,7 +474,8 @@
         "type": "object",
         "properties": {
           "address": {
-            "type": "string"
+            "type": "string",
+            "description": "address matches any input address of the delegation."
           },
           "id": {
             "type": "integer",
@@ -554,6 +553,9 @@
         "type": "object",
         "description": "Input is one template input of a delegation.",
         "properties": {
+          "address": {
+            "type": "string"
+          },
           "locktime": {
             "type": "integer",
             "description": "locktime is the absolute locktime of the input's spend leaf, 0 without one.",

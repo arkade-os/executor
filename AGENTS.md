@@ -1,10 +1,12 @@
 # AGENTS.md
 
 executord renews Arkade VTXOs and boards bitcoin while their owner is offline. A wallet registers
-a delegation on its address; every spend is co-signed by the
+a delegation on the addresses of its template inputs; every spend is co-signed by the
 [emulator](https://github.com/arkade-os/emulator) only if it satisfies the template's covenant. The
 default templates in [`templates/`](templates) (`renew`, `board` for non-interactive boarding, and
-the VHTLC claim stream `claim`) are registered at startup; onchain templates are not served. Port
+the VHTLC claim stream `claim`) are registered at startup. An onchain template is registered by
+its document like any other: the daemon watches its input addresses and the emulator signs the
+spend. Port
 7080 is the public API, 7081 the admin API and UI: keep it private. Treat signing, forfeit, sweep
 and fee code as code that moves money. When your Ark knowledge disagrees with the repo, trust the
 code but if you think the code is buggy and conflicts with repo intentions then ask a human. For

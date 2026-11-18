@@ -5,6 +5,7 @@ import "errors"
 var (
 	ErrDelegationNotFound = errors.New("delegation not found")
 	ErrInvalidArgs        = errors.New("invalid arguments")
+	ErrDomainClash        = errors.New("outpoint is already watched on the other chain")
 	ErrStreamOnly         = errors.New(
 		"a template with a trigger is run by a stream, not registered by clients",
 	)

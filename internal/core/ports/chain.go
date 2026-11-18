@@ -3,6 +3,7 @@ package ports
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -22,7 +23,9 @@ type ChainWatcher interface {
 	// Unspents lists the utxos at the script, those in the mempool included.
 	Unspents(ctx context.Context, script string) ([]Output, error)
 	Tip(ctx context.Context) (delegation.Tip, error)
+	MedianTime(ctx context.Context, height int64) (time.Time, error)
 	Transaction(ctx context.Context, txid string) (*wire.MsgTx, error)
+	Spender(ctx context.Context, script, outpoint string) (txid string, err error)
 	Broadcast(ctx context.Context, tx *wire.MsgTx) (txid string, err error)
 	// FeeRate is the going rate in satoshis per virtual byte, 1 at the least.
 	FeeRate(ctx context.Context) (satPerVbyte float64, err error)

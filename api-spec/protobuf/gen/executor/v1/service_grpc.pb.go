@@ -35,8 +35,9 @@ const (
 type ExecutorServiceClient interface {
 	// GetInfo tells the daemon's version, network and keys.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
-	// RegisterDelegation binds a one-input template to variables: the daemon acts on every coin landing at
-	// the derived address until expires_at. Registering an active delegation again returns it unchanged.
+	// RegisterDelegation binds a template to variables. The daemon acts on coins landing at the
+	// template's input addresses until expires_at. Registering an active delegation again returns it
+	// unchanged.
 	RegisterDelegation(ctx context.Context, in *RegisterDelegationRequest, opts ...grpc.CallOption) (*RegisterDelegationResponse, error)
 	// GetDelegation returns a delegation with its coins, by ?id= or by ?address=.
 	GetDelegation(ctx context.Context, in *GetDelegationRequest, opts ...grpc.CallOption) (*GetDelegationResponse, error)
@@ -144,8 +145,9 @@ func (c *executorServiceClient) ListTemplates(ctx context.Context, in *ListTempl
 type ExecutorServiceServer interface {
 	// GetInfo tells the daemon's version, network and keys.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
-	// RegisterDelegation binds a one-input template to variables: the daemon acts on every coin landing at
-	// the derived address until expires_at. Registering an active delegation again returns it unchanged.
+	// RegisterDelegation binds a template to variables. The daemon acts on coins landing at the
+	// template's input addresses until expires_at. Registering an active delegation again returns it
+	// unchanged.
 	RegisterDelegation(context.Context, *RegisterDelegationRequest) (*RegisterDelegationResponse, error)
 	// GetDelegation returns a delegation with its coins, by ?id= or by ?address=.
 	GetDelegation(context.Context, *GetDelegationRequest) (*GetDelegationResponse, error)

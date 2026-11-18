@@ -71,6 +71,7 @@ func toStatus(err error) error {
 	case errors.Is(err, registry.ErrArtifactInUse), errors.Is(err, registry.ErrTemplateInUse),
 		errors.Is(err, registry.ErrTemplateDisabled), errors.Is(err, registry.ErrUnsupported), errors.Is(err, delegation.ErrStreamOnly),
 		errors.Is(err, delegation.ErrNoEncryptionKey), errors.Is(err, delegation.ErrCosignerKeyLeaf),
+		errors.Is(err, delegation.ErrDomainClash),
 		errors.Is(err, delegation.ErrBlocked), errors.Is(err, delegation.ErrNotActive),
 		errors.Is(err, delegation.ErrNotCancelled), errors.Is(err, delegation.ErrNotStream):
 		return status.Error(codes.FailedPrecondition, err.Error())

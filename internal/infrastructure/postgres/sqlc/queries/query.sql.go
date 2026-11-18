@@ -70,6 +70,24 @@ func (q *Queries) DeleteArtifact(ctx context.Context, id string) (bool, error) {
 	return referenced_in_use, err
 }
 
+const deleteBackoffsForDelegation = `-- name: DeleteBackoffsForDelegation :exec
+DELETE FROM tuple_backoff WHERE delegation_id = $1
+`
+
+func (q *Queries) DeleteBackoffsForDelegation(ctx context.Context, delegationID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteBackoffsForDelegation, delegationID)
+	return err
+}
+
+const deleteBackoffsForOutpoint = `-- name: DeleteBackoffsForOutpoint :exec
+DELETE FROM tuple_backoff WHERE $1::text = ANY (coins)
+`
+
+func (q *Queries) DeleteBackoffsForOutpoint(ctx context.Context, outpoint string) error {
+	_, err := q.db.ExecContext(ctx, deleteBackoffsForOutpoint, outpoint)
+	return err
+}
+
 const deleteTemplate = `-- name: DeleteTemplate :one
 WITH referenced AS (
     SELECT EXISTS (SELECT 1 FROM delegations WHERE template_id = $1::text)
@@ -91,7 +109,7 @@ func (q *Queries) DeleteTemplate(ctx context.Context, id string) (bool, error) {
 const expireDelegations = `-- name: ExpireDelegations :many
 UPDATE delegations SET status = 'expired', updated_at = now()
 WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= $1::timestamptz
-RETURNING id, fingerprint, address, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at
+RETURNING id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at
 `
 
 func (q *Queries) ExpireDelegations(ctx context.Context, before time.Time) ([]Delegation, error) {
@@ -106,7 +124,6 @@ func (q *Queries) ExpireDelegations(ctx context.Context, before time.Time) ([]De
 		if err := rows.Scan(
 			&i.ID,
 			&i.Fingerprint,
-			&i.Address,
 			&i.TemplateID,
 			&i.Variables,
 			&i.Inputs,
@@ -142,7 +159,6 @@ type GetWatchedStatusRow struct {
 	Watched bool
 }
 
-// the stored status hash of script, and whether an active delegation watches it onchain
 func (q *Queries) GetWatchedStatus(ctx context.Context, script string) (GetWatchedStatusRow, error) {
 	row := q.db.QueryRowContext(ctx, getWatchedStatus, script)
 	var i GetWatchedStatusRow
@@ -212,7 +228,8 @@ func (q *Queries) InsertAttempt(ctx context.Context, arg InsertAttemptParams) (A
 }
 
 const insertClaim = `-- name: InsertClaim :exec
-INSERT INTO claims (delegation_id, input, script, onchain, locktime) VALUES ($1, $2, $3, $4, $5)
+INSERT INTO claims (delegation_id, input, script, onchain, locktime, address, sequence, tx_locktime)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type InsertClaimParams struct {
@@ -221,6 +238,9 @@ type InsertClaimParams struct {
 	Script       string
 	Onchain      bool
 	Locktime     int64
+	Address      string
+	Sequence     int64
+	TxLocktime   int64
 }
 
 func (q *Queries) InsertClaim(ctx context.Context, arg InsertClaimParams) error {
@@ -230,19 +250,21 @@ func (q *Queries) InsertClaim(ctx context.Context, arg InsertClaimParams) error 
 		arg.Script,
 		arg.Onchain,
 		arg.Locktime,
+		arg.Address,
+		arg.Sequence,
+		arg.TxLocktime,
 	)
 	return err
 }
 
 const insertDelegation = `-- name: InsertDelegation :one
-INSERT INTO delegations (fingerprint, address, template_id, variables, inputs, stream_id, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, fingerprint, address, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at
+INSERT INTO delegations (fingerprint, template_id, variables, inputs, stream_id, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at
 `
 
 type InsertDelegationParams struct {
 	Fingerprint string
-	Address     string
 	TemplateID  string
 	Variables   json.RawMessage
 	Inputs      json.RawMessage
@@ -253,7 +275,6 @@ type InsertDelegationParams struct {
 func (q *Queries) InsertDelegation(ctx context.Context, arg InsertDelegationParams) (Delegation, error) {
 	row := q.db.QueryRowContext(ctx, insertDelegation,
 		arg.Fingerprint,
-		arg.Address,
 		arg.TemplateID,
 		arg.Variables,
 		arg.Inputs,
@@ -264,7 +285,6 @@ func (q *Queries) InsertDelegation(ctx context.Context, arg InsertDelegationPara
 	err := row.Scan(
 		&i.ID,
 		&i.Fingerprint,
-		&i.Address,
 		&i.TemplateID,
 		&i.Variables,
 		&i.Inputs,
@@ -312,6 +332,38 @@ func (q *Queries) InsertStream(ctx context.Context, arg InsertStreamParams) (Ins
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listActiveBackoffs = `-- name: ListActiveBackoffs :many
+SELECT delegation_id, coins FROM tuple_backoff WHERE retry_at > $1::timestamptz
+`
+
+type ListActiveBackoffsRow struct {
+	DelegationID int64
+	Coins        []string
+}
+
+func (q *Queries) ListActiveBackoffs(ctx context.Context, now time.Time) ([]ListActiveBackoffsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveBackoffs, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveBackoffsRow
+	for rows.Next() {
+		var i ListActiveBackoffsRow
+		if err := rows.Scan(&i.DelegationID, pq.Array(&i.Coins)); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listArtifacts = `-- name: ListArtifacts :many
@@ -392,7 +444,9 @@ func (q *Queries) ListAttemptsByDelegation(ctx context.Context, arg ListAttempts
 }
 
 const listClaimsAtScripts = `-- name: ListClaimsAtScripts :many
-SELECT claims.script, claims.delegation_id, claims.input, claims.onchain, claims.locktime, (delegations.stream_id IS NOT NULL)::boolean AS spawned
+SELECT claims.script, claims.delegation_id, claims.input, claims.onchain, claims.locktime,
+    claims.address, claims.sequence, claims.tx_locktime,
+    (delegations.stream_id IS NOT NULL)::boolean AS spawned
 FROM claims JOIN delegations ON delegations.id = claims.delegation_id
 WHERE claims.script = ANY ($1::text[]) AND delegations.status = 'active'
 ORDER BY claims.delegation_id, claims.input
@@ -404,10 +458,12 @@ type ListClaimsAtScriptsRow struct {
 	Input        int32
 	Onchain      bool
 	Locktime     int64
+	Address      string
+	Sequence     int64
+	TxLocktime   int64
 	Spawned      bool
 }
 
-// the claims of the active delegations watching scripts
 func (q *Queries) ListClaimsAtScripts(ctx context.Context, scripts []string) ([]ListClaimsAtScriptsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listClaimsAtScripts, pq.Array(scripts))
 	if err != nil {
@@ -423,6 +479,9 @@ func (q *Queries) ListClaimsAtScripts(ctx context.Context, scripts []string) ([]
 			&i.Input,
 			&i.Onchain,
 			&i.Locktime,
+			&i.Address,
+			&i.Sequence,
+			&i.TxLocktime,
 			&i.Spawned,
 		); err != nil {
 			return nil, err
@@ -439,7 +498,7 @@ func (q *Queries) ListClaimsAtScripts(ctx context.Context, scripts []string) ([]
 }
 
 const listCoinsAtScripts = `-- name: ListCoinsAtScripts :many
-SELECT outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations, held, retry_at, ready_at, updated_at FROM coins WHERE script = ANY ($1::text[]) AND status = 'present' ORDER BY created_at, outpoint
+SELECT outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations, held, retry_at, ready_at, updated_at, confirmed_mtp FROM coins WHERE script = ANY ($1::text[]) AND status = 'present' ORDER BY created_at, outpoint
 `
 
 func (q *Queries) ListCoinsAtScripts(ctx context.Context, scripts []string) ([]Coin, error) {
@@ -469,6 +528,7 @@ func (q *Queries) ListCoinsAtScripts(ctx context.Context, scripts []string) ([]C
 			&i.RetryAt,
 			&i.ReadyAt,
 			&i.UpdatedAt,
+			&i.ConfirmedMtp,
 		); err != nil {
 			return nil, err
 		}
@@ -484,7 +544,7 @@ func (q *Queries) ListCoinsAtScripts(ctx context.Context, scripts []string) ([]C
 }
 
 const listCoinsByDelegation = `-- name: ListCoinsByDelegation :many
-SELECT outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations, held, retry_at, ready_at, updated_at FROM coins WHERE delegation_id = $1 ORDER BY created_at, outpoint
+SELECT outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations, held, retry_at, ready_at, updated_at, confirmed_mtp FROM coins WHERE delegation_id = $1 ORDER BY created_at, outpoint
 `
 
 func (q *Queries) ListCoinsByDelegation(ctx context.Context, delegationID int64) ([]Coin, error) {
@@ -514,6 +574,7 @@ func (q *Queries) ListCoinsByDelegation(ctx context.Context, delegationID int64)
 			&i.RetryAt,
 			&i.ReadyAt,
 			&i.UpdatedAt,
+			&i.ConfirmedMtp,
 		); err != nil {
 			return nil, err
 		}
@@ -551,7 +612,7 @@ WITH held AS (
     ORDER BY next_due NULLS LAST, id
     LIMIT $7::int
 )
-SELECT d.id, d.fingerprint, d.address, d.template_id, d.variables, d.inputs, d.stream_id, d.expires_at, d.status,
+SELECT d.id, d.fingerprint, d.template_id, d.variables, d.inputs, d.stream_id, d.expires_at, d.status,
     d.created_at, d.updated_at, page.coins, page.amount, COALESCE(page.next_due, 'epoch'::timestamptz)::timestamptz AS next_due,
     COALESCE((SELECT a.status FROM attempts a WHERE a.delegation_id = d.id ORDER BY a.id DESC LIMIT 1), '')::text AS last_attempt
 FROM page JOIN delegations d ON d.id = page.id
@@ -572,7 +633,6 @@ type ListDelegationSummariesParams struct {
 type ListDelegationSummariesRow struct {
 	ID          int64
 	Fingerprint string
-	Address     string
 	TemplateID  string
 	Variables   json.RawMessage
 	Inputs      json.RawMessage
@@ -610,7 +670,6 @@ func (q *Queries) ListDelegationSummaries(ctx context.Context, arg ListDelegatio
 		if err := rows.Scan(
 			&i.ID,
 			&i.Fingerprint,
-			&i.Address,
 			&i.TemplateID,
 			&i.Variables,
 			&i.Inputs,
@@ -638,7 +697,7 @@ func (q *Queries) ListDelegationSummaries(ctx context.Context, arg ListDelegatio
 }
 
 const listDelegations = `-- name: ListDelegations :many
-SELECT id, fingerprint, address, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at FROM delegations
+SELECT id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at FROM delegations
 WHERE ($1::text = '' OR status = $1::text)
   AND ($2::bigint = 0 OR id < $2::bigint)
 ORDER BY id DESC
@@ -663,7 +722,6 @@ func (q *Queries) ListDelegations(ctx context.Context, arg ListDelegationsParams
 		if err := rows.Scan(
 			&i.ID,
 			&i.Fingerprint,
-			&i.Address,
 			&i.TemplateID,
 			&i.Variables,
 			&i.Inputs,
@@ -687,11 +745,10 @@ func (q *Queries) ListDelegations(ctx context.Context, arg ListDelegationsParams
 }
 
 const listOnchainCoins = `-- name: ListOnchainCoins :many
-SELECT coins.outpoint, coins.delegation_id, coins.input, coins.script, coins.amount, coins.expiry, coins.created_at, coins.due, coins.status, coins.spent_by, coins.onchain, coins.height, coins.confirmations, coins.held, coins.retry_at, coins.ready_at, coins.updated_at FROM coins JOIN delegations ON delegations.id = coins.delegation_id
+SELECT coins.outpoint, coins.delegation_id, coins.input, coins.script, coins.amount, coins.expiry, coins.created_at, coins.due, coins.status, coins.spent_by, coins.onchain, coins.height, coins.confirmations, coins.held, coins.retry_at, coins.ready_at, coins.updated_at, coins.confirmed_mtp FROM coins JOIN delegations ON delegations.id = coins.delegation_id
 WHERE coins.status = 'present' AND coins.onchain AND delegations.status = 'active'
 `
 
-// the present onchain coins of the active delegations
 func (q *Queries) ListOnchainCoins(ctx context.Context) ([]Coin, error) {
 	rows, err := q.db.QueryContext(ctx, listOnchainCoins)
 	if err != nil {
@@ -719,6 +776,7 @@ func (q *Queries) ListOnchainCoins(ctx context.Context) ([]Coin, error) {
 			&i.RetryAt,
 			&i.ReadyAt,
 			&i.UpdatedAt,
+			&i.ConfirmedMtp,
 		); err != nil {
 			return nil, err
 		}
@@ -770,43 +828,45 @@ func (q *Queries) ListPendingAttempts(ctx context.Context) ([]Attempt, error) {
 }
 
 const listReadyCoins = `-- name: ListReadyCoins :many
-WITH picked AS (
-    SELECT DISTINCT ON (coins.delegation_id, coins.input) coins.outpoint, coins.delegation_id
+WITH params AS (
+    SELECT $1::timestamptz AS now, $2::bigint AS median_time, $3::bigint AS tip
+), eligible AS (
+    SELECT coins.outpoint, coins.delegation_id, coins.input, coins.created_at
     FROM coins
     JOIN claims ON claims.delegation_id = coins.delegation_id AND claims.input = coins.input
     JOIN delegations ON delegations.id = coins.delegation_id
-    WHERE coins.status = 'present' AND NOT coins.held AND coins.ready_at <= $1::timestamptz
+    CROSS JOIN params
+    WHERE coins.status = 'present' AND NOT coins.held AND coins.ready_at <= params.now
       AND delegations.status = 'active'
-      AND CASE WHEN claims.locktime >= 500000000 THEN claims.locktime <= $2::bigint ELSE claims.locktime <= $3::bigint END
+      AND CASE WHEN claims.locktime >= 500000000 THEN claims.locktime <= params.median_time ELSE claims.locktime <= params.tip END
+      AND CASE WHEN claims.tx_locktime >= 500000000 THEN claims.tx_locktime <= params.median_time ELSE claims.tx_locktime <= params.tip END
+      AND (
+        (claims.sequence & 2147483648::bigint) <> 0
+        OR ((claims.sequence & 4194304) = 0 AND coins.height > 0 AND (params.tip + 1 - coins.height) >= (claims.sequence & 65535))
+        OR ((claims.sequence & 4194304) <> 0 AND coins.confirmed_mtp IS NOT NULL AND params.median_time >= EXTRACT(EPOCH FROM coins.confirmed_mtp)::bigint + (claims.sequence & 65535) * 512)
+      )
       AND NOT EXISTS (SELECT 1 FROM coins h WHERE h.delegation_id = coins.delegation_id AND h.status = 'present' AND h.held)
-    ORDER BY coins.delegation_id, coins.input, coins.created_at, coins.outpoint
+), ranked AS (
+    SELECT eligible.outpoint, eligible.delegation_id, eligible.input, eligible.created_at, row_number() OVER (PARTITION BY delegation_id, input ORDER BY created_at, outpoint) AS n
+    FROM eligible
 ), complete AS (
-    SELECT picked.delegation_id FROM picked GROUP BY picked.delegation_id
-    HAVING count(*) = (SELECT count(*) FROM claims WHERE claims.delegation_id = picked.delegation_id)
-    ORDER BY picked.delegation_id
-    LIMIT $4::int
+    SELECT delegation_id FROM ranked WHERE n = 1 GROUP BY delegation_id
+    HAVING count(*) = (SELECT count(*) FROM claims WHERE claims.delegation_id = ranked.delegation_id)
 )
-SELECT coins.outpoint, coins.delegation_id, coins.input, coins.script, coins.amount, coins.expiry, coins.created_at, coins.due, coins.status, coins.spent_by, coins.onchain, coins.height, coins.confirmations, coins.held, coins.retry_at, coins.ready_at, coins.updated_at FROM coins JOIN picked ON picked.outpoint = coins.outpoint
-WHERE picked.delegation_id IN (SELECT delegation_id FROM complete)
-ORDER BY coins.delegation_id, coins.input
+SELECT coins.outpoint, coins.delegation_id, coins.input, coins.script, coins.amount, coins.expiry, coins.created_at, coins.due, coins.status, coins.spent_by, coins.onchain, coins.height, coins.confirmations, coins.held, coins.retry_at, coins.ready_at, coins.updated_at, coins.confirmed_mtp FROM coins
+JOIN ranked ON ranked.outpoint = coins.outpoint
+WHERE ranked.n <= 4 AND coins.delegation_id IN (SELECT delegation_id FROM complete)
+ORDER BY coins.delegation_id, coins.input, ranked.n
 `
 
 type ListReadyCoinsParams struct {
 	Now        time.Time
 	MedianTime int64
 	Height     int64
-	MaxCount   int32
 }
 
-// the oldest coin ready by now at each input of the active delegations holding none, past the input's
-// locktime at the tip; only delegations with every input filled, at most max_count of them, by id then input
 func (q *Queries) ListReadyCoins(ctx context.Context, arg ListReadyCoinsParams) ([]Coin, error) {
-	rows, err := q.db.QueryContext(ctx, listReadyCoins,
-		arg.Now,
-		arg.MedianTime,
-		arg.Height,
-		arg.MaxCount,
-	)
+	rows, err := q.db.QueryContext(ctx, listReadyCoins, arg.Now, arg.MedianTime, arg.Height)
 	if err != nil {
 		return nil, err
 	}
@@ -832,6 +892,7 @@ func (q *Queries) ListReadyCoins(ctx context.Context, arg ListReadyCoinsParams) 
 			&i.RetryAt,
 			&i.ReadyAt,
 			&i.UpdatedAt,
+			&i.ConfirmedMtp,
 		); err != nil {
 			return nil, err
 		}
@@ -859,7 +920,6 @@ type ListSpawnedRow struct {
 	LastAt   time.Time
 }
 
-// what each stream spawned: delegations, the active ones and when the last one was
 func (q *Queries) ListSpawned(ctx context.Context) ([]ListSpawnedRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSpawned)
 	if err != nil {
@@ -891,11 +951,11 @@ func (q *Queries) ListSpawned(ctx context.Context) ([]ListSpawnedRow, error) {
 const listStrandedScripts = `-- name: ListStrandedScripts :many
 SELECT DISTINCT coins.script FROM coins JOIN delegations ON delegations.id = coins.delegation_id
 WHERE coins.status = 'present' AND delegations.status <> 'active' AND EXISTS (
-    SELECT 1 FROM claims JOIN delegations a ON a.id = claims.delegation_id WHERE claims.script = coins.script AND a.status = 'active'
+    SELECT 1 FROM claims JOIN delegations a ON a.id = claims.delegation_id
+    WHERE claims.script = coins.script AND claims.onchain = coins.onchain AND a.status = 'active'
 )
 `
 
-// the scripts an active delegation watches that hold present coins of an inactive one
 func (q *Queries) ListStrandedScripts(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listStrandedScripts)
 	if err != nil {
@@ -1031,19 +1091,24 @@ func (q *Queries) ListWatchedScripts(ctx context.Context, onchain bool) ([]strin
 
 const moveCoins = `-- name: MoveCoins :many
 UPDATE coins SET delegation_id = $1, input = $2, updated_at = now()
-WHERE script = $3 AND status = 'present' AND (delegation_id, input) <> ($1, $2)
-RETURNING outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations, held, retry_at, ready_at, updated_at
+WHERE script = $3 AND onchain = $4 AND status = 'present' AND (delegation_id, input) <> ($1, $2)
+RETURNING outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations, held, retry_at, ready_at, updated_at, confirmed_mtp
 `
 
 type MoveCoinsParams struct {
 	DelegationID int64
 	Input        int32
 	Script       string
+	Onchain      bool
 }
 
-// gives the present coins at script to the claim's delegation
 func (q *Queries) MoveCoins(ctx context.Context, arg MoveCoinsParams) ([]Coin, error) {
-	rows, err := q.db.QueryContext(ctx, moveCoins, arg.DelegationID, arg.Input, arg.Script)
+	rows, err := q.db.QueryContext(ctx, moveCoins,
+		arg.DelegationID,
+		arg.Input,
+		arg.Script,
+		arg.Onchain,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1069,6 +1134,7 @@ func (q *Queries) MoveCoins(ctx context.Context, arg MoveCoinsParams) ([]Coin, e
 			&i.RetryAt,
 			&i.ReadyAt,
 			&i.UpdatedAt,
+			&i.ConfirmedMtp,
 		); err != nil {
 			return nil, err
 		}
@@ -1083,13 +1149,34 @@ func (q *Queries) MoveCoins(ctx context.Context, arg MoveCoinsParams) ([]Coin, e
 	return items, nil
 }
 
+const nextBackoffAt = `-- name: NextBackoffAt :one
+SELECT retry_at FROM tuple_backoff WHERE retry_at > $1::timestamptz ORDER BY retry_at LIMIT 1
+`
+
+func (q *Queries) NextBackoffAt(ctx context.Context, now time.Time) (time.Time, error) {
+	row := q.db.QueryRowContext(ctx, nextBackoffAt, now)
+	var retry_at time.Time
+	err := row.Scan(&retry_at)
+	return retry_at, err
+}
+
 const nextReadyAt = `-- name: NextReadyAt :one
+WITH params AS (
+    SELECT $1::timestamptz AS now, $2::bigint AS median_time, $3::bigint AS tip
+)
 SELECT coins.ready_at
 FROM coins
 JOIN claims ON claims.delegation_id = coins.delegation_id AND claims.input = coins.input
 JOIN delegations ON delegations.id = coins.delegation_id
-WHERE coins.status = 'present' AND NOT coins.held AND coins.ready_at > $1::timestamptz AND delegations.status = 'active'
-  AND CASE WHEN claims.locktime >= 500000000 THEN claims.locktime <= $2::bigint ELSE claims.locktime <= $3::bigint END
+CROSS JOIN params
+WHERE coins.status = 'present' AND NOT coins.held AND coins.ready_at > params.now AND delegations.status = 'active'
+  AND CASE WHEN claims.locktime >= 500000000 THEN claims.locktime <= params.median_time ELSE claims.locktime <= params.tip END
+  AND CASE WHEN claims.tx_locktime >= 500000000 THEN claims.tx_locktime <= params.median_time ELSE claims.tx_locktime <= params.tip END
+  AND (
+    (claims.sequence & 2147483648::bigint) <> 0
+    OR ((claims.sequence & 4194304) = 0 AND coins.height > 0 AND (params.tip + 1 - coins.height) >= (claims.sequence & 65535))
+    OR ((claims.sequence & 4194304) <> 0 AND coins.confirmed_mtp IS NOT NULL AND params.median_time >= EXTRACT(EPOCH FROM coins.confirmed_mtp)::bigint + (claims.sequence & 65535) * 512)
+  )
   AND NOT EXISTS (SELECT 1 FROM coins h WHERE h.delegation_id = coins.delegation_id AND h.status = 'present' AND h.held)
 ORDER BY coins.ready_at
 LIMIT 1
@@ -1160,8 +1247,19 @@ func (q *Queries) SelectArtifact(ctx context.Context, id string) (Artifact, erro
 	return i, err
 }
 
+const selectCoinOnchain = `-- name: SelectCoinOnchain :one
+SELECT onchain FROM coins WHERE outpoint = $1
+`
+
+func (q *Queries) SelectCoinOnchain(ctx context.Context, outpoint string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, selectCoinOnchain, outpoint)
+	var onchain bool
+	err := row.Scan(&onchain)
+	return onchain, err
+}
+
 const selectDelegation = `-- name: SelectDelegation :one
-SELECT id, fingerprint, address, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at FROM delegations WHERE id = $1
+SELECT id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at FROM delegations WHERE id = $1
 `
 
 func (q *Queries) SelectDelegation(ctx context.Context, id int64) (Delegation, error) {
@@ -1170,7 +1268,6 @@ func (q *Queries) SelectDelegation(ctx context.Context, id int64) (Delegation, e
 	err := row.Scan(
 		&i.ID,
 		&i.Fingerprint,
-		&i.Address,
 		&i.TemplateID,
 		&i.Variables,
 		&i.Inputs,
@@ -1184,7 +1281,13 @@ func (q *Queries) SelectDelegation(ctx context.Context, id int64) (Delegation, e
 }
 
 const selectDelegationByAddress = `-- name: SelectDelegationByAddress :one
-SELECT id, fingerprint, address, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at FROM delegations WHERE address = $1 ORDER BY (status = 'active') DESC, id DESC LIMIT 1
+SELECT id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at FROM delegations
+WHERE EXISTS (
+    SELECT 1 FROM claims
+    WHERE claims.delegation_id = delegations.id
+      AND claims.address = $1 AND claims.address <> ''
+)
+ORDER BY (status = 'active') DESC, delegations.id DESC LIMIT 1
 `
 
 func (q *Queries) SelectDelegationByAddress(ctx context.Context, address string) (Delegation, error) {
@@ -1193,7 +1296,6 @@ func (q *Queries) SelectDelegationByAddress(ctx context.Context, address string)
 	err := row.Scan(
 		&i.ID,
 		&i.Fingerprint,
-		&i.Address,
 		&i.TemplateID,
 		&i.Variables,
 		&i.Inputs,
@@ -1207,7 +1309,7 @@ func (q *Queries) SelectDelegationByAddress(ctx context.Context, address string)
 }
 
 const selectDelegationByFingerprint = `-- name: SelectDelegationByFingerprint :one
-SELECT id, fingerprint, address, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at FROM delegations WHERE fingerprint = $1 ORDER BY id DESC LIMIT 1
+SELECT id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at FROM delegations WHERE fingerprint = $1 ORDER BY id DESC LIMIT 1
 `
 
 func (q *Queries) SelectDelegationByFingerprint(ctx context.Context, fingerprint string) (Delegation, error) {
@@ -1216,7 +1318,6 @@ func (q *Queries) SelectDelegationByFingerprint(ctx context.Context, fingerprint
 	err := row.Scan(
 		&i.ID,
 		&i.Fingerprint,
-		&i.Address,
 		&i.TemplateID,
 		&i.Variables,
 		&i.Inputs,
@@ -1277,7 +1378,6 @@ type TotalPresentCoinsRow struct {
 	Amount int64
 }
 
-// the present coins of active delegations and their amount
 func (q *Queries) TotalPresentCoins(ctx context.Context) (TotalPresentCoinsRow, error) {
 	row := q.db.QueryRowContext(ctx, totalPresentCoins)
 	var i TotalPresentCoinsRow
@@ -1344,12 +1444,12 @@ func (q *Queries) UpdateStreamStatus(ctx context.Context, arg UpdateStreamStatus
 }
 
 const upsertCoin = `-- name: UpsertCoin :exec
-INSERT INTO coins (outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+INSERT INTO coins (outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations, confirmed_mtp)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (outpoint) DO UPDATE SET
     delegation_id = EXCLUDED.delegation_id, input = EXCLUDED.input, amount = EXCLUDED.amount, expiry = EXCLUDED.expiry, created_at = EXCLUDED.created_at, due = EXCLUDED.due,
     status = EXCLUDED.status, spent_by = EXCLUDED.spent_by, height = EXCLUDED.height,
-    confirmations = EXCLUDED.confirmations, updated_at = now()
+    confirmations = EXCLUDED.confirmations, confirmed_mtp = EXCLUDED.confirmed_mtp, updated_at = now()
 `
 
 type UpsertCoinParams struct {
@@ -1366,6 +1466,7 @@ type UpsertCoinParams struct {
 	Onchain       bool
 	Height        int64
 	Confirmations int32
+	ConfirmedMtp  sql.NullTime
 }
 
 func (q *Queries) UpsertCoin(ctx context.Context, arg UpsertCoinParams) error {
@@ -1383,6 +1484,7 @@ func (q *Queries) UpsertCoin(ctx context.Context, arg UpsertCoinParams) error {
 		arg.Onchain,
 		arg.Height,
 		arg.Confirmations,
+		arg.ConfirmedMtp,
 	)
 	return err
 }
@@ -1441,4 +1543,21 @@ func (q *Queries) UpsertTemplate(ctx context.Context, arg UpsertTemplateParams) 
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const upsertTupleBackoff = `-- name: UpsertTupleBackoff :exec
+INSERT INTO tuple_backoff (delegation_id, coins, retry_at)
+VALUES ($1, $2::text[], $3)
+ON CONFLICT (delegation_id, coins) DO UPDATE SET retry_at = EXCLUDED.retry_at
+`
+
+type UpsertTupleBackoffParams struct {
+	DelegationID int64
+	Coins        []string
+	RetryAt      time.Time
+}
+
+func (q *Queries) UpsertTupleBackoff(ctx context.Context, arg UpsertTupleBackoffParams) error {
+	_, err := q.db.ExecContext(ctx, upsertTupleBackoff, arg.DelegationID, pq.Array(arg.Coins), arg.RetryAt)
+	return err
 }

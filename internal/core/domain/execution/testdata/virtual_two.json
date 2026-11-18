@@ -1,0 +1,76 @@
+{
+  "format": "template/v1",
+  "type": "virtual",
+  "inputs": [
+    {
+      "name": "funds",
+      "contract": {
+        "definition": {
+          "contractName": "VirtualFirst",
+          "constructorInputs": [],
+          "structs": [],
+          "functions": [
+            {
+              "name": "spend",
+              "arkade": {"inputs": [], "asm": ["1"]},
+              "leaves": [
+                {
+                  "name": "spend",
+                  "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:spend>", "OP_CHECKSIG"],
+                  "witness": [
+                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "spend": {"function": "spend", "leaf": "spend"}
+    },
+    {
+      "name": "extra",
+      "contract": {
+        "definition": {
+          "contractName": "VirtualSecond",
+          "constructorInputs": [],
+          "structs": [],
+          "functions": [
+            {
+              "name": "spend",
+              "arkade": {"inputs": [], "asm": ["2"]},
+              "leaves": [
+                {
+                  "name": "spend",
+                  "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:spend>", "OP_CHECKSIG"],
+                  "witness": [
+                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "spend": {"function": "spend", "leaf": "spend"}
+    }
+  ],
+  "outputs": [
+    {
+      "name": "kept",
+      "index": 0,
+      "value": {"from": "funds"},
+      "locking": "5120f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+    },
+    {
+      "name": "change",
+      "index": 1,
+      "value": {"from": "extra"},
+      "locking": "5120f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+    }
+  ],
+  "packets": {"output_index": 2},
+  "delegation": {"schedule": {"funds": {"immediate": true}, "extra": {"immediate": true}}}
+}

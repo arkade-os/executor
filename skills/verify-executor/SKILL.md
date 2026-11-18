@@ -1,6 +1,6 @@
 ---
 name: verify-executor
-description: Verify executor's non-interactive boarding, automatic VTXO renewal, automatic VHTLC claims via streaming templates, intent batching near expiry, and operator workflows. Select existing daemon and end-to-end scenarios against the local regtest stack and retain evidence.
+description: Verify executor's non-interactive boarding, automatic VTXO renewal, automatic VHTLC claims via streaming templates, intent batching near expiry, multi-input delegation, and operator workflows. Select existing daemon and end-to-end scenarios against the local regtest stack and retain evidence.
 ---
 
 # Verify executor
@@ -8,7 +8,7 @@ description: Verify executor's non-interactive boarding, automatic VTXO renewal,
 Run from the repository root. Read `AGENTS.md`, the current diff, and the relevant entries in
 [the feature map](features/README.md). Recheck test names and assertions before relying on them.
 Use the existing Go harness to drive REST/gRPC and observe transactions through arkd's indexer.
-Organize verification around those five features. Registration, fee limits and recovery are
+Organize verification around those six features. Registration, fee limits and recovery are
 supporting checks within the relevant feature journeys.
 
 ## Select the proof

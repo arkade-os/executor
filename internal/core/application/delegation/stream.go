@@ -217,8 +217,9 @@ func (s *Service) spawn(
 	if err != nil {
 		return err
 	}
-	log.WithFields(log.Fields{"id": created.ID, "stream": st.stream.ID, "address": created.Address}).
-		Info("delegation spawned")
+	log.WithFields(log.Fields{
+		"id": created.ID, "stream": st.stream.ID, "addresses": addressesOf(created),
+	}).Info("delegation spawned")
 	s.notify(*created)
 	return nil
 }

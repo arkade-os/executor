@@ -183,7 +183,7 @@ func (r *delegations) GetByAddress(
 	defer r.mu.Unlock()
 	found := -1
 	for i, d := range r.rows {
-		if d.Address != address {
+		if !watches(d, address) {
 			continue
 		}
 		if found < 0 || d.Status == delegation.StatusActive ||
@@ -276,6 +276,18 @@ func (r *delegations) newest(fingerprint string) int {
 		}
 	}
 	return -1
+}
+
+func watches(d delegation.Delegation, address string) bool {
+	if address == "" {
+		return false
+	}
+	for _, in := range d.Inputs {
+		if in.Address == address {
+			return true
+		}
+	}
+	return false
 }
 
 type streams struct {

@@ -32,6 +32,7 @@ type Coin struct {
 	Onchain       bool
 	Height        int64 // of the block holding an onchain coin, 0 in mempool
 	Confirmations int
+	ConfirmedMTP  time.Time // median time of the block before an onchain coin, zero until known
 }
 
 type CoinRepository interface {
@@ -54,12 +55,14 @@ type CoinRepository interface {
 	Release(ctx context.Context, outpoints []string, readyAt time.Time) error
 	// ResetHolds holds exactly the coins of the pending attempts.
 	ResetHolds(ctx context.Context) error
-	// Ready lists, for at most limit active delegations holding no coin, the oldest coin ready by
-	// now at each input past its locktime at tip; only delegations with every input filled, coins
-	// by input.
 	Ready(ctx context.Context, now time.Time, tip Tip, limit int) ([][]Coin, error)
 	// NextReady is the earliest time after now a coin becomes ready, zero when none will.
 	NextReady(ctx context.Context, now time.Time, tip Tip) (time.Time, error)
+	Backoff(ctx context.Context, delegationID int64, coins []string, until time.Time) error
+	// ClearBackoff drops every tuple that contains outpoint.
+	ClearBackoff(ctx context.Context, outpoint string) error
+	ClearDelegationBackoff(ctx context.Context, delegationID int64) error
+	NextBackoff(ctx context.Context, now time.Time) (time.Time, error)
 	// Totals counts the present coins of the active delegations and adds up their amount.
 	Totals(ctx context.Context) (coins int, amount uint64, err error)
 	// ScriptStatus is the electrum status hash stored for script, and whether it is claimed
@@ -82,13 +85,17 @@ type Claim struct {
 	Onchain      bool
 	Spawned      bool                    // the delegation was spawned by a stream
 	Locktime     arklib.AbsoluteLocktime // of the input's spend leaf, zero without one
+	Address      string
+	Sequence     uint32
+	TxLocktime   uint32
 }
 
 // Watched is a script the active delegations claim, with its present coins.
 type Watched struct {
-	Script string
-	Claims []Claim
-	Coins  []Coin
+	Script  string
+	Onchain bool
+	Claims  []Claim
+	Coins   []Coin
 }
 
 // Confirmations is how many blocks deep an output mined at height is, zero in the mempool.

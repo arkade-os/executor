@@ -90,6 +90,19 @@ func TestNewTemplateRefusesAnOffchainTemplateWithoutAnArkadePacket(t *testing.T)
 	require.NoError(t, err)
 }
 
+func TestNewTemplateRefusesAllOutputs(t *testing.T) {
+	doc := testTemplate(t, "claim.json")
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(doc, &decoded))
+	trigger := decoded["delegation"].(map[string]any)["trigger"].(map[string]any)
+	trigger["htlc"].(map[string]any)["all_outputs"] = true
+	raw, err := json.Marshal(decoded)
+	require.NoError(t, err)
+	_, err = newTemplate(raw, nil)
+	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorContains(t, err, "all_outputs")
+}
+
 func TestNewTemplateRejectsAReferencedArtifactThatIsNotStored(t *testing.T) {
 	_, err := newTemplate(testTemplate(t, "renew.json"), nil)
 	require.ErrorIs(t, err, ErrInvalidDocument)

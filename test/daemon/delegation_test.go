@@ -39,7 +39,7 @@ func TestRegisterDelegationOverREST(t *testing.T) {
 	require.NotEmpty(t, first.Inputs[0].Tapscripts)
 	require.Empty(t, first.Inputs[0].Outpoint)
 
-	addr, err := arklib.DecodeAddressV0(first.Address)
+	addr, err := arklib.DecodeAddressV0(first.Inputs[0].Address)
 	require.NoError(t, err)
 	require.Equal(
 		t, "5120"+hex.EncodeToString(schnorr.SerializePubKey(addr.VtxoTapKey)),
@@ -50,7 +50,7 @@ func TestRegisterDelegationOverREST(t *testing.T) {
 	code, body := get(t, d.RestURL+"/v1/delegation?id="+first.ID)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, first, decodeDelegation(t, body))
-	code, body = get(t, d.RestURL+"/v1/delegation?address="+first.Address)
+	code, body = get(t, d.RestURL+"/v1/delegation?address="+first.Inputs[0].Address)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, first, decodeDelegation(t, body))
 
@@ -63,7 +63,7 @@ func TestRegisterDelegationOverREST(t *testing.T) {
 	require.Equal(t, 1, tableRows(t, d, "delegations"))
 
 	got, err := d.Client.GetDelegation(
-		t.Context(), &executorv1.GetDelegationRequest{Address: first.Address},
+		t.Context(), &executorv1.GetDelegationRequest{Address: first.Inputs[0].Address},
 	)
 	require.NoError(t, err)
 	require.Equal(t, first.Fingerprint, got.GetDelegation().GetFingerprint())
@@ -259,7 +259,6 @@ func TestExpireAndListDelegations(t *testing.T) {
 type delegation struct {
 	ID          string            `json:"id"`
 	Fingerprint string            `json:"fingerprint"`
-	Address     string            `json:"address"`
 	TemplateID  string            `json:"templateId"`
 	Variables   map[string]string `json:"variables"`
 	Inputs      []input           `json:"inputs"`
@@ -275,6 +274,7 @@ type input struct {
 	Onchain    bool     `json:"onchain"`
 	Script     string   `json:"script"`
 	Tapscripts []string `json:"tapscripts"`
+	Address    string   `json:"address"`
 	Outpoint   string   `json:"outpoint"`
 }
 

@@ -436,10 +436,18 @@ func checkTx(tx *psbt.Packet, coins []delegation.Coin, inputs []delegation.Input
 			return err
 		}
 	}
+	var inAmt, outAmt int64
+	for _, c := range coins {
+		inAmt += int64(c.Amount)
+	}
 	for _, out := range tx.UnsignedTx.TxOut {
 		if out == nil || out.Value < 0 {
 			return errInvalidTemplateOutput
 		}
+		outAmt += out.Value
+	}
+	if outAmt > inAmt {
+		return fmt.Errorf("template tx outputs %d exceed its inputs %d", outAmt, inAmt)
 	}
 	return nil
 }

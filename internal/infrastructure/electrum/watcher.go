@@ -108,6 +108,14 @@ func (w *Watcher) Unspents(ctx context.Context, script string) ([]ports.Output, 
 	return out, nil
 }
 
+func (w *Watcher) MedianTime(ctx context.Context, height int64) (time.Time, error) {
+	tip, err := w.tipAt(ctx, height)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return tip.MedianTime, nil
+}
+
 func (w *Watcher) Tip(ctx context.Context) (delegation.Tip, error) {
 	var head struct {
 		Height int64 `json:"height"`
@@ -116,6 +124,34 @@ func (w *Watcher) Tip(ctx context.Context) (delegation.Tip, error) {
 		return delegation.Tip{}, err
 	}
 	return w.tipAt(ctx, head.Height)
+}
+
+func (w *Watcher) Spender(ctx context.Context, script, outpoint string) (string, error) {
+	hash, err := scriptHash(script)
+	if err != nil {
+		return "", err
+	}
+	var hist []struct {
+		TxHash string `json:"tx_hash"`
+	}
+	if err := w.callInto(ctx, &hist, "blockchain.scripthash.get_history", hash); err != nil {
+		return "", err
+	}
+	if len(hist) > 64 {
+		hist = hist[len(hist)-64:]
+	}
+	for i := len(hist) - 1; i >= 0; i-- {
+		tx, err := w.Transaction(ctx, hist[i].TxHash)
+		if err != nil {
+			continue
+		}
+		for _, in := range tx.TxIn {
+			if in.PreviousOutPoint.String() == outpoint {
+				return hist[i].TxHash, nil
+			}
+		}
+	}
+	return "", nil
 }
 
 func (w *Watcher) Transaction(ctx context.Context, txid string) (*wire.MsgTx, error) {

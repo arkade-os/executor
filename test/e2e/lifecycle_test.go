@@ -23,7 +23,7 @@ func TestCancelStopsRenewals(t *testing.T) {
 		t.Context(), &executorv1.CancelDelegationRequest{Id: renewal.Id},
 	)
 	require.NoError(t, err)
-	faucet(t, w.Address, 20_000)
+	faucet(t, w.Inputs[0].Address, 20_000)
 
 	boarded := landed(t, d, w, renewal, 1)[0]
 	neverSpent(t, d, boarded.Outpoint.String())
@@ -49,7 +49,7 @@ func TestStopWaitsForTheBatch(t *testing.T) {
 	d := start(t)
 	w, renewal := boardingDelegations(t, d, newOwner(t, d))
 	signing := batchSigning(t)
-	faucet(t, w.Address, 20_000)
+	faucet(t, w.Inputs[0].Address, 20_000)
 
 	select {
 	case <-signing:
@@ -66,7 +66,7 @@ func TestRestart(t *testing.T) {
 	first := start(t)
 	w, renewal := boardingDelegations(t, first, newOwner(t, first))
 	first.stop()
-	faucet(t, w.Address, 20_000)
+	faucet(t, w.Inputs[0].Address, 20_000)
 
 	again := first.restart(t)
 	landed(t, again, w, renewal, 1)

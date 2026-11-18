@@ -166,6 +166,41 @@ func (c *chain) Tip(context.Context) (delegationdomain.Tip, error) {
 	return c.tip(), nil
 }
 
+func (c *chain) MedianTime(_ context.Context, height int64) (time.Time, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.down {
+		return time.Time{}, ports.ErrDisconnected
+	}
+	at, ok := c.times[height]
+	if !ok {
+		return time.Time{}, fmt.Errorf("block %d has no median time", height)
+	}
+	return at, nil
+}
+
+func (c *chain) Keep(tx *wire.MsgTx) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.txs[tx.TxHash().String()] = tx.Copy()
+}
+
+func (c *chain) Spender(_ context.Context, _, outpoint string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.down {
+		return "", ports.ErrDisconnected
+	}
+	for id, tx := range c.txs {
+		for _, in := range tx.TxIn {
+			if in.PreviousOutPoint.String() == outpoint {
+				return id, nil
+			}
+		}
+	}
+	return "", nil
+}
+
 func (c *chain) Transaction(_ context.Context, txid string) (*wire.MsgTx, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -179,15 +214,18 @@ func (c *chain) Transaction(_ context.Context, txid string) (*wire.MsgTx, error)
 func (c *chain) Broadcast(_ context.Context, tx *wire.MsgTx) (string, error) {
 	c.mu.Lock()
 	if c.refuse != nil {
-		defer c.mu.Unlock()
-		return "", c.refuse
+		err := c.refuse
+		c.mu.Unlock()
+		return "", err
 	}
-	c.broadcasts = append(c.broadcasts, tx)
+	stored := tx.Copy()
+	c.broadcasts = append(c.broadcasts, stored)
+	c.txs[stored.TxHash().String()] = stored
 	c.mu.Unlock()
 	for _, in := range tx.TxIn {
 		c.spend(in.PreviousOutPoint.String())
 	}
-	return tx.TxHash().String(), nil
+	return stored.TxHash().String(), nil
 }
 
 func (c *chain) FeeRate(context.Context) (float64, error) { return 1, nil }

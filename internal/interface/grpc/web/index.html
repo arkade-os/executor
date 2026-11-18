@@ -507,7 +507,7 @@ async function delegationList() {
       $('#rows').innerHTML = table([
         { title: 'ID', cell: (s) => `#${esc(s.delegation.id)}` },
         { title: 'Kind', cell: (s) => esc(kindOf(s.delegation)) },
-        { title: 'Address', cell: (s) => tx(s.delegation.address, 6) },
+        { title: 'Inputs', cell: (s) => (s.delegation.inputs || []).map((i) => tx(i.address, 6)).join('<br>') || '<span class="muted">-</span>' },
         { title: 'Status', cell: (s) => tag(s.delegation.status, statusKind[s.delegation.status]) },
         { title: 'Coins', num: true, cell: (s) => num(s.coins).toLocaleString() },
         { title: 'Amount', num: true, cell: (s) => (num(s.coins) ? esc(sats(s.amount)) : '') },
@@ -548,6 +548,14 @@ async function delegationDetail(key) {
   const mine = (forecast.batches || []).flatMap((b) => (b.entries || []).filter((e) => e.delegationId === d.id).map((e) => ({ ...e, at: b.at, batch: b })));
   const coins = (detail.coins || []).slice().sort((a, b) => (a.status === b.status ? num(a.due) - num(b.due) : a.status === 'present' ? -1 : 1));
   const present = coins.filter((c) => c.status === 'present');
+  const inputs = d.inputs || [];
+  const funding = (n) => {
+    const mine = present.filter((c) => num(c.input) === n);
+    if (!mine.length) return ['missing', 'bad'];
+    const t = Math.floor(Date.now() / 1000);
+    if (mine.some((c) => num(c.due) > 0 && num(c.due) <= t)) return ['funded', 'ok'];
+    return ['immature', 'warn'];
+  };
   const onchain = new Set(coins.filter((c) => !num(c.expiresAt)).map((c) => c.outpoint));
   const held = present.reduce((a, c) => a + num(c.amount), 0);
   const batchOf = (c) => (num(c.expiresAt) ? mine.find((e) => num(e.at) >= num(c.due))?.at : 0);
@@ -559,15 +567,14 @@ async function delegationDetail(key) {
   if (d.status !== 'active') story = `It is ${esc(d.status)}: the daemon runs nothing for it.`;
   else if (mine.length) story = `${esc(count(mine.reduce((a, e) => a + num(e.coins), 0), 'coin'))} (${esc(sats(mine.reduce((a, e) => a + num(e.amount), 0)))}) join the batch ${at(mine[0].at)}${num(mine[0].batch.intents) > 1 ? `, with ${esc(count(num(mine[0].batch.intents) - 1, 'other delegation'))}` : ''}.`;
   else if (present.length) story = `${esc(count(present.length, 'coin'))} watched; the next becomes due ${at(Math.min(...present.map((c) => num(c.due))))}, beyond the 7-day forecast.`;
-  else story = 'No coin is watched at its address yet.';
+  else story = 'No coin is watched at its inputs yet.';
 
   view.innerHTML = `
     <div class="crumb">${go('delegations', '&larr; Delegations')}</div>
     <div class="head"><h2>Delegation #${esc(d.id)}</h2>${tag(d.status, statusKind[d.status])} ${tag(kind, 'accent')}<span class="spacer"></span>
-      ${d.address ? `<button data-copy="${esc(d.address)}">Copy address</button>` : ''}${actions}</div>
+      ${actions}</div>
     <div class="note ${failed.length && attempts[0]?.status === 'failed' ? 'bad' : 'ok'}">${story}${attempts[0]?.status === 'failed' ? ` Its last attempt failed: <span class="mono">${esc(attempts[0].error)}</span>` : ''}</div>
     <section class="panel"><dl class="facts">
-      <div><dt>Address</dt><dd>${tx(d.address, 12)}</dd></div>
       <div><dt>Template</dt><dd>${templateLink(d.templateId)}</dd></div>
       <div><dt>Origin</dt><dd>${num(d.streamId) ? go(`streams/${d.streamId}`, `stream #${esc(d.streamId)}`) : 'a client registered it'}</dd></div>
       <div><dt>Registered</dt><dd>${at(d.createdAt)}</dd></div>
@@ -579,6 +586,7 @@ async function delegationDetail(key) {
 
     <section class="panel"><div class="ph"><h3>Coins</h3><span class="aside">${esc(count(present.length, 'present coin'))}, ${esc(count(coins.length - present.length, 'spent coin'))}</span></div>
       ${table([
+        { title: 'Input', cell: (c) => esc(inputs[num(c.input)]?.name || c.input) },
         { title: 'Outpoint', cell: (c) => tx(c.outpoint, 8, !num(c.expiresAt)) },
         { title: 'Status', cell: (c) => tag(c.status, statusKind[c.status]) },
         { title: 'Amount', num: true, cell: (c) => esc(sats(c.amount)) },
@@ -601,9 +609,12 @@ async function delegationDetail(key) {
       ], attempts)}</section>
 
     <section class="panel"><div class="ph"><h3>Inputs</h3><span class="aside">what the daemon watches and the paths that spend it</span></div>
-      ${(d.inputs || []).map((i) => `<h4>${esc(i.name)} ${tag(i.onchain ? 'onchain' : 'offchain')}${num(i.locktime) ? ` ${tag(`locktime ${num(i.locktime).toLocaleString()}`)}` : ''}</h4>
-        <p class="small">script ${copy(i.script, 12)}</p>
-        <ul class="listen">${(i.tapscripts || []).map((t) => `<li class="asm">${esc(scriptWords(t, d.variables))} <button class="mini" data-copy="${esc(t)}">hex</button></li>`).join('')}</ul>`).join('') || '<p class="empty">No input.</p>'}
+      ${inputs.map((i, n) => {
+        const [state, kind] = funding(n);
+        return `<h4>${esc(i.name)} ${tag(i.onchain ? 'onchain' : 'offchain')} ${tag(state, kind)}${num(i.locktime) ? ` ${tag(`locktime ${num(i.locktime).toLocaleString()}`)}` : ''}</h4>
+        <p class="small">${i.address ? `address ${tx(i.address, 12)} · ` : ''}script ${copy(i.script, 12)}</p>
+        <ul class="listen">${(i.tapscripts || []).map((leaf) => `<li class="asm">${esc(scriptWords(leaf, d.variables))} <button class="mini" data-copy="${esc(leaf)}">hex</button></li>`).join('')}</ul>`;
+      }).join('') || '<p class="empty">No input.</p>'}
     </section>`;
 }
 

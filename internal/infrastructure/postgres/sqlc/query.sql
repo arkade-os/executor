@@ -47,15 +47,21 @@ WITH referenced AS (
 SELECT referenced.in_use::boolean FROM artifacts, referenced WHERE artifacts.id = @id::text;
 
 -- name: InsertDelegation :one
-INSERT INTO delegations (fingerprint, address, template_id, variables, inputs, stream_id, expires_at)
-VALUES (@fingerprint, @address, @template_id, @variables, @inputs, @stream_id, @expires_at)
+INSERT INTO delegations (fingerprint, template_id, variables, inputs, stream_id, expires_at)
+VALUES (@fingerprint, @template_id, @variables, @inputs, @stream_id, @expires_at)
 RETURNING *;
 
 -- name: SelectDelegation :one
 SELECT * FROM delegations WHERE id = @id;
 
 -- name: SelectDelegationByAddress :one
-SELECT * FROM delegations WHERE address = @address ORDER BY (status = 'active') DESC, id DESC LIMIT 1;
+SELECT * FROM delegations
+WHERE EXISTS (
+    SELECT 1 FROM claims
+    WHERE claims.delegation_id = delegations.id
+      AND claims.address = sqlc.arg(address) AND claims.address <> ''
+)
+ORDER BY (status = 'active') DESC, delegations.id DESC LIMIT 1;
 
 -- name: SelectDelegationByFingerprint :one
 SELECT * FROM delegations WHERE fingerprint = @fingerprint ORDER BY id DESC LIMIT 1;
@@ -108,7 +114,7 @@ WITH held AS (
     ORDER BY next_due NULLS LAST, id
     LIMIT @max_count::int
 )
-SELECT d.id, d.fingerprint, d.address, d.template_id, d.variables, d.inputs, d.stream_id, d.expires_at, d.status,
+SELECT d.id, d.fingerprint, d.template_id, d.variables, d.inputs, d.stream_id, d.expires_at, d.status,
     d.created_at, d.updated_at, page.coins, page.amount, COALESCE(page.next_due, 'epoch'::timestamptz)::timestamptz AS next_due,
     COALESCE((SELECT a.status FROM attempts a WHERE a.delegation_id = d.id ORDER BY a.id DESC LIMIT 1), '')::text AS last_attempt
 FROM page JOIN delegations d ON d.id = page.id
@@ -138,13 +144,16 @@ FROM delegations WHERE stream_id IS NOT NULL GROUP BY stream_id;
 -- name: UpdateStreamStatus :execrows
 UPDATE streams SET status = @status WHERE id = @id;
 
+-- name: SelectCoinOnchain :one
+SELECT onchain FROM coins WHERE outpoint = @outpoint;
+
 -- name: UpsertCoin :exec
-INSERT INTO coins (outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations)
-VALUES (@outpoint, @delegation_id, @input, @script, @amount, @expiry, @created_at, @due, @status, @spent_by, @onchain, @height, @confirmations)
+INSERT INTO coins (outpoint, delegation_id, input, script, amount, expiry, created_at, due, status, spent_by, onchain, height, confirmations, confirmed_mtp)
+VALUES (@outpoint, @delegation_id, @input, @script, @amount, @expiry, @created_at, @due, @status, @spent_by, @onchain, @height, @confirmations, @confirmed_mtp)
 ON CONFLICT (outpoint) DO UPDATE SET
     delegation_id = EXCLUDED.delegation_id, input = EXCLUDED.input, amount = EXCLUDED.amount, expiry = EXCLUDED.expiry, created_at = EXCLUDED.created_at, due = EXCLUDED.due,
     status = EXCLUDED.status, spent_by = EXCLUDED.spent_by, height = EXCLUDED.height,
-    confirmations = EXCLUDED.confirmations, updated_at = now();
+    confirmations = EXCLUDED.confirmations, confirmed_mtp = EXCLUDED.confirmed_mtp, updated_at = now();
 
 -- name: ListCoinsByDelegation :many
 SELECT * FROM coins WHERE delegation_id = @delegation_id ORDER BY created_at, outpoint;
@@ -158,13 +167,14 @@ WHERE coins.status = 'present' AND coins.onchain AND delegations.status = 'activ
 
 -- name: MoveCoins :many
 UPDATE coins SET delegation_id = @delegation_id, input = @input, updated_at = now()
-WHERE script = @script AND status = 'present' AND (delegation_id, input) <> (@delegation_id, @input)
+WHERE script = @script AND onchain = @onchain AND status = 'present' AND (delegation_id, input) <> (@delegation_id, @input)
 RETURNING *;
 
 -- name: ListStrandedScripts :many
 SELECT DISTINCT coins.script FROM coins JOIN delegations ON delegations.id = coins.delegation_id
 WHERE coins.status = 'present' AND delegations.status <> 'active' AND EXISTS (
-    SELECT 1 FROM claims JOIN delegations a ON a.id = claims.delegation_id WHERE claims.script = coins.script AND a.status = 'active'
+    SELECT 1 FROM claims JOIN delegations a ON a.id = claims.delegation_id
+    WHERE claims.script = coins.script AND claims.onchain = coins.onchain AND a.status = 'active'
 );
 
 -- name: HoldCoins :exec
@@ -181,36 +191,54 @@ WHERE held <> EXISTS (
 );
 
 -- name: ListReadyCoins :many
--- the oldest coin ready by now at each input of the active delegations holding none, past the input's
--- locktime at the tip; only delegations with every input filled, at most max_count of them, by id then input
-WITH picked AS (
-    SELECT DISTINCT ON (coins.delegation_id, coins.input) coins.outpoint, coins.delegation_id
+WITH params AS (
+    SELECT @now::timestamptz AS now, @median_time::bigint AS median_time, @height::bigint AS tip
+), eligible AS (
+    SELECT coins.outpoint, coins.delegation_id, coins.input, coins.created_at
     FROM coins
     JOIN claims ON claims.delegation_id = coins.delegation_id AND claims.input = coins.input
     JOIN delegations ON delegations.id = coins.delegation_id
-    WHERE coins.status = 'present' AND NOT coins.held AND coins.ready_at <= @now::timestamptz
+    CROSS JOIN params
+    WHERE coins.status = 'present' AND NOT coins.held AND coins.ready_at <= params.now
       AND delegations.status = 'active'
-      AND CASE WHEN claims.locktime >= 500000000 THEN claims.locktime <= @median_time::bigint ELSE claims.locktime <= @height::bigint END
+      AND CASE WHEN claims.locktime >= 500000000 THEN claims.locktime <= params.median_time ELSE claims.locktime <= params.tip END
+      AND CASE WHEN claims.tx_locktime >= 500000000 THEN claims.tx_locktime <= params.median_time ELSE claims.tx_locktime <= params.tip END
+      AND (
+        (claims.sequence & 2147483648::bigint) <> 0
+        OR ((claims.sequence & 4194304) = 0 AND coins.height > 0 AND (params.tip + 1 - coins.height) >= (claims.sequence & 65535))
+        OR ((claims.sequence & 4194304) <> 0 AND coins.confirmed_mtp IS NOT NULL AND params.median_time >= EXTRACT(EPOCH FROM coins.confirmed_mtp)::bigint + (claims.sequence & 65535) * 512)
+      )
       AND NOT EXISTS (SELECT 1 FROM coins h WHERE h.delegation_id = coins.delegation_id AND h.status = 'present' AND h.held)
-    ORDER BY coins.delegation_id, coins.input, coins.created_at, coins.outpoint
+), ranked AS (
+    SELECT eligible.*, row_number() OVER (PARTITION BY delegation_id, input ORDER BY created_at, outpoint) AS n
+    FROM eligible
 ), complete AS (
-    SELECT picked.delegation_id FROM picked GROUP BY picked.delegation_id
-    HAVING count(*) = (SELECT count(*) FROM claims WHERE claims.delegation_id = picked.delegation_id)
-    ORDER BY picked.delegation_id
-    LIMIT @max_count::int
+    SELECT delegation_id FROM ranked WHERE n = 1 GROUP BY delegation_id
+    HAVING count(*) = (SELECT count(*) FROM claims WHERE claims.delegation_id = ranked.delegation_id)
 )
-SELECT coins.* FROM coins JOIN picked ON picked.outpoint = coins.outpoint
-WHERE picked.delegation_id IN (SELECT delegation_id FROM complete)
-ORDER BY coins.delegation_id, coins.input;
+SELECT coins.* FROM coins
+JOIN ranked ON ranked.outpoint = coins.outpoint
+WHERE ranked.n <= 4 AND coins.delegation_id IN (SELECT delegation_id FROM complete)
+ORDER BY coins.delegation_id, coins.input, ranked.n;
 
 -- name: NextReadyAt :one
 -- the earliest time after now a coin ListReadyCoins would consider becomes ready; no row when none will
+WITH params AS (
+    SELECT @now::timestamptz AS now, @median_time::bigint AS median_time, @height::bigint AS tip
+)
 SELECT coins.ready_at
 FROM coins
 JOIN claims ON claims.delegation_id = coins.delegation_id AND claims.input = coins.input
 JOIN delegations ON delegations.id = coins.delegation_id
-WHERE coins.status = 'present' AND NOT coins.held AND coins.ready_at > @now::timestamptz AND delegations.status = 'active'
-  AND CASE WHEN claims.locktime >= 500000000 THEN claims.locktime <= @median_time::bigint ELSE claims.locktime <= @height::bigint END
+CROSS JOIN params
+WHERE coins.status = 'present' AND NOT coins.held AND coins.ready_at > params.now AND delegations.status = 'active'
+  AND CASE WHEN claims.locktime >= 500000000 THEN claims.locktime <= params.median_time ELSE claims.locktime <= params.tip END
+  AND CASE WHEN claims.tx_locktime >= 500000000 THEN claims.tx_locktime <= params.median_time ELSE claims.tx_locktime <= params.tip END
+  AND (
+    (claims.sequence & 2147483648::bigint) <> 0
+    OR ((claims.sequence & 4194304) = 0 AND coins.height > 0 AND (params.tip + 1 - coins.height) >= (claims.sequence & 65535))
+    OR ((claims.sequence & 4194304) <> 0 AND coins.confirmed_mtp IS NOT NULL AND params.median_time >= EXTRACT(EPOCH FROM coins.confirmed_mtp)::bigint + (claims.sequence & 65535) * 512)
+  )
   AND NOT EXISTS (SELECT 1 FROM coins h WHERE h.delegation_id = coins.delegation_id AND h.status = 'present' AND h.held)
 ORDER BY coins.ready_at
 LIMIT 1;
@@ -221,13 +249,33 @@ FROM coins JOIN delegations ON delegations.id = coins.delegation_id
 WHERE coins.status = 'present' AND delegations.status = 'active';
 
 -- name: InsertClaim :exec
-INSERT INTO claims (delegation_id, input, script, onchain, locktime) VALUES (@delegation_id, @input, @script, @onchain, @locktime);
+INSERT INTO claims (delegation_id, input, script, onchain, locktime, address, sequence, tx_locktime)
+VALUES (@delegation_id, @input, @script, @onchain, @locktime, @address, @sequence, @tx_locktime);
 
 -- name: ListClaimsAtScripts :many
-SELECT claims.script, claims.delegation_id, claims.input, claims.onchain, claims.locktime, (delegations.stream_id IS NOT NULL)::boolean AS spawned
+SELECT claims.script, claims.delegation_id, claims.input, claims.onchain, claims.locktime,
+    claims.address, claims.sequence, claims.tx_locktime,
+    (delegations.stream_id IS NOT NULL)::boolean AS spawned
 FROM claims JOIN delegations ON delegations.id = claims.delegation_id
 WHERE claims.script = ANY (@scripts::text[]) AND delegations.status = 'active'
 ORDER BY claims.delegation_id, claims.input;
+
+-- name: ListActiveBackoffs :many
+SELECT delegation_id, coins FROM tuple_backoff WHERE retry_at > @now::timestamptz;
+
+-- name: UpsertTupleBackoff :exec
+INSERT INTO tuple_backoff (delegation_id, coins, retry_at)
+VALUES (@delegation_id, @coins::text[], @retry_at)
+ON CONFLICT (delegation_id, coins) DO UPDATE SET retry_at = EXCLUDED.retry_at;
+
+-- name: DeleteBackoffsForOutpoint :exec
+DELETE FROM tuple_backoff WHERE @outpoint::text = ANY (coins);
+
+-- name: DeleteBackoffsForDelegation :exec
+DELETE FROM tuple_backoff WHERE delegation_id = @delegation_id;
+
+-- name: NextBackoffAt :one
+SELECT retry_at FROM tuple_backoff WHERE retry_at > @now::timestamptz ORDER BY retry_at LIMIT 1;
 
 -- name: ListWatchedScripts :many
 SELECT DISTINCT claims.script

@@ -222,7 +222,7 @@ func fundMany(t *testing.T, delegations []*executorv1.Delegation, sats int64) {
 	t.Helper()
 	amounts := map[string]string{}
 	for _, w := range delegations {
-		amounts[w.Address] = btc(sats)
+		amounts[w.Inputs[0].Address] = btc(sats)
 	}
 	raw, err := json.Marshal(amounts)
 	require.NoError(t, err)

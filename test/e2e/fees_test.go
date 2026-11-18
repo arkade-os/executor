@@ -18,8 +18,8 @@ func TestIntentFees(t *testing.T) {
 	)
 
 	chargeIntentFees(t, `{"offchainInputFee":"100.0"}`)
-	pay(t, alice, paying.Address)
-	unpaid := pay(t, alice, free.Address)
+	pay(t, alice, paying.Inputs[0].Address)
+	unpaid := pay(t, alice, free.Inputs[0].Address)
 	renewed := landed(t, d, paying, paying, 1)
 	require.Equal(t, delegateAmount-100, renewed[0].Amount)
 
@@ -33,7 +33,7 @@ func TestFeeDropUnblocksRenewal(t *testing.T) {
 	w := renewalDelegation(t, d, newOwner(t, d), 0)
 
 	chargeIntentFees(t, `{"offchainInputFee":"100.0"}`)
-	paid := pay(t, alice, w.Address)
+	paid := pay(t, alice, w.Inputs[0].Address)
 	refused(t, d, w.Id, "exceeds the cap 0")
 	neverSpent(t, d, paid)
 

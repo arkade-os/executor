@@ -73,7 +73,8 @@ func TestWalletFlowOverREST(t *testing.T) {
 		map[string]any{"templateId": boarding, "variables": owner.boardingVariables()},
 	)
 	require.Equal(t, http.StatusOK, code, "%v", out)
-	address := out["delegation"].(map[string]any)["address"].(string)
+	inputs := out["delegation"].(map[string]any)["inputs"].([]any)
+	address := inputs[0].(map[string]any)["address"].(string)
 	require.Equal(t, owner.boardingAddress(t), address)
 	var detail struct {
 		Delegation struct{ Status, TemplateId string }

@@ -1,18 +1,25 @@
 package execution
 
 import (
+	"bytes"
+	"context"
 	"encoding/hex"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/emulator/pkg/arkade"
+	delegationapp "github.com/arkade-os/executor/internal/core/application/delegation"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
+	"github.com/arkade-os/executor/internal/core/ports"
 	"github.com/arkade-os/executor/pkg/template"
 	"github.com/arkade-os/executor/pkg/template/artifact"
 	"github.com/arkade-os/executor/templates"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,6 +116,172 @@ func TestDueAtOnchainWaitsForConfirmations(t *testing.T) {
 }
 
 // instance instantiates doc with variables, hex-encoded, under fresh keys.
+func TestAttributeFollowsTheSpenderTransaction(t *testing.T) {
+	spent := wire.OutPoint{Hash: [32]byte{1}}
+	missed := wire.OutPoint{Hash: [32]byte{2}}
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: spent})
+	txid := tx.TxHash().String()
+	attempt := delegation.Attempt{
+		ID: 1, Coins: []string{spent.String(), missed.String()}, Status: delegation.Submitted,
+		Txs: []delegation.Tx{{Txid: txid, Onchain: true, Spends: true}},
+	}
+	s := &Service{ctx: t.Context(), chain: chainTx{tx: tx}}
+	filled := &pending{
+		attempt: attempt, spent: map[string]string{spent.String(): "", missed.String(): txid},
+	}
+	require.Empty(t, s.attribute(filled))
+	require.Equal(t, txid, filled.spent[spent.String()])
+
+	conflict := &pending{attempt: attempt, spent: map[string]string{missed.String(): ""}}
+	require.Equal(t, missed.String(), s.attribute(conflict))
+
+	s.chain = chainTx{err: errors.New("not found")}
+	unknown := &pending{attempt: attempt, spent: map[string]string{spent.String(): ""}}
+	require.Empty(t, s.attribute(unknown))
+	require.Empty(t, unknown.spent[spent.String()])
+
+	known := &pending{attempt: attempt, spent: map[string]string{spent.String(): txid}}
+	require.Empty(t, s.attribute(known))
+}
+
+func TestSettleLeavesADisappearanceSubmitted(t *testing.T) {
+	op := wire.OutPoint{Hash: [32]byte{9}}.String()
+	p := &pending{
+		attempt: delegation.Attempt{
+			ID: 7, Coins: []string{op}, Status: delegation.Submitted,
+			Txs: []delegation.Tx{{Txid: "ark", Spends: true}},
+		},
+		spent: map[string]string{op: ""},
+	}
+	s := &Service{
+		ctx: t.Context(), pending: map[int64]*pending{p.attempt.ID: p},
+		chain: chainTx{err: errors.New("not found")},
+	}
+	s.settle(p, time.Unix(1_700_000_000, 0))
+	require.Equal(t, delegation.Submitted, p.attempt.Status)
+	require.Contains(t, s.pending, p.attempt.ID)
+}
+
+func TestSettleWaitsUntilTheBatchNamesItsSpender(t *testing.T) {
+	op := wire.OutPoint{Hash: [32]byte{4}}.String()
+	now := time.Unix(1_700_000_000, 0)
+	p := &pending{
+		attempt: delegation.Attempt{
+			ID: 4, Coins: []string{op}, Status: delegation.Submitted,
+			Txs: []delegation.Tx{{Txid: "proof"}},
+		},
+		busy: true, spent: map[string]string{op: "commitment"},
+	}
+	saved := &storeAttempts{}
+	s := &Service{
+		ctx: t.Context(), pending: map[int64]*pending{p.attempt.ID: p},
+		attempts: saved, coins: releaseCoins{},
+	}
+	s.settle(p, now)
+	require.Equal(t, delegation.Submitted, p.attempt.Status)
+	require.Contains(t, s.pending, p.attempt.ID)
+	require.Nil(t, saved.attempt)
+
+	p.attempt.Txs = []delegation.Tx{{Txid: "ark", Spends: true}}
+	p.spent[op] = "commitment"
+	s.settle(p, now)
+	require.NotContains(t, s.pending, p.attempt.ID)
+	require.Equal(t, delegation.Failed, saved.attempt.Status)
+	require.Contains(t, saved.attempt.Error, "spent by commitment")
+}
+
+func TestSettleAdoptsOneObservedSpender(t *testing.T) {
+	first := wire.OutPoint{Hash: [32]byte{5}}.String()
+	second := wire.OutPoint{Hash: [32]byte{6}}.String()
+	now := time.Unix(1_700_000_000, 0)
+	p := &pending{
+		attempt: delegation.Attempt{
+			ID: 5, Coins: []string{first, second}, Status: delegation.Submitted,
+			Txs: []delegation.Tx{{Txid: "proof"}},
+		},
+		spent: map[string]string{first: "commitment", second: "commitment"},
+	}
+	saved := &storeAttempts{}
+	s := &Service{
+		ctx: t.Context(), pending: map[int64]*pending{p.attempt.ID: p},
+		attempts: saved, coins: releaseCoins{}, delegations: delegationService(t),
+	}
+	s.settle(p, now)
+	require.NotContains(t, s.pending, p.attempt.ID)
+	require.Equal(t, delegation.Succeeded, saved.attempt.Status)
+	require.Equal(t, []string{"commitment"}, saved.attempt.Spenders())
+
+	other := &pending{
+		attempt: delegation.Attempt{
+			ID: 6, Coins: []string{first, second}, Status: delegation.Submitted,
+			Txs: []delegation.Tx{{Txid: "proof"}},
+		},
+		spent: map[string]string{first: "commitment", second: "other"},
+	}
+	s.pending[other.attempt.ID] = other
+	s.settle(other, now)
+	require.NotContains(t, s.pending, other.attempt.ID)
+	require.Equal(t, delegation.Failed, saved.attempt.Status)
+	require.Contains(t, saved.attempt.Error, "different transactions")
+}
+
+func TestSettleFindsAnOnchainSpender(t *testing.T) {
+	op := wire.OutPoint{Hash: [32]byte{7}}.String()
+	now := time.Unix(1_700_000_000, 0)
+	p := &pending{
+		attempt: delegation.Attempt{
+			ID: 8, DelegationID: 3, Coins: []string{op}, Status: delegation.Submitted,
+			Txs: []delegation.Tx{{Txid: "proof"}},
+		},
+		spent: map[string]string{op: ""},
+	}
+	saved := &storeAttempts{}
+	s := &Service{
+		ctx: t.Context(), pending: map[int64]*pending{p.attempt.ID: p},
+		attempts: saved, delegations: delegationService(t),
+		coins: listedCoins{coins: []delegation.Coin{{
+			Outpoint: op, Script: "aa", Onchain: true,
+		}}},
+		chain: spenderChain{txid: "commitment"},
+	}
+	s.settle(p, now)
+	require.NotContains(t, s.pending, p.attempt.ID)
+	require.Equal(t, delegation.Succeeded, saved.attempt.Status)
+	require.Equal(t, []string{"commitment"}, saved.attempt.Spenders())
+}
+
+func delegationService(t *testing.T) *delegationapp.Service {
+	t.Helper()
+	key, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	pub := key.PubKey()
+	return delegationapp.NewService(
+		nil, missingDelegation{}, nil, nil, pub, nil, pub, pub, arklib.BitcoinRegTest,
+		delegationapp.Limits{},
+	)
+}
+
+func TestRebroadcastSendsOnlyAWitnessTransaction(t *testing.T) {
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{Witness: wire.TxWitness{[]byte{1}}})
+	var signed bytes.Buffer
+	require.NoError(t, tx.Serialize(&signed))
+	plain := wire.NewMsgTx(2)
+	plain.AddTxIn(&wire.TxIn{})
+	var unsigned bytes.Buffer
+	require.NoError(t, plain.Serialize(&unsigned))
+	chain := &recordChain{}
+	s := &Service{ctx: t.Context(), chain: chain}
+	s.rebroadcast(delegation.Attempt{Txs: []delegation.Tx{
+		{Onchain: true, Spends: true, Raw: signed.Bytes(), Txid: tx.TxHash().String()},
+		{Onchain: true, Spends: true, Raw: unsigned.Bytes(), Txid: plain.TxHash().String()},
+		{Onchain: false, Spends: true, Raw: signed.Bytes(), Txid: "ark"},
+		{Raw: []byte("psbt")},
+	}})
+	require.Equal(t, []string{tx.TxHash().String()}, chain.ids)
+}
+
 func instance(t *testing.T, doc []byte, variables map[string]string) *template.Instance {
 	t.Helper()
 	docs := map[string][]byte{}
@@ -150,3 +323,95 @@ func scriptNum(n int64) string {
 	b, _ := arkade.BigNumFromInt64(n).Bytes()
 	return hex.EncodeToString(b)
 }
+
+type chainTx struct {
+	tx  *wire.MsgTx
+	err error
+}
+
+func (chainTx) Subscribe(context.Context, []string) (ports.ChainSubscription, error) {
+	return nil, errors.New("unused")
+}
+
+func (chainTx) Unspents(context.Context, string) ([]ports.Output, error) {
+	return nil, errors.New("unused")
+}
+
+func (chainTx) Tip(context.Context) (delegation.Tip, error) {
+	return delegation.Tip{}, errors.New("unused")
+}
+
+func (chainTx) MedianTime(context.Context, int64) (time.Time, error) {
+	return time.Time{}, errors.New("unused")
+}
+
+func (c chainTx) Transaction(context.Context, string) (*wire.MsgTx, error) { return c.tx, c.err }
+
+func (chainTx) Spender(context.Context, string, string) (string, error) {
+	return "", errors.New("unused")
+}
+
+func (chainTx) Broadcast(context.Context, *wire.MsgTx) (string, error) {
+	return "", errors.New("unused")
+}
+
+func (chainTx) FeeRate(context.Context) (float64, error) { return 0, errors.New("unused") }
+
+type recordChain struct {
+	chainTx
+	ids []string
+}
+
+func (c *recordChain) Broadcast(_ context.Context, tx *wire.MsgTx) (string, error) {
+	id := tx.TxHash().String()
+	c.ids = append(c.ids, id)
+	return id, nil
+}
+
+type storeAttempts struct{ attempt *delegation.Attempt }
+
+func (s *storeAttempts) AddOrUpdate(_ context.Context, a *delegation.Attempt) error {
+	cp := *a
+	s.attempt = &cp
+	return nil
+}
+
+func (storeAttempts) ListPending(context.Context) ([]delegation.Attempt, error) {
+	return nil, nil
+}
+
+func (storeAttempts) ListByDelegation(
+	context.Context, int64, int64, int,
+) ([]delegation.Attempt, error) {
+	return nil, nil
+}
+
+type missingDelegation struct {
+	delegation.DelegationRepository
+}
+
+func (missingDelegation) Get(context.Context, int64) (*delegation.Delegation, error) {
+	return nil, delegation.ErrDelegationNotFound
+}
+
+type releaseCoins struct{ delegation.CoinRepository }
+
+type listedCoins struct {
+	releaseCoins
+	coins []delegation.Coin
+}
+
+func (l listedCoins) ListByDelegation(context.Context, int64) ([]delegation.Coin, error) {
+	return l.coins, nil
+}
+
+type spenderChain struct {
+	chainTx
+	txid string
+}
+
+func (c spenderChain) Spender(context.Context, string, string) (string, error) {
+	return c.txid, nil
+}
+
+func (releaseCoins) Release(context.Context, []string, time.Time) error { return nil }
