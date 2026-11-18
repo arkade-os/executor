@@ -7,7 +7,8 @@ Wallet registration, boarding while the owner is offline, multiple boarding inpu
 ## How to get to it (user POV)
 
 A wallet lists `GET /v1/templates`, selects `board`, and submits `POST /v1/delegation` with its
-template ID and owner variables. Send regtest bitcoin to the returned boarding address and
+template ID and owner variables. Send regtest bitcoin to the boarding input's address
+(`inputs[0].address`; a delegation has no address of its own) and
 leave executor to board it while the owner is offline. The harness also registers a renewal
 delegation for the resulting VTXOs; see [automatic renewal](auto-renewal.md).
 
@@ -18,7 +19,7 @@ skills/verify-executor/scripts/verify.sh e2e '^TestBoardingThenRenewal$'
 ```
 
 Read `test/e2e/boarding_test.go` and `landed` in `helpers_test.go`. The scenario funds 20,000 sats,
-checks that the boarding address matches the owner's derived address, then observes a boarded
+checks that the boarding input address matches the owner's derived address, then observes a boarded
 VTXO worth 20,000 sats at the renewal destination. `landed` correlates succeeded attempts with
 indexer commitment transaction IDs. The later renewal assertions belong to the renewal feature.
 

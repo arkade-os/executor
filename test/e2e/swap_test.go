@@ -99,7 +99,7 @@ func TestVHTLCRefundAfterLocktime(t *testing.T) {
 	w := registerDelegation(t, d, refund, swap.variables)
 	alice := fundedWallet(t)
 	funding, err := alice.SendOffChain(
-		t.Context(), []clientlib.Receiver{{To: w.Address, Amount: 10_000}},
+		t.Context(), []clientlib.Receiver{{To: w.Inputs[0].Address, Amount: 10_000}},
 	)
 	require.NoError(t, err)
 
@@ -166,7 +166,7 @@ func swapClaim(t *testing.T, d executor) (clientlib.Vtxo, time.Duration) {
 	w := registerDelegation(t, d, claim, swap.variables)
 	alice := fundedWallet(t)
 	funding, err := alice.SendOffChain(
-		t.Context(), []clientlib.Receiver{{To: w.Address, Amount: 10_000}},
+		t.Context(), []clientlib.Receiver{{To: w.Inputs[0].Address, Amount: 10_000}},
 	)
 	require.NoError(t, err)
 	sent := time.Now()

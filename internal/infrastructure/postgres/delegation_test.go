@@ -27,7 +27,7 @@ func TestDelegationAddThenGet(t *testing.T) {
 	got, err := repo.Get(t.Context(), created.ID)
 	require.NoError(t, err)
 	require.Equal(t, &created, got)
-	got, err = repo.GetByAddress(t.Context(), w.Address)
+	got, err = repo.GetByAddress(t.Context(), w.Inputs[0].Address)
 	require.NoError(t, err)
 	require.Equal(t, &created, got)
 	got, err = repo.GetByFingerprint(t.Context(), w.Fingerprint)
@@ -68,9 +68,24 @@ func TestDelegationGetByAddressPrefersActive(t *testing.T) {
 	second.Status = delegation.StatusActive
 	require.NoError(t, repo.AddOrUpdate(t.Context(), &second))
 
-	got, err := repo.GetByAddress(t.Context(), first.Address)
+	got, err := repo.GetByAddress(t.Context(), first.Inputs[0].Address)
 	require.NoError(t, err)
 	require.Equal(t, second.ID, got.ID)
+}
+
+func TestDelegationGetByAddressFindsAnyInput(t *testing.T) {
+	repo := testDelegations(t)
+	d := testDelegation("a")
+	d.Inputs = append(d.Inputs, delegation.Input{
+		Name: "second", Script: "5120ab", Address: "addr-second", Sequence: 0xffffffff,
+	})
+	require.NoError(t, repo.AddOrUpdate(t.Context(), &d))
+	got, err := repo.GetByAddress(t.Context(), "addr-second")
+	require.NoError(t, err)
+	require.Equal(t, d.ID, got.ID)
+	got, err = repo.GetByAddress(t.Context(), d.Inputs[0].Address)
+	require.NoError(t, err)
+	require.Equal(t, d.ID, got.ID)
 }
 
 func TestDelegationCountActiveByOrigin(t *testing.T) {
@@ -148,13 +163,13 @@ func TestDelegationUpdate(t *testing.T) {
 	created := testDelegation("a")
 	require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
 	created.Status = delegation.StatusCancelled
-	created.Address = "ignored"
+	created.Inputs[0].Address = "ignored"
 	require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
 
 	got, err := repo.Get(t.Context(), created.ID)
 	require.NoError(t, err)
 	require.Equal(t, delegation.StatusCancelled, got.Status)
-	require.Equal(t, testDelegation("a").Address, got.Address)
+	require.Equal(t, testDelegation("a").Inputs[0].Address, got.Inputs[0].Address)
 	require.True(t, got.UpdatedAt.After(got.CreatedAt))
 
 	require.ErrorIs(
@@ -265,12 +280,12 @@ func testDelegations(t *testing.T) *DelegationRepository {
 func testDelegation(fingerprint string) delegation.Delegation {
 	return delegation.Delegation{
 		Fingerprint: fingerprint,
-		Address:     "addr-" + fingerprint,
 		TemplateID:  "t",
 		Variables:   map[string]string{"owner": "02ab"},
-		Inputs: []delegation.Input{
-			{Name: "funds", Script: "5120aa", Tapscripts: []string{"51"}},
-		},
+		Inputs: []delegation.Input{{
+			Name: "funds", Script: "5120aa", Tapscripts: []string{"51"},
+			Address: "addr-" + fingerprint, Sequence: 0xffffffff,
+		}},
 		Status: delegation.StatusActive,
 	}
 }

@@ -649,6 +649,7 @@ func (a *ark) settle(
 	a.pause()
 	a.emit(ports.BatchFinalized{ID: b.id, CommitmentTxid: txid.String()})
 	a.until(ctx, time.Hour, func() bool { return !a.sessions.held })
+	a.chain.Keep(tx)
 	a.land(txid.String(), taking, vtxoTree)
 	return nil
 }

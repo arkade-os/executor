@@ -152,7 +152,9 @@ func TestScriptsOf(t *testing.T) {
 var now = time.Unix(1_800_000_000, 0)
 
 func watched(script string, claim delegation.Claim, rest ...any) delegation.Watched {
-	w := delegation.Watched{Script: script, Claims: []delegation.Claim{claim}}
+	w := delegation.Watched{
+		Script: script, Onchain: claim.Onchain, Claims: []delegation.Claim{claim},
+	}
 	for _, r := range rest {
 		switch r := r.(type) {
 		case delegation.Claim:

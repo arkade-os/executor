@@ -10,6 +10,9 @@ import (
 // syncVtxos is the coins the vtxos reported at w's script add or spend; when complete, the report
 // lists every vtxo there and a coin missing from it is spent. A new coin's due time is left zero.
 func syncVtxos(w delegation.Watched, vtxos []ports.Output, complete bool) []delegation.Coin {
+	if w.Onchain {
+		return nil
+	}
 	known := byOutpoint(w.Coins)
 	listed := map[string]bool{}
 	var changes []delegation.Coin
@@ -49,6 +52,9 @@ func syncVtxos(w delegation.Watched, vtxos []ports.Output, complete bool) []dele
 func syncUtxos(
 	w delegation.Watched, utxos []ports.Output, tip delegation.Tip, now time.Time,
 ) []delegation.Coin {
+	if !w.Onchain {
+		return nil
+	}
 	known := byOutpoint(w.Coins)
 	listed := map[string]bool{}
 	var changes []delegation.Coin
@@ -88,12 +94,15 @@ func refresh(
 	next := c
 	next.Height, next.Confirmations = height, tip.Confirmations(height)
 	next.CreatedAt = blockTime(next, tip)
-	if c.Due.After(now) || height != c.Height {
+	if height != c.Height {
+		next.Due = time.Time{}
+		next.ConfirmedMTP = time.Time{}
+	} else if c.Due.After(now) {
 		next.Due = time.Time{}
 	}
 	return next, next.Height != c.Height || next.Confirmations != c.Confirmations ||
-		!next.Due.Equal(c.Due) ||
-		!next.CreatedAt.Equal(c.CreatedAt)
+		!next.Due.Equal(c.Due) || !next.CreatedAt.Equal(c.CreatedAt) ||
+		!next.ConfirmedMTP.Equal(c.ConfirmedMTP)
 }
 
 // blockTime is the coin's creation time: the tip's when the coin was mined in it, else what it had.

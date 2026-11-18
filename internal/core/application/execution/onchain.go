@@ -16,8 +16,7 @@ import (
 )
 
 // spendOnchain spends coins with a bitcoin transaction the emulator signs and the chain server
-// takes; a is recorded before the emulator is asked. It succeeds once the coins leave the chain's
-// unspents.
+// takes; a is recorded before the emulator is asked.
 func (s *Service) spendOnchain(
 	ctx context.Context, inst *delegationapp.Instance, a delegation.Attempt,
 	coins []delegation.Coin,
@@ -60,6 +59,21 @@ func (s *Service) spendOnchain(
 	tx, err := execution.FinalizeOnchain(merged)
 	if err != nil {
 		fail(err)
+		return
+	}
+	var wireRaw bytes.Buffer
+	if err := tx.Serialize(&wireRaw); err != nil {
+		fail(err)
+		return
+	}
+	for i := range a.Txs {
+		if a.Txs[i].Onchain && a.Txs[i].Spends {
+			a.Txs[i].Raw = wireRaw.Bytes()
+		}
+	}
+	if err := s.attempts.AddOrUpdate(ctx, &a); err != nil {
+		log.WithError(err).WithField("delegation", a.DelegationID).Error("record signed attempt")
+		s.send(skipped{coins: a.Coins})
 		return
 	}
 	if _, err := s.chain.Broadcast(ctx, tx); err != nil {

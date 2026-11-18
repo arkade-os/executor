@@ -6,8 +6,9 @@ Renewal while the owner is offline, asset preservation, batching, owner fee limi
 
 ## How to get to it (user POV)
 
-Register a `renew` delegation for the owner's address and maximum fee, then receive VTXOs at
-that address directly or through [non-interactive boarding](non-interactive-boarding.md).
+Register a `renew` delegation for the owner's variables and maximum fee, then receive VTXOs at
+the address of its `funds` input, directly or through
+[non-interactive boarding](non-interactive-boarding.md).
 Executor renews the VTXOs when due without the owner participating in each batch.
 
 ## Driving it with the Go harness

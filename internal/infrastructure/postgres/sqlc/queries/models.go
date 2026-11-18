@@ -33,6 +33,9 @@ type Claim struct {
 	Script       string
 	Onchain      bool
 	Locktime     int64
+	Address      string
+	Sequence     int64
+	TxLocktime   int64
 }
 
 type Coin struct {
@@ -53,12 +56,12 @@ type Coin struct {
 	RetryAt       sql.NullTime
 	ReadyAt       sql.NullTime
 	UpdatedAt     time.Time
+	ConfirmedMtp  sql.NullTime
 }
 
 type Delegation struct {
 	ID          int64
 	Fingerprint string
-	Address     string
 	TemplateID  string
 	Variables   json.RawMessage
 	Inputs      json.RawMessage
@@ -92,4 +95,10 @@ type Template struct {
 	Status      string
 	Failures    int32
 	CreatedAt   time.Time
+}
+
+type TupleBackoff struct {
+	DelegationID int64
+	Coins        []string
+	RetryAt      time.Time
 }

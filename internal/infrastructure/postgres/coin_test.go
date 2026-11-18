@@ -133,9 +133,13 @@ func TestClaimsFollowTheActiveDelegations(t *testing.T) {
 		t, []delegation.Claim{{DelegationID: boarding.ID, Onchain: true, Locktime: 800}},
 		watched[0].Claims,
 	)
+	require.True(t, watched[0].Onchain)
 	require.Empty(t, watched[0].Coins)
 	require.Equal(
-		t, []delegation.Claim{{DelegationID: id}, {DelegationID: spawned.ID, Spawned: true}},
+		t, []delegation.Claim{
+			{DelegationID: id, Address: "addr-a", Sequence: 0xffffffff},
+			{DelegationID: spawned.ID, Address: "addr-c", Spawned: true, Sequence: 0xffffffff},
+		},
 		watched[1].Claims,
 	)
 	require.Equal(t, []string{"a:0"}, outpointsOf(watched[1].Coins))
@@ -150,7 +154,10 @@ func TestClaimsFollowTheActiveDelegations(t *testing.T) {
 	require.NoError(t, repo.db.Delegations().AddOrUpdate(ctx, &spawned))
 	watched, err = repo.Watched(ctx, []string{"5120aa"})
 	require.NoError(t, err)
-	require.Equal(t, []delegation.Claim{{DelegationID: id}}, watched[0].Claims)
+	require.Equal(
+		t, []delegation.Claim{{DelegationID: id, Address: "addr-a", Sequence: 0xffffffff}},
+		watched[0].Claims,
+	)
 }
 
 func TestReadyCoins(t *testing.T) {
@@ -170,7 +177,9 @@ func TestReadyCoins(t *testing.T) {
 	retried := add("retried", "5120ee", 0)
 	cancelled := add("cancelled", "5120ff", 0)
 	pair := testDelegation("pair")
-	pair.Inputs = append(pair.Inputs, delegation.Input{Name: "second", Script: "5120ab"})
+	pair.Inputs = append(pair.Inputs, delegation.Input{
+		Name: "second", Script: "5120ab", Sequence: 0xffffffff,
+	})
 	pair.Inputs[0].Script = "5120ac"
 	require.NoError(t, repo.db.Delegations().AddOrUpdate(ctx, &pair))
 	coin := func(outpoint, script string, owner int64, due time.Time) delegation.Coin {
@@ -346,6 +355,114 @@ func TestStrandedScripts(t *testing.T) {
 	stranded, err = repo.Stranded(ctx)
 	require.NoError(t, err)
 	require.Empty(t, stranded, "nobody watches it")
+}
+
+func TestUpsertRefusesAnOutpointOnTheOtherChain(t *testing.T) {
+	repo, id := testCoins(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	coin := testCoin("a:0", id, now)
+	require.NoError(t, repo.Upsert(ctx, coin))
+	again := coin
+	again.Amount = 2
+	require.NoError(t, repo.Upsert(ctx, again))
+	again.Onchain = true
+	err := repo.Upsert(ctx, again)
+	require.ErrorIs(t, err, delegation.ErrDomainClash)
+	got := presentAt(t, repo, coin.Script)
+	require.Len(t, got, 1)
+	require.False(t, got[0].Onchain)
+	require.Equal(t, uint64(2), got[0].Amount)
+}
+
+func TestReadySkipsInfeasibleAndBackedOffTuples(t *testing.T) {
+	repo, _ := testCoins(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	tip := delegation.Tip{Height: 100, MedianTime: now}
+	pair := testDelegation("pair")
+	pair.Inputs = append(pair.Inputs, delegation.Input{
+		Name: "second", Script: "5120ab", Sequence: 0xffffffff,
+	})
+	pair.Inputs[0].Script = "5120ac"
+	require.NoError(t, repo.db.Delegations().AddOrUpdate(ctx, &pair))
+	coin := func(outpoint string, input int, script string, due, expires time.Time) delegation.Coin {
+		c := testCoin(outpoint, pair.ID, due.Add(-time.Hour))
+		c.Input, c.Script, c.Due, c.ExpiresAt = input, script, due, expires
+		return c
+	}
+	past := now.Add(-2 * time.Hour)
+	due := now.Add(-time.Minute)
+	early := coin("a:0", 0, "5120ac", past, now.Add(-time.Hour))
+	alt := coin("b:0", 0, "5120ac", past, now.Add(time.Hour))
+	alt.CreatedAt = early.CreatedAt.Add(time.Second)
+	third := coin("c:0", 0, "5120ac", past, now.Add(time.Hour))
+	third.CreatedAt = alt.CreatedAt.Add(time.Second)
+	companion := coin("z:0", 1, "5120ab", due, now.Add(time.Hour))
+	require.NoError(t, repo.Upsert(ctx, early, alt, third, companion))
+
+	ready, err := repo.Ready(ctx, now, tip, 10)
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"b:0", "z:0"}}, readyOutpoints(ready))
+
+	require.NoError(t, repo.Backoff(ctx, pair.ID, []string{"b:0", "z:0"}, now.Add(time.Hour)))
+	ready, err = repo.Ready(ctx, now, tip, 10)
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"c:0", "z:0"}}, readyOutpoints(ready))
+	next, err := repo.NextBackoff(ctx, now)
+	require.NoError(t, err)
+	require.Equal(t, now.Add(time.Hour), next)
+
+	require.NoError(t, repo.ClearBackoff(ctx, "b:0"))
+	ready, err = repo.Ready(ctx, now, tip, 10)
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"b:0", "z:0"}}, readyOutpoints(ready))
+}
+
+func TestReadyWaitsForSequenceAndTxLocktime(t *testing.T) {
+	repo, _ := testCoins(t)
+	ctx := t.Context()
+	now := time.Unix(1_700_000_000, 0).UTC()
+	add := func(name string, sequence, txLock uint32) int64 {
+		d := testDelegation(name)
+		d.Inputs[0].Onchain = true
+		d.Inputs[0].Sequence = sequence
+		d.Inputs[0].TxLocktime = txLock
+		require.NoError(t, repo.db.Delegations().AddOrUpdate(ctx, &d))
+		return d.ID
+	}
+	heightID := add("height", 5, 0)
+	timeID := add("time", 1<<22|1, 0)
+	txID := add("tx", 0xffffffff, 200)
+	coin := func(outpoint string, owner int64, height int64, mtp time.Time) delegation.Coin {
+		c := testCoin(outpoint, owner, now.Add(-time.Hour))
+		c.Onchain, c.Height, c.Due, c.ConfirmedMTP = true, height, now.Add(-time.Minute), mtp
+		return c
+	}
+	require.NoError(t, repo.Upsert(ctx,
+		coin("h:0", heightID, 10, time.Time{}),
+		coin("t:0", timeID, 10, now),
+		coin("l:0", txID, 10, time.Time{}),
+	))
+	tip := delegation.Tip{Height: 13, MedianTime: now.Add(511 * time.Second)}
+	ready, err := repo.Ready(ctx, now, tip, 10)
+	require.NoError(t, err)
+	require.Empty(t, readyOutpoints(ready))
+
+	tip.Height = 14
+	ready, err = repo.Ready(ctx, now, tip, 10)
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"h:0"}}, readyOutpoints(ready))
+
+	tip.MedianTime = now.Add(512 * time.Second)
+	ready, err = repo.Ready(ctx, now, tip, 10)
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"h:0"}, {"t:0"}}, readyOutpoints(ready))
+
+	tip.Height = 200
+	ready, err = repo.Ready(ctx, now, tip, 10)
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"h:0"}, {"t:0"}, {"l:0"}}, readyOutpoints(ready))
 }
 
 func testCoins(t *testing.T) (*CoinRepository, int64) {

@@ -22,6 +22,8 @@ const (
 	StatusActive    = "active"
 	StatusCancelled = "cancelled"
 	StatusExpired   = "expired"
+
+	maxDelegationInputs = 64
 )
 
 // Input is a template input: the daemon watches its script for coins and runs the template on them.
@@ -31,15 +33,15 @@ type Input struct {
 	Script     string                  // hex pkScript
 	Tapscripts []string                // hex leaves
 	Locktime   arklib.AbsoluteLocktime // of the spend leaf, zero means no locktime
+	Address    string
+	Sequence   uint32
+	TxLocktime uint32
 }
 
-// Delegation is a template instance the daemon runs over every coin landing at its address; a
-// client registers one, a stream spawns others.
 type Delegation struct {
 	ID          int64
 	Fingerprint string
 	StreamID    int64 // the stream that spawned it, 0 for a client
-	Address     string
 	TemplateID  string
 	Variables   map[string]string // lower-case hex
 	Inputs      []Input
@@ -89,8 +91,6 @@ type DelegationParams struct {
 	Network   arklib.Network
 }
 
-// NewDelegation is what a client registers: it fills a one-input template with variables and
-// derives the address its coins land at.
 func NewDelegation(p DelegationParams) (*Delegation, error) {
 	if err := p.check(); err != nil {
 		return nil, err
@@ -130,8 +130,16 @@ func (d Delegation) Instantiate(
 }
 
 func (p DelegationParams) check() error {
-	if len(p.Template.Inputs()) != 1 {
-		return fmt.Errorf("%w: a delegation has one input", ErrInvalidArgs)
+	slots := p.Template.Inputs()
+	if len(slots) == 0 || len(slots) > maxDelegationInputs {
+		return fmt.Errorf(
+			"%w: a delegation has 1 to %d inputs", ErrInvalidArgs, maxDelegationInputs,
+		)
+	}
+	for _, slot := range slots {
+		if slot.AllOutputs {
+			return fmt.Errorf("%w: all_outputs is not served", ErrInvalidArgs)
+		}
 	}
 	return nil
 }
@@ -144,28 +152,42 @@ func (p DelegationParams) build(streamID int64) (*Delegation, error) {
 	if err != nil {
 		return nil, err
 	}
-	slot := p.Template.Inputs()[0]
-	locktime, _ := inst.Locktime(0)
-	in := Input{
-		Name: slot.Name, Onchain: slot.Onchain, Script: hex.EncodeToString(inst.PkScript(0)),
-		Tapscripts: inst.Tapscripts(0), Locktime: locktime,
+	inputs := make([]Input, 0, len(p.Template.Inputs()))
+	seen := map[string]struct{}{}
+	for i, slot := range p.Template.Inputs() {
+		locktime, _ := inst.Locktime(i)
+		in := Input{
+			Name: slot.Name, Onchain: slot.Onchain, Script: hex.EncodeToString(inst.PkScript(i)),
+			Tapscripts: inst.Tapscripts(i), Locktime: locktime,
+			Sequence: inst.Sequence(i), TxLocktime: inst.TxLocktime(),
+		}
+		if err := checkCosignerKeyLeaf(in.Tapscripts, p.Keys.Cosigner); err != nil {
+			return nil, err
+		}
+		in.Address, err = addressOf(inst.PkScript(i), in.Onchain, p.Keys.Server, p.Network)
+		if err != nil {
+			return nil, err
+		}
+		key := in.Script + ":0"
+		if in.Onchain {
+			key = in.Script + ":1"
+		}
+		if _, ok := seen[key]; ok {
+			return nil, fmt.Errorf("%w: two inputs watch the same script", ErrInvalidArgs)
+		}
+		seen[key] = struct{}{}
+		inputs = append(inputs, in)
 	}
-	if err := checkCosignerKeyLeaf(in.Tapscripts, p.Keys.Cosigner); err != nil {
-		return nil, err
-	}
-	addr, err := addressOf(inst.PkScript(0), in.Onchain, p.Keys.Server, p.Network)
-	if err != nil {
-		return nil, err
+	if err := inst.OfflineSpend(p.Template.Type() == template.Onchain); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidArgs, err)
 	}
 	if p.Variables == nil {
 		p.Variables = map[string]string{}
 	}
 	return &Delegation{
-		Fingerprint: fingerprint(p.Template.ID(), p.Variables), Address: addr,
-		TemplateID: p.Template.ID(),
-		Variables:  p.Variables,
-		Inputs:     []Input{in},
-		StreamID:   streamID, ExpiresAt: p.ExpiresAt, Status: StatusActive,
+		Fingerprint: fingerprint(p.Template.ID(), p.Variables), TemplateID: p.Template.ID(),
+		Variables: p.Variables, Inputs: inputs, StreamID: streamID, ExpiresAt: p.ExpiresAt,
+		Status: StatusActive,
 	}, nil
 }
 

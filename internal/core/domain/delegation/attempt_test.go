@@ -52,18 +52,30 @@ func TestBatchedAttemptSucceedsOnceTheBatchSpendsItsCoins(t *testing.T) {
 }
 
 func TestAttemptNeedsAnActiveDelegationOwningTheCoins(t *testing.T) {
-	d := &Delegation{ID: 7, Status: StatusActive}
-	a, err := d.Attempt(
-		[]Coin{{Outpoint: "a:0", DelegationID: 7}, {Outpoint: "b:1", DelegationID: 7}},
-	)
+	d := &Delegation{ID: 7, Status: StatusActive, Inputs: []Input{{}, {}}}
+	coins := []Coin{{Outpoint: "a:0", DelegationID: 7}, {Outpoint: "b:1", DelegationID: 7}}
+	a, err := d.Attempt(coins)
 	require.NoError(t, err)
 	require.Equal(t, Attempt{DelegationID: 7, Coins: []string{"a:0", "b:1"}, Status: Submitted}, a)
 
-	_, err = d.Attempt([]Coin{{Outpoint: "a:0", DelegationID: 8}})
+	one := &Delegation{ID: 7, Status: StatusActive, Inputs: []Input{{}}}
+	_, err = one.Attempt([]Coin{{Outpoint: "a:0", DelegationID: 8}})
 	require.ErrorIs(t, err, errNotOwned)
-	d.Status = StatusCancelled
-	_, err = d.Attempt([]Coin{{Outpoint: "a:0", DelegationID: 7}})
+	one.Status = StatusCancelled
+	_, err = one.Attempt([]Coin{{Outpoint: "a:0", DelegationID: 7}})
 	require.ErrorIs(t, err, ErrNotActive)
+
+	_, err = d.Attempt(coins[:1])
+	require.ErrorIs(t, err, ErrInvalidArgs)
+	_, err = d.Attempt([]Coin{
+		{Outpoint: "a:0", DelegationID: 7, Script: "aa"},
+		{Outpoint: "b:1", DelegationID: 7},
+	})
+	require.ErrorIs(t, err, ErrInvalidArgs)
+	_, err = d.Attempt([]Coin{
+		{Outpoint: "a:0", DelegationID: 7}, {Outpoint: "a:0", DelegationID: 7},
+	})
+	require.ErrorIs(t, err, ErrInvalidArgs)
 }
 
 func TestAttemptRecordsItsSubmittedTxsOnceAndNamesTheSpendingOne(t *testing.T) {
@@ -76,7 +88,7 @@ func TestAttemptRecordsItsSubmittedTxsOnceAndNamesTheSpendingOne(t *testing.T) {
 	require.NoError(t, off.Succeeded())
 	require.ErrorIs(t, off.Submit(Tx{Txid: "tx"}), errAttemptState)
 
-	a, err := (&Delegation{ID: 7, Status: StatusActive}).Attempt(
+	a, err := (&Delegation{ID: 7, Status: StatusActive, Inputs: []Input{{}}}).Attempt(
 		[]Coin{{Outpoint: "a:0", DelegationID: 7}},
 	)
 	require.NoError(t, err)
@@ -86,7 +98,7 @@ func TestAttemptRecordsItsSubmittedTxsOnceAndNamesTheSpendingOne(t *testing.T) {
 	require.Equal(t, []string{"raw"}, a.Spenders())
 	require.True(t, a.Pending())
 
-	b, err := (&Delegation{ID: 7, Status: StatusActive}).Attempt(
+	b, err := (&Delegation{ID: 7, Status: StatusActive, Inputs: []Input{{}}}).Attempt(
 		[]Coin{{Outpoint: "a:0", DelegationID: 7}},
 	)
 	require.NoError(t, err)
@@ -97,7 +109,7 @@ func TestAttemptRecordsItsSubmittedTxsOnceAndNamesTheSpendingOne(t *testing.T) {
 
 func offchainAttempt(t *testing.T) Attempt {
 	t.Helper()
-	a, err := (&Delegation{ID: 7, Status: StatusActive}).Attempt(
+	a, err := (&Delegation{ID: 7, Status: StatusActive, Inputs: []Input{{}}}).Attempt(
 		[]Coin{{Outpoint: "a:0", DelegationID: 7}},
 	)
 	require.NoError(t, err)
@@ -107,7 +119,7 @@ func offchainAttempt(t *testing.T) Attempt {
 
 func batchedAttempt(t *testing.T) Attempt {
 	t.Helper()
-	a, err := (&Delegation{ID: 7, Status: StatusActive}).Attempt(
+	a, err := (&Delegation{ID: 7, Status: StatusActive, Inputs: []Input{{}}}).Attempt(
 		[]Coin{{Outpoint: "a:0", DelegationID: 7}},
 	)
 	require.NoError(t, err)

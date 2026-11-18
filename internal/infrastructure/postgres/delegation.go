@@ -48,7 +48,7 @@ func (r *DelegationRepository) AddOrUpdate(ctx context.Context, d *delegation.De
 	}
 	return r.db.inTx(ctx, func(q *queries.Queries) error {
 		row, err := q.InsertDelegation(ctx, queries.InsertDelegationParams{
-			Fingerprint: d.Fingerprint, Address: d.Address, TemplateID: d.TemplateID,
+			Fingerprint: d.Fingerprint, TemplateID: d.TemplateID,
 			Variables: variables, Inputs: inputs,
 			StreamID:  sql.NullInt64{Int64: d.StreamID, Valid: d.StreamID != 0},
 			ExpiresAt: expiresAt,
@@ -62,7 +62,8 @@ func (r *DelegationRepository) AddOrUpdate(ctx context.Context, d *delegation.De
 			}
 			err := q.InsertClaim(ctx, queries.InsertClaimParams{
 				DelegationID: row.ID, Input: int32(i), Script: in.Script, Onchain: in.Onchain,
-				Locktime: int64(in.Locktime),
+				Locktime: int64(in.Locktime), Address: in.Address, Sequence: int64(in.Sequence),
+				TxLocktime: int64(in.TxLocktime),
 			})
 			if err != nil {
 				return err
@@ -152,7 +153,7 @@ func toDelegations(rows []queries.Delegation) ([]delegation.Delegation, error) {
 
 func toDelegation(row queries.Delegation) (*delegation.Delegation, error) {
 	d := delegation.Delegation{
-		ID: row.ID, Fingerprint: row.Fingerprint, Address: row.Address, TemplateID: row.TemplateID,
+		ID: row.ID, Fingerprint: row.Fingerprint, TemplateID: row.TemplateID,
 		StreamID: row.StreamID.Int64, Status: row.Status, CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
 	}

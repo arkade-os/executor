@@ -16,8 +16,8 @@ func TestBoardingThenRenewal(t *testing.T) {
 	d := start(t)
 	owner := newOwner(t, d)
 	w, renewal := boardingDelegations(t, d, owner)
-	require.Equal(t, owner.boardingAddress(t), w.Address)
-	faucet(t, w.Address, 20_000)
+	require.Equal(t, owner.boardingAddress(t), w.Inputs[0].Address)
+	faucet(t, w.Inputs[0].Address, 20_000)
 
 	boarded := landed(t, d, w, renewal, 1)
 	require.EqualValues(t, 20_000, boarded[0].Amount)
@@ -49,7 +49,7 @@ func TestSeveralCoinsAtOneAddress(t *testing.T) {
 	)
 	require.NoError(t, err)
 	for _, sats := range []int64{10_000, 10_000, 30_000} {
-		faucet(t, w.Address, sats)
+		faucet(t, w.Inputs[0].Address, sats)
 	}
 
 	boarded := landed(t, d, w, renewal, 3)
@@ -104,7 +104,7 @@ func TestAssetRenewal(t *testing.T) {
 	}
 
 	w := renewalDelegation(t, d, newOwner(t, d), 0)
-	pay(t, alice, w.Address, assets...)
+	pay(t, alice, w.Inputs[0].Address, assets...)
 	renewed := landed(t, d, w, w, 1)
 	require.ElementsMatch(t, assets, renewed[0].Assets)
 }

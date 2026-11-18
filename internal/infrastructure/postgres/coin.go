@@ -4,11 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
 	"github.com/arkade-os/executor/internal/infrastructure/postgres/sqlc/queries"
+)
+
+const (
+	candidatesPerInput  = 4
+	tuplesPerDelegation = 16
 )
 
 type CoinRepository struct{ db *DB }
@@ -21,7 +28,15 @@ func (r *CoinRepository) Upsert(ctx context.Context, coins ...delegation.Coin) e
 	}
 	return r.db.inTx(ctx, func(q *queries.Queries) error {
 		for _, c := range coins {
-			err := q.UpsertCoin(ctx, queries.UpsertCoinParams{
+			stored, err := q.SelectCoinOnchain(ctx, c.Outpoint)
+			switch {
+			case errors.Is(err, sql.ErrNoRows):
+			case err != nil:
+				return err
+			case stored != c.Onchain:
+				return fmt.Errorf("%w: %s", delegation.ErrDomainClash, c.Outpoint)
+			}
+			err = q.UpsertCoin(ctx, queries.UpsertCoinParams{
 				Outpoint:     c.Outpoint,
 				DelegationID: c.DelegationID,
 				Input:        int32(c.Input),
@@ -39,6 +54,7 @@ func (r *CoinRepository) Upsert(ctx context.Context, coins ...delegation.Coin) e
 				Onchain:       c.Onchain,
 				Height:        c.Height,
 				Confirmations: int32(c.Confirmations),
+				ConfirmedMtp:  nullTime(c.ConfirmedMTP),
 			})
 			if err != nil {
 				return err
@@ -72,7 +88,8 @@ func (r *CoinRepository) Move(
 	rows, err := r.db.querier.MoveCoins(
 		ctx,
 		queries.MoveCoinsParams{
-			Script: script, DelegationID: owner.DelegationID, Input: int32(owner.Input),
+			Script: script, Onchain: owner.Onchain, DelegationID: owner.DelegationID,
+			Input: int32(owner.Input),
 		},
 	)
 	return toCoins(rows), err
@@ -96,19 +113,57 @@ func (r *CoinRepository) Ready(
 	ctx context.Context, now time.Time, tip delegation.Tip, limit int,
 ) ([][]delegation.Coin, error) {
 	rows, err := r.db.querier.ListReadyCoins(ctx, queries.ListReadyCoinsParams{
-		Now: now, MedianTime: tip.MedianTime.Unix(), Height: tip.Height, MaxCount: int32(limit),
+		Now: now, MedianTime: tip.MedianTime.Unix(), Height: tip.Height,
 	})
 	if err != nil {
 		return nil, err
 	}
-	var out [][]delegation.Coin
-	for _, c := range toCoins(rows) {
-		if n := len(out); n == 0 || out[n-1][0].DelegationID != c.DelegationID {
-			out = append(out, nil)
-		}
-		out[len(out)-1] = append(out[len(out)-1], c)
+	blocked, err := r.activeBackoffs(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	return pickTuples(toCoins(rows), blocked, limit), nil
+}
+
+func (r *CoinRepository) activeBackoffs(
+	ctx context.Context, now time.Time,
+) (map[string]bool, error) {
+	rows, err := r.db.querier.ListActiveBackoffs(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		out[backoffKey(row.DelegationID, row.Coins)] = true
 	}
 	return out, nil
+}
+
+func (r *CoinRepository) Backoff(
+	ctx context.Context, delegationID int64, coins []string, until time.Time,
+) error {
+	if len(coins) == 0 {
+		return nil
+	}
+	return r.db.querier.UpsertTupleBackoff(ctx, queries.UpsertTupleBackoffParams{
+		DelegationID: delegationID, Coins: coins, RetryAt: until,
+	})
+}
+
+func (r *CoinRepository) ClearBackoff(ctx context.Context, outpoint string) error {
+	return r.db.querier.DeleteBackoffsForOutpoint(ctx, outpoint)
+}
+
+func (r *CoinRepository) ClearDelegationBackoff(ctx context.Context, delegationID int64) error {
+	return r.db.querier.DeleteBackoffsForDelegation(ctx, delegationID)
+}
+
+func (r *CoinRepository) NextBackoff(ctx context.Context, now time.Time) (time.Time, error) {
+	at, err := r.db.querier.NextBackoffAt(ctx, now)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	return at.UTC(), err
 }
 
 func (r *CoinRepository) NextReady(
@@ -140,28 +195,32 @@ func (r *CoinRepository) Watched(
 	if err != nil {
 		return nil, err
 	}
-	byScript := map[string]*delegation.Watched{}
+	byKey := map[string]*delegation.Watched{}
 	for _, row := range claims {
-		w := byScript[row.Script]
+		key := scriptKey(row.Script, row.Onchain)
+		w := byKey[key]
 		if w == nil {
-			w = &delegation.Watched{Script: row.Script}
-			byScript[row.Script] = w
+			w = &delegation.Watched{Script: row.Script, Onchain: row.Onchain}
+			byKey[key] = w
 		}
 		w.Claims = append(w.Claims, delegation.Claim{
 			DelegationID: row.DelegationID, Input: int(row.Input), Onchain: row.Onchain,
 			Spawned: row.Spawned, Locktime: arklib.AbsoluteLocktime(row.Locktime),
+			Address: row.Address, Sequence: uint32(row.Sequence),
+			TxLocktime: uint32(row.TxLocktime),
 		})
 	}
 	for _, c := range toCoins(coins) {
-		if w := byScript[c.Script]; w != nil {
+		if w := byKey[scriptKey(c.Script, c.Onchain)]; w != nil {
 			w.Coins = append(w.Coins, c)
 		}
 	}
-	out := make([]delegation.Watched, 0, len(byScript))
+	out := make([]delegation.Watched, 0, len(byKey))
 	for _, script := range scripts {
-		if w := byScript[script]; w != nil {
-			out = append(out, *w)
-			delete(byScript, script)
+		for _, onchain := range []bool{false, true} {
+			if w := byKey[scriptKey(script, onchain)]; w != nil {
+				out = append(out, *w)
+			}
 		}
 	}
 	return out, nil
@@ -201,9 +260,118 @@ func toCoins(rows []queries.Coin) []delegation.Coin {
 			Onchain:       row.Onchain,
 			Height:        row.Height,
 			Confirmations: int(row.Confirmations),
+			ConfirmedMTP:  utcTime(row.ConfirmedMtp),
 		})
 	}
 	return out
+}
+
+func utcTime(t sql.NullTime) time.Time {
+	if !t.Valid {
+		return time.Time{}
+	}
+	return t.Time.UTC()
+}
+
+func scriptKey(script string, onchain bool) string {
+	if onchain {
+		return script + ":1"
+	}
+	return script + ":0"
+}
+
+func backoffKey(delegationID int64, coins []string) string {
+	return fmt.Sprintf("%d\x00%s", delegationID, strings.Join(coins, "\x00"))
+}
+
+func pickTuples(coins []delegation.Coin, blocked map[string]bool, limit int) [][]delegation.Coin {
+	if limit <= 0 || len(coins) == 0 {
+		return nil
+	}
+	type group struct {
+		id    int64
+		slots [][]delegation.Coin
+	}
+	var groups []group
+	index := map[int64]int{}
+	for _, c := range coins {
+		i, ok := index[c.DelegationID]
+		if !ok {
+			i = len(groups)
+			index[c.DelegationID] = i
+			groups = append(groups, group{id: c.DelegationID})
+		}
+		g := &groups[i]
+		for len(g.slots) <= c.Input {
+			g.slots = append(g.slots, nil)
+		}
+		if len(g.slots[c.Input]) < candidatesPerInput {
+			g.slots[c.Input] = append(g.slots[c.Input], c)
+		}
+	}
+	var out [][]delegation.Coin
+	for _, g := range groups {
+		tuple := firstTuple(g.id, g.slots, blocked)
+		if tuple == nil {
+			continue
+		}
+		out = append(out, tuple)
+		if len(out) == limit {
+			break
+		}
+	}
+	return out
+}
+
+func firstTuple(id int64, slots [][]delegation.Coin, blocked map[string]bool) []delegation.Coin {
+	if len(slots) == 0 {
+		return nil
+	}
+	for _, slot := range slots {
+		if len(slot) == 0 {
+			return nil
+		}
+	}
+	idx := make([]int, len(slots))
+	for n := 0; n < tuplesPerDelegation; n++ {
+		tuple := make([]delegation.Coin, len(slots))
+		ops := make([]string, len(slots))
+		for i, slot := range slots {
+			tuple[i] = slot[idx[i]]
+			ops[i] = tuple[i].Outpoint
+		}
+		if !blocked[backoffKey(id, ops)] && feasibleTuple(tuple) {
+			return tuple
+		}
+		k := len(idx) - 1
+		for k >= 0 {
+			idx[k]++
+			if idx[k] < len(slots[k]) {
+				break
+			}
+			idx[k] = 0
+			k--
+		}
+		if k < 0 {
+			return nil
+		}
+	}
+	return nil
+}
+
+func feasibleTuple(coins []delegation.Coin) bool {
+	var due time.Time
+	for _, c := range coins {
+		if c.Due.After(due) {
+			due = c.Due
+		}
+	}
+	for _, c := range coins {
+		if !c.Onchain && !c.ExpiresAt.IsZero() && !c.ExpiresAt.After(due) {
+			return false
+		}
+	}
+	return true
 }
 
 func nullTime(t time.Time) sql.NullTime { return sql.NullTime{Time: t, Valid: !t.IsZero()} }

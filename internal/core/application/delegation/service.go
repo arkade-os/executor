@@ -110,8 +110,9 @@ func (s *Service) RegisterDelegation(
 	if err != nil {
 		return nil, err
 	}
-	log.WithFields(log.Fields{"id": created.ID, "address": created.Address, "template": created.TemplateID}).
-		Info("delegation registered")
+	log.WithFields(log.Fields{
+		"id": created.ID, "addresses": addressesOf(created), "template": created.TemplateID,
+	}).Info("delegation registered")
 	s.notify(*created)
 	return created, nil
 }
@@ -295,4 +296,14 @@ func (s *Service) notify(d delegation.Delegation) {
 	if s.onChange != nil {
 		s.onChange(d)
 	}
+}
+
+func addressesOf(d *delegation.Delegation) []string {
+	out := make([]string, 0, len(d.Inputs))
+	for _, in := range d.Inputs {
+		if in.Address != "" {
+			out = append(out, in.Address)
+		}
+	}
+	return out
 }

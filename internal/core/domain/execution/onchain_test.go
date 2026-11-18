@@ -65,6 +65,41 @@ func newOnchainFrom(t *testing.T, file string, vars map[string][]byte) onchain {
 	}
 }
 
+func newOnchainPair(t *testing.T) (
+	*template.Instance, []delegation.Input, []delegation.Coin, map[string]*wire.MsgTx,
+) {
+	t.Helper()
+	doc, err := os.ReadFile("testdata/onchain_two.json")
+	require.NoError(t, err)
+	tmpl, err := template.Parse(doc, nil)
+	require.NoError(t, err)
+	var keys [3]*btcec.PrivateKey
+	for i := range keys {
+		keys[i], _ = btcec.PrivKeyFromBytes(bytes.Repeat([]byte{byte(i + 1)}, 32))
+	}
+	inst, err := tmpl.Instantiate(template.Context{Keys: template.Keys{
+		Server: keys[0].PubKey(), Emulator: keys[1].PubKey(), Cosigner: keys[2].PubKey(),
+	}})
+	require.NoError(t, err)
+	require.NotEqual(t, inst.PkScript(0), inst.PkScript(1))
+	inputs := make([]delegation.Input, 2)
+	coins := make([]delegation.Coin, 2)
+	txs := map[string]*wire.MsgTx{}
+	for i, amount := range []int64{onchainAmount, onchainAmount * 2} {
+		source := wire.NewMsgTx(3)
+		source.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: uint32(i + 1)}})
+		source.AddTxOut(wire.NewTxOut(amount, inst.PkScript(i)))
+		script := hex.EncodeToString(inst.PkScript(i))
+		inputs[i] = delegation.Input{Script: script, Tapscripts: inst.Tapscripts(i), Onchain: true}
+		coins[i] = delegation.Coin{
+			Outpoint: source.TxHash().String() + ":0", DelegationID: 1, Input: i, Script: script,
+			Amount: uint64(amount), Onchain: true, Status: delegation.Present,
+		}
+		txs[source.TxHash().String()] = source
+	}
+	return inst, inputs, coins, txs
+}
+
 func (o onchain) build(t *testing.T, fee template.Fee) (*psbt.Packet, error) {
 	t.Helper()
 	return BuildOnchain(o.inst, o.inputs, []delegation.Coin{o.coin}, o.txs, fee)
@@ -173,6 +208,37 @@ func TestFinalizeOnchainExitWitnessVerifiesAfterTheDelay(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NoError(t, engine.Execute())
+}
+
+func TestBuildOnchainTakesTheFeeFromTheNamedInput(t *testing.T) {
+	inst, inputs, coins, txs := newOnchainPair(t)
+	const fee = uint64(400)
+	ptx, err := BuildOnchain(inst, inputs, coins, txs, template.Fee{
+		Dust: 330, Onchain: func(int) uint64 { return fee },
+	})
+	require.NoError(t, err)
+	require.Equal(t, coins[0].Outpoint, ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String())
+	require.Equal(t, coins[1].Outpoint, ptx.UnsignedTx.TxIn[1].PreviousOutPoint.String())
+	require.Equal(t, int64(coins[0].Amount), ptx.UnsignedTx.TxOut[0].Value)
+	require.Equal(t, int64(coins[1].Amount)-int64(fee), ptx.UnsignedTx.TxOut[1].Value)
+	var out int64
+	for _, txout := range ptx.UnsignedTx.TxOut {
+		out += txout.Value
+	}
+	require.Equal(t, int64(coins[0].Amount+coins[1].Amount-fee), out)
+
+	swapped := []delegation.Coin{coins[1], coins[0]}
+	_, err = BuildOnchain(inst, inputs, swapped, txs, template.Fee{
+		Dust: 330, Onchain: func(int) uint64 { return fee },
+	})
+	require.Error(t, err)
+	_, err = BuildOnchain(inst, inputs, coins[:1], txs, template.Fee{
+		Dust: 330, Onchain: func(int) uint64 { return fee },
+	})
+	require.Error(t, err)
+
+	ptx.UnsignedTx.TxOut[0].Value += int64(fee) + 1
+	require.ErrorContains(t, checkTx(ptx, coins, inputs), "exceed")
 }
 
 func mustSerialize(t *testing.T, p *psbt.Packet) []byte {

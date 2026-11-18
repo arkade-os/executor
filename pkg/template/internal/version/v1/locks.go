@@ -3,6 +3,7 @@ package v1
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/arkade-os/executor/pkg/template/internal/asm"
@@ -130,6 +131,58 @@ func (i *Instance) resolveLocks(csvs []*uint32) error {
 			}
 		}
 		i.sequences = append(i.sequences, seq)
+	}
+	return nil
+}
+
+func (i *Instance) TxLocktime() uint32 { return i.locktime }
+
+func (i *Instance) Sequence(slot int) uint32 {
+	slot = i.firstCoin(slot)
+	if slot < 0 || slot >= len(i.sequences) {
+		return wire.MaxTxInSequenceNum
+	}
+	return i.sequences[slot]
+}
+
+func (i *Instance) OfflineSpend(directOnchain bool) error {
+	for _, in := range i.tmpl.inputs {
+		leaf := in.selectedLeaf
+		if leaf == nil {
+			return fmt.Errorf("%w: input %q has no spend leaf", failure.ErrUnsupported, in.name)
+		}
+		for _, w := range leaf.Witness {
+			if w.Type == "signature" && !w.Injected {
+				return fmt.Errorf(
+					"%w: input %q: leaf %q needs signature %q, which nobody injects",
+					failure.ErrUnsupported, in.name, leaf.Name, w.Name,
+				)
+			}
+		}
+		if err := offlineSigners(leaf.Asm, directOnchain); err != nil {
+			return fmt.Errorf("%w: input %q: %v", failure.ErrUnsupported, in.name, err)
+		}
+	}
+	return nil
+}
+
+func offlineSigners(tokens []string, directOnchain bool) error {
+	for n, tok := range tokens {
+		switch tok {
+		case "OP_CHECKSIG", "OP_CHECKSIGVERIFY", "OP_CHECKSIGADD":
+		default:
+			continue
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: checksig has no key", failure.ErrUnsupported)
+		}
+		key := tokens[n-1]
+		emulator := strings.HasPrefix(key, "<EMULATOR_KEY:") && strings.HasSuffix(key, ">")
+		server := key == "<SERVER_KEY>"
+		if directOnchain && emulator || !directOnchain && (server || emulator) {
+			continue
+		}
+		return fmt.Errorf("%w: signer %s is not available offline", failure.ErrUnsupported, key)
 	}
 	return nil
 }

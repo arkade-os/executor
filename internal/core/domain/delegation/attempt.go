@@ -70,16 +70,33 @@ func (a Attempt) Proof() (Tx, bool) {
 	return Tx{}, false
 }
 
-// Attempt starts d's attempt to spend coins. d must be active and own the coins.
 func (d *Delegation) Attempt(coins []Coin) (Attempt, error) {
 	if d.Status != StatusActive {
 		return Attempt{}, ErrNotActive
 	}
+	if len(coins) != len(d.Inputs) {
+		return Attempt{}, fmt.Errorf(
+			"%w: %d coins for %d inputs", ErrInvalidArgs, len(coins), len(d.Inputs),
+		)
+	}
+	seen := map[string]struct{}{}
 	outpoints := make([]string, len(coins))
 	for i, c := range coins {
-		if c.DelegationID != d.ID {
+		in := d.Inputs[i]
+		switch {
+		case c.DelegationID != d.ID:
 			return Attempt{}, fmt.Errorf("%w: %s", errNotOwned, c.Outpoint)
+		case c.Script != in.Script || c.Onchain != in.Onchain:
+			return Attempt{}, fmt.Errorf(
+				"%w: coin %s is not input %d", ErrInvalidArgs, c.Outpoint, i,
+			)
+		case c.Outpoint == "":
+			return Attempt{}, fmt.Errorf("%w: coin %d has no outpoint", ErrInvalidArgs, i)
 		}
+		if _, ok := seen[c.Outpoint]; ok {
+			return Attempt{}, fmt.Errorf("%w: coin %s is repeated", ErrInvalidArgs, c.Outpoint)
+		}
+		seen[c.Outpoint] = struct{}{}
 		outpoints[i] = c.Outpoint
 	}
 	return Attempt{DelegationID: d.ID, Coins: outpoints, Status: Submitted}, nil

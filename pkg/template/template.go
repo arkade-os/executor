@@ -92,6 +92,14 @@ func (i *Instance) Locktime(slot int) (arklib.AbsoluteLocktime, bool) {
 	return i.v1.Locktime(slot)
 }
 
+func (i *Instance) TxLocktime() uint32 { return i.v1.TxLocktime() }
+
+func (i *Instance) Sequence(slot int) uint32 { return i.v1.Sequence(slot) }
+
+func (i *Instance) OfflineSpend(directOnchain bool) error {
+	return wrap("spend", i.v1.OfflineSpend(directOnchain))
+}
+
 func (i *Instance) DueAt(slot int, s *Source, now time.Time) time.Time {
 	return i.v1.DueAt(slot, s, now)
 }

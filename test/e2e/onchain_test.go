@@ -23,7 +23,7 @@ func TestOnchainDelegationIsSignedAndBroadcast(t *testing.T) {
 	doc, err := os.ReadFile("../../internal/core/domain/execution/testdata/onchain_arkade.json")
 	require.NoError(t, err)
 	w := registerDelegation(t, d, registerDocument(t, d, doc), nil)
-	faucet(t, w.Address, 20_000)
+	faucet(t, w.Inputs[0].Address, 20_000)
 
 	require.Eventually(t, func() bool {
 		attempts := attemptsOf(t, d, w.Id)
@@ -42,7 +42,7 @@ func TestOnchainExitPaysTheOwnerAfterTheDelay(t *testing.T) {
 		"owner_program": hex.EncodeToString(program), "exit_delay": daemon.ScriptNum(3),
 		"max_fee": daemon.ScriptNum(1000),
 	})
-	faucet(t, w.Address, 20_000)
+	faucet(t, w.Inputs[0].Address, 20_000)
 
 	addr, err := address.NewAddressTaproot(program, &chaincfg.RegressionNetParams)
 	require.NoError(t, err)

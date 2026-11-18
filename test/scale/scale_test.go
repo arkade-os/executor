@@ -157,7 +157,7 @@ func seed(t *testing.T, d *daemon.Daemon, renewal, boarding string) int {
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("delegations",
-		"fingerprint", "address", "template_id", "variables", "inputs", "status"))
+		"fingerprint", "template_id", "variables", "inputs", "status"))
 	require.NoError(t, err)
 	var scripts []string
 	for i := 1; i <= delegations; i++ {
@@ -190,7 +190,7 @@ func seed(t *testing.T, d *daemon.Daemon, renewal, boarding string) int {
 			scripts = append(scripts, "5120"+script)
 		}
 		_, err := stmt.ExecContext(
-			ctx, hash("fingerprint", i), "tark1"+script, template, variables, inputs, "active",
+			ctx, hash("fingerprint", i), template, variables, inputs, "active",
 		)
 		require.NoError(t, err)
 	}

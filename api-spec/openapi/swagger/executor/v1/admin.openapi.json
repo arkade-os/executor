@@ -742,9 +742,6 @@
         "title": "Delegation",
         "type": "object",
         "properties": {
-          "address": {
-            "type": "string"
-          },
           "createdAt": {
             "type": "integer",
             "description": "created_at and updated_at are unix seconds.",
@@ -1000,6 +997,9 @@
         "type": "object",
         "description": "Input is one template input of a delegation.",
         "properties": {
+          "address": {
+            "type": "string"
+          },
           "locktime": {
             "type": "integer",
             "description": "locktime is the absolute locktime of the input's spend leaf, 0 without one.",

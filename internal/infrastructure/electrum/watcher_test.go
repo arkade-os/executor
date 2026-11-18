@@ -276,6 +276,45 @@ func TestRequestTimesOut(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
+func TestSpender(t *testing.T) {
+	spent := wire.OutPoint{Hash: [32]byte{3}, Index: 1}
+	other := wire.NewMsgTx(2)
+	other.AddTxIn(&wire.TxIn{})
+	spender := wire.NewMsgTx(2)
+	spender.AddTxIn(&wire.TxIn{PreviousOutPoint: spent})
+	raw := map[string]string{}
+	for _, tx := range []*wire.MsgTx{other, spender} {
+		var buf bytes.Buffer
+		require.NoError(t, tx.Serialize(&buf))
+		raw[tx.TxHash().String()] = hex.EncodeToString(buf.Bytes())
+	}
+	history := []map[string]string{
+		{"tx_hash": "gone"},
+		{"tx_hash": spender.TxHash().String()},
+		{"tx_hash": other.TxHash().String()},
+	}
+	srv := newServer(t, func(method string, params []any) (any, *rpcError) {
+		switch method {
+		case "blockchain.scripthash.get_history":
+			return history, nil
+		case "blockchain.transaction.get":
+			if hexTx, ok := raw[params[0].(string)]; ok {
+				return hexTx, nil
+			}
+			return nil, &rpcError{Code: 1, Message: "missing"}
+		}
+		return nil, nil
+	})
+	w := newTestWatcher(t, srv)
+	got, err := w.Spender(t.Context(), "51", spent.String())
+	require.NoError(t, err)
+	require.Equal(t, spender.TxHash().String(), got)
+
+	none, err := w.Spender(t.Context(), "51", wire.OutPoint{Hash: [32]byte{9}}.String())
+	require.NoError(t, err)
+	require.Empty(t, none)
+}
+
 func TestTransaction(t *testing.T) {
 	tx := wire.NewMsgTx(2)
 	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Hash: [32]byte{1}}})

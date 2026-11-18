@@ -75,7 +75,7 @@ func toCoins(coins []delegation.Coin) []*executorv1.Coin {
 
 func toDelegation(d *delegation.Delegation) *executorv1.Delegation {
 	out := &executorv1.Delegation{
-		Id: d.ID, Fingerprint: d.Fingerprint, Address: d.Address, TemplateId: d.TemplateID,
+		Id: d.ID, Fingerprint: d.Fingerprint, TemplateId: d.TemplateID,
 		Variables: d.Variables, StreamId: d.StreamID, Status: d.Status,
 		CreatedAt: d.CreatedAt.Unix(), UpdatedAt: d.UpdatedAt.Unix(),
 	}
@@ -85,7 +85,7 @@ func toDelegation(d *delegation.Delegation) *executorv1.Delegation {
 	for _, in := range d.Inputs {
 		out.Inputs = append(out.Inputs, &executorv1.Input{
 			Name: in.Name, Onchain: in.Onchain, Script: in.Script, Tapscripts: in.Tapscripts,
-			Locktime: uint32(in.Locktime),
+			Locktime: uint32(in.Locktime), Address: in.Address,
 		})
 	}
 	return out

@@ -11,8 +11,9 @@ service ExecutorService {
       get: "/v1/info"
     };
   }
-  // RegisterDelegation binds a one-input template to variables: the daemon acts on every coin landing at
-  // the derived address until expires_at. Registering an active delegation again returns it unchanged.
+  // RegisterDelegation binds a template to variables. The daemon acts on coins landing at the
+  // template's input addresses until expires_at. Registering an active delegation again returns it
+  // unchanged.
   rpc RegisterDelegation(RegisterDelegationRequest) returns (RegisterDelegationResponse) {
     option (meshapi.gateway.http) = {
       post: "/v1/delegation"
@@ -82,6 +83,7 @@ message RegisterDelegationResponse {
 }
 message GetDelegationRequest {
   int64 id = 1;
+  // address matches any input address of the delegation.
   string address = 2;
 }
 message GetDelegationResponse {
@@ -150,19 +152,18 @@ message Param {
 message Delegation {
   int64 id = 1;
   string fingerprint = 2;
-  string address = 3;
-  string template_id = 4;
-  map<string, string> variables = 5;
-  repeated Input inputs = 6;
+  string template_id = 3;
+  map<string, string> variables = 4;
+  repeated Input inputs = 5;
   // stream_id is the stream that spawned the delegation, 0 when a client registered it.
-  int64 stream_id = 7;
+  int64 stream_id = 6;
   // expires_at is unix seconds, 0 when the delegation never expires.
-  int64 expires_at = 8;
+  int64 expires_at = 7;
   // status is active, cancelled, expired or done.
-  string status = 9;
+  string status = 8;
   // created_at and updated_at are unix seconds.
-  int64 created_at = 10;
-  int64 updated_at = 11;
+  int64 created_at = 9;
+  int64 updated_at = 10;
 }
 // Input is one template input of a delegation.
 message Input {
@@ -173,6 +174,7 @@ message Input {
   repeated string tapscripts = 4;
   // locktime is the absolute locktime of the input's spend leaf, 0 without one.
   uint32 locktime = 5;
+  string address = 6;
 }
 // Coin is a vtxo found at a delegation's input.
 message Coin {

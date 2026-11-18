@@ -61,6 +61,11 @@ func NewDecodedTemplate(
 	if len(parsed.Triggers()) > 1 {
 		return nil, fmt.Errorf("%w: a trigger of several rules is not served", ErrUnsupported)
 	}
+	for _, in := range parsed.Inputs() {
+		if in.AllOutputs {
+			return nil, fmt.Errorf("%w: all_outputs is not served", ErrUnsupported)
+		}
+	}
 	t := Template{
 		ID: parsed.ID(), Document: document.Source(), ArtifactIDs: parsed.Artifacts(),
 		Type: parsed.Type(), Status: TemplateStatusActive,

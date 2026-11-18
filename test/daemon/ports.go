@@ -400,28 +400,47 @@ func (e *emulator) SubmitOnchainTx(_ context.Context, raw string) (string, error
 	if err != nil {
 		return "", err
 	}
-	key := arkade.ComputeArkadeScriptPrivateKey(
-		e.key, arkade.ArkadeScriptHash(packet[0].Script),
-	)
-	in := &ptx.Inputs[0]
-	leaf := txscript.NewBaseTapLeaf(in.TaprootLeafScript[0].Script)
-	fetcher := txscript.NewCannedPrevOutputFetcher(in.WitnessUtxo.PkScript, in.WitnessUtxo.Value)
-	sighash, err := txscript.CalcTapscriptSignaturehash(
-		txscript.NewTxSigHashes(ptx.UnsignedTx, fetcher), txscript.SigHashDefault, ptx.UnsignedTx,
-		0, fetcher, leaf,
-	)
-	if err != nil {
-		return "", err
+	prevouts := map[wire.OutPoint]*wire.TxOut{}
+	for i, in := range ptx.Inputs {
+		if in.WitnessUtxo == nil {
+			return "", fmt.Errorf("input %d has no witness utxo", i)
+		}
+		prevouts[ptx.UnsignedTx.TxIn[i].PreviousOutPoint] = in.WitnessUtxo
 	}
-	sig, err := schnorr.Sign(key, sighash)
-	if err != nil {
-		return "", err
+	fetcher := txscript.NewMultiPrevOutFetcher(prevouts)
+	hashes := txscript.NewTxSigHashes(ptx.UnsignedTx, fetcher)
+	for i := range ptx.Inputs {
+		entry := packet[0]
+		for _, p := range packet {
+			if int(p.Vin) == i {
+				entry = p
+				break
+			}
+		}
+		in := &ptx.Inputs[i]
+		if len(in.TaprootLeafScript) == 0 {
+			return "", fmt.Errorf("input %d has no leaf", i)
+		}
+		key := arkade.ComputeArkadeScriptPrivateKey(
+			e.key, arkade.ArkadeScriptHash(entry.Script),
+		)
+		leaf := txscript.NewBaseTapLeaf(in.TaprootLeafScript[0].Script)
+		sighash, err := txscript.CalcTapscriptSignaturehash(
+			hashes, txscript.SigHashDefault, ptx.UnsignedTx, i, fetcher, leaf,
+		)
+		if err != nil {
+			return "", err
+		}
+		sig, err := schnorr.Sign(key, sighash)
+		if err != nil {
+			return "", err
+		}
+		hash := leaf.TapHash()
+		in.TaprootScriptSpendSig = append(in.TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
+			XOnlyPubKey: schnorr.SerializePubKey(key.PubKey()), LeafHash: hash[:],
+			Signature: sig.Serialize(), SigHash: txscript.SigHashDefault,
+		})
 	}
-	hash := leaf.TapHash()
-	in.TaprootScriptSpendSig = append(in.TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
-		XOnlyPubKey: schnorr.SerializePubKey(key.PubKey()), LeafHash: hash[:],
-		Signature: sig.Serialize(), SigHash: txscript.SigHashDefault,
-	})
 	e.Signed++
 	return ptx.B64Encode()
 }

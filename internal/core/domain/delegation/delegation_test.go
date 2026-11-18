@@ -1,6 +1,7 @@
 package delegation
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -50,7 +51,7 @@ func TestNewDelegationDerivesVtxoAddressAndInputFromTemplate(t *testing.T) {
 	require.Equal(t, fingerprint(p.Template.ID(), p.Variables), d.Fingerprint)
 	require.Equal(t, p.Variables, d.Variables)
 	require.Nil(t, d.ExpiresAt)
-	require.True(t, strings.HasPrefix(d.Address, arklib.BitcoinRegTest.Addr))
+	require.True(t, strings.HasPrefix(d.Inputs[0].Address, arklib.BitcoinRegTest.Addr))
 
 	require.Len(t, d.Inputs, 1)
 	in := d.Inputs[0]
@@ -60,7 +61,7 @@ func TestNewDelegationDerivesVtxoAddressAndInputFromTemplate(t *testing.T) {
 	require.Len(t, in.Script, 68)
 	require.True(t, strings.HasPrefix(in.Script, "5120"))
 
-	decoded, err := arklib.DecodeAddressV0(d.Address)
+	decoded, err := arklib.DecodeAddressV0(d.Inputs[0].Address)
 	require.NoError(t, err)
 	require.Equal(
 		t, in.Script, "5120"+hex.EncodeToString(schnorr.SerializePubKey(decoded.VtxoTapKey)),
@@ -82,16 +83,44 @@ func TestNewDelegationKeepsExpiryAndVariablesChangeTheAddress(t *testing.T) {
 	other.Variables["max_fee"] = scriptNum(2000)
 	o, err := NewDelegation(other)
 	require.NoError(t, err)
-	require.NotEqual(t, d.Address, o.Address)
+	require.NotEqual(t, d.Inputs[0].Address, o.Inputs[0].Address)
 	require.NotEqual(t, d.Fingerprint, o.Fingerprint)
 }
 
-func TestNewDelegationRefusesSeveralInputs(t *testing.T) {
+func TestNewDelegationRegistersEveryInput(t *testing.T) {
 	p := renewalParams(t)
 	p.Template = parseDoc(t, fixture(t, "counter.json"))
 	p.Variables = nil
-	_, err := NewDelegation(p)
+	d, err := NewDelegation(p)
+	require.NoError(t, err)
+	require.Len(t, d.Inputs, 2)
+	require.NotEqual(t, d.Inputs[0].Script, d.Inputs[1].Script)
+	require.NotEmpty(t, d.Inputs[0].Address)
+	require.NotEmpty(t, d.Inputs[1].Address)
+	require.NotEqual(t, d.Inputs[0].Address, d.Inputs[1].Address)
+	require.Equal(t, uint32(0xffffffff), d.Inputs[0].Sequence)
+	require.Equal(t, uint32(0xffffffff), d.Inputs[1].Sequence)
+	require.Zero(t, d.Inputs[0].TxLocktime)
+}
+
+func TestNewDelegationRefusesTwoSlotsOnTheSameScript(t *testing.T) {
+	p := renewalParams(t)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(fixture(t, "counter.json"), &doc))
+	inputs := doc["inputs"].([]any)
+	raw, err := json.Marshal(inputs[0])
+	require.NoError(t, err)
+	var copy map[string]any
+	require.NoError(t, json.Unmarshal(raw, &copy))
+	copy["name"] = inputs[1].(map[string]any)["name"]
+	inputs[1] = copy
+	encoded, err := json.Marshal(doc)
+	require.NoError(t, err)
+	p.Template = parseDoc(t, encoded)
+	p.Variables = nil
+	_, err = NewDelegation(p)
 	require.ErrorIs(t, err, ErrInvalidArgs)
+	require.ErrorContains(t, err, "same script")
 }
 
 func TestNewDelegationRefusesStreamTriggerTemplates(t *testing.T) {
@@ -126,7 +155,19 @@ func TestNewDelegationWithSecretsNeedsAnEncryptionKey(t *testing.T) {
 		secretParams(t, func([]byte) ([]byte, error) { return make([]byte, 32), nil }),
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, d.Address)
+	require.NotEmpty(t, d.Inputs[0].Address)
+}
+
+func TestNewDelegationRefusesServerKeyOnAnOnchainLeaf(t *testing.T) {
+	p := renewalParams(t)
+	raw := bytes.ReplaceAll(
+		fixture(t, "minimal.json"), []byte("COSIGNER_KEY"), []byte("SERVER_KEY"),
+	)
+	p.Template = parseDoc(t, raw)
+	p.Variables = nil
+	_, err := NewDelegation(p)
+	require.ErrorIs(t, err, ErrInvalidArgs)
+	require.NotErrorIs(t, err, ErrCosignerKeyLeaf)
 }
 
 func TestNewDelegationRefusesLeafSignedByTheCosignerKey(t *testing.T) {

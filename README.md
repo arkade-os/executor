@@ -3,9 +3,10 @@
 Alpha software: use at your own risk.
 
 `executord` renews Arkade VTXOs and boards bitcoin while their
-owner is offline. A wallet registers a delegation on its address; every spend is
-co-signed by the [emulator](https://github.com/arkade-os/emulator) only if it
-satisfies the template's covenant.
+owner is offline. A wallet registers a delegation on the addresses of its
+template inputs; every spend is co-signed by the
+[emulator](https://github.com/arkade-os/emulator) only if it satisfies the
+template's covenant.
 
 The default templates in [`templates/`](templates) (`renew`, `board` for non-interactive boarding, and the VHTLC claim stream `claim`) are registered at startup.
 
@@ -69,8 +70,9 @@ batches the plan expects.
 
 A template whose attempts arkd, the emulator or the template itself
 refuse `TEMPLATE_MAX_FAILURES` times in a row is disabled; a succeeded attempt
-resets the count. Onchain templates
-are not served.
+resets the count. The templates registered at startup are `renew`, `board` and
+`claim`. An onchain template is registered by its document like any other: the
+daemon watches its input addresses and the emulator signs the spend.
 
 Other limits and intervals are in [`internal/config/config.go`](internal/config/config.go).
 

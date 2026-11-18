@@ -34,8 +34,8 @@ func (r *SummaryRepository) List(
 	out := make([]ports.Summary, 0, len(rows))
 	for _, row := range rows {
 		d, err := toDelegation(queries.Delegation{
-			ID: row.ID, Fingerprint: row.Fingerprint, Address: row.Address,
-			TemplateID: row.TemplateID, Variables: row.Variables, Inputs: row.Inputs,
+			ID: row.ID, Fingerprint: row.Fingerprint, TemplateID: row.TemplateID,
+			Variables: row.Variables, Inputs: row.Inputs,
 			StreamID: row.StreamID, ExpiresAt: row.ExpiresAt, Status: row.Status,
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
