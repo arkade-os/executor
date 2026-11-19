@@ -1,7 +1,7 @@
 {
   "artifact_version": "artifact/v1",
   "artifacts": {
-    "041af65d5443fceebd149c44d9a0b646edae24399ae3dff6c5f82b878826dda5": {
+    "faa3249b8a28e999963994e4020e832285351eb7ce3b4821bcb3b4498f5b8ef3": {
       "constructorInputs": [
         {
           "name": "owner",
@@ -89,16 +89,6 @@
               "OP_VERIFY",
               "0x5b5d",
               "OP_EQUALVERIFY",
-              "0x636f7369676e6572735f7075626c69635f6b6579732e30",
-              "OP_INSPECTINTENTMESSAGE",
-              "OP_VERIFY",
-              "<COSIGNER_KEY>",
-              "OP_EQUALVERIFY",
-              "0x636f7369676e6572735f7075626c69635f6b6579732e31",
-              "OP_INSPECTINTENTMESSAGE",
-              "OP_NOT",
-              "OP_VERIFY",
-              "OP_DROP",
               "OP_PUSHCURRENTINPUTINDEX",
               "OP_1SUB",
               "OP_INSPECTOUTPUTVALUE",
@@ -192,8 +182,8 @@
         "created_at": "0001-01-01T00:00:00Z",
         "expiry": "2027-01-15T08:00:00Z",
         "swept": false,
-        "tx_hex": "0300000001000000000000000000000000000000000000000000000000000000000000000001000000000000000001a086010000000000225120aa7c8efd2b9ef1fe5dc1fca56705b49c518446088a6fe0fad919c73bb4cb8d2500000000",
-        "txid": "61c0f1301967aad6ab67dd05729a1ec63f9a131f8f5e4e6422a93a3900096fe3",
+        "tx_hex": "0300000001000000000000000000000000000000000000000000000000000000000000000001000000000000000001a0860100000000002251201c4f81036bf14b7ced98d2bdfbcd1cee160d054da2d83d17c791f0082171765e00000000",
+        "txid": "cd522e134e354fd0a6dd564751b08390258a64be246182d253a532af62a88244",
         "vout": 0
       }
     ]
@@ -221,7 +211,7 @@
             "renewalWindow": "<renewal_window>"
           },
           "definition": {
-            "artifact": "041af65d5443fceebd149c44d9a0b646edae24399ae3dff6c5f82b878826dda5"
+            "artifact": "faa3249b8a28e999963994e4020e832285351eb7ce3b4821bcb3b4498f5b8ef3"
           }
         },
         "name": "funds",

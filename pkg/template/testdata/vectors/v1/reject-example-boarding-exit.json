@@ -1,6 +1,6 @@
 {
   "artifacts": {
-    "ba74305355ee2e574ca27bb4f2966884c1927b662b99ad40cb7ed08c3265302c": {
+    "e3c0fa053fbb529a252a1025e3453a41f01949f4e49d50de7dfe5d3510470ed3": {
       "contractName": "DelegatedBoarding",
       "constructorInputs": [
         {
@@ -86,16 +86,6 @@
               "OP_VERIFY",
               "0x5b5d",
               "OP_EQUALVERIFY",
-              "0x636f7369676e6572735f7075626c69635f6b6579732e30",
-              "OP_INSPECTINTENTMESSAGE",
-              "OP_VERIFY",
-              "<COSIGNER_KEY>",
-              "OP_EQUALVERIFY",
-              "0x636f7369676e6572735f7075626c69635f6b6579732e31",
-              "OP_INSPECTINTENTMESSAGE",
-              "OP_NOT",
-              "OP_VERIFY",
-              "OP_DROP",
               "OP_PUSHCURRENTINPUTINDEX",
               "OP_1SUB",
               "OP_INSPECTOUTPUTSCRIPTPUBKEY",
@@ -203,7 +193,7 @@
         "name": "deposit",
         "contract": {
           "definition": {
-            "artifact": "ba74305355ee2e574ca27bb4f2966884c1927b662b99ad40cb7ed08c3265302c"
+            "artifact": "e3c0fa053fbb529a252a1025e3453a41f01949f4e49d50de7dfe5d3510470ed3"
           },
           "arguments": {
             "owner": "<owner>",

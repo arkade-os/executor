@@ -1,6 +1,6 @@
 {
   "artifacts": {
-    "041af65d5443fceebd149c44d9a0b646edae24399ae3dff6c5f82b878826dda5": {
+    "faa3249b8a28e999963994e4020e832285351eb7ce3b4821bcb3b4498f5b8ef3": {
       "contractName": "DelegatedVtxo",
       "constructorInputs": [
         {
@@ -91,16 +91,6 @@
               "OP_VERIFY",
               "0x5b5d",
               "OP_EQUALVERIFY",
-              "0x636f7369676e6572735f7075626c69635f6b6579732e30",
-              "OP_INSPECTINTENTMESSAGE",
-              "OP_VERIFY",
-              "<COSIGNER_KEY>",
-              "OP_EQUALVERIFY",
-              "0x636f7369676e6572735f7075626c69635f6b6579732e31",
-              "OP_INSPECTINTENTMESSAGE",
-              "OP_NOT",
-              "OP_VERIFY",
-              "OP_DROP",
               "OP_PUSHCURRENTINPUTINDEX",
               "OP_1SUB",
               "OP_INSPECTOUTPUTVALUE",
@@ -145,7 +135,7 @@
         }
       ]
     },
-    "ba74305355ee2e574ca27bb4f2966884c1927b662b99ad40cb7ed08c3265302c": {
+    "e3c0fa053fbb529a252a1025e3453a41f01949f4e49d50de7dfe5d3510470ed3": {
       "contractName": "DelegatedBoarding",
       "constructorInputs": [
         {
@@ -231,16 +221,6 @@
               "OP_VERIFY",
               "0x5b5d",
               "OP_EQUALVERIFY",
-              "0x636f7369676e6572735f7075626c69635f6b6579732e30",
-              "OP_INSPECTINTENTMESSAGE",
-              "OP_VERIFY",
-              "<COSIGNER_KEY>",
-              "OP_EQUALVERIFY",
-              "0x636f7369676e6572735f7075626c69635f6b6579732e31",
-              "OP_INSPECTINTENTMESSAGE",
-              "OP_NOT",
-              "OP_VERIFY",
-              "OP_DROP",
               "OP_PUSHCURRENTINPUTINDEX",
               "OP_1SUB",
               "OP_INSPECTOUTPUTSCRIPTPUBKEY",
@@ -350,7 +330,7 @@
         "type": "onchain",
         "contract": {
           "definition": {
-            "artifact": "ba74305355ee2e574ca27bb4f2966884c1927b662b99ad40cb7ed08c3265302c"
+            "artifact": "e3c0fa053fbb529a252a1025e3453a41f01949f4e49d50de7dfe5d3510470ed3"
           },
           "arguments": {
             "owner": "<owner>",
@@ -377,7 +357,7 @@
         "locking": {
           "contract": {
             "definition": {
-              "artifact": "041af65d5443fceebd149c44d9a0b646edae24399ae3dff6c5f82b878826dda5"
+              "artifact": "faa3249b8a28e999963994e4020e832285351eb7ce3b4821bcb3b4498f5b8ef3"
             },
             "arguments": {
               "owner": "<owner>",
