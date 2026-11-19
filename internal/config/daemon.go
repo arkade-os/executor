@@ -74,7 +74,7 @@ func NewDaemon(ctx context.Context, cfg Config) (_ *Daemon, err error) {
 		delegationapp.Limits{
 			MinDelegationExpiry: cfg.MinDelegationExpiry, MaxDelegations: cfg.MaxDelegations,
 			MaxStreamChildren: cfg.MaxStreamChildren, ExpiryInterval: cfg.ExpiryInterval,
-			PruneAfter: cfg.PruneAfter,
+			PruneAfter: cfg.PruneAfter, IdleExpiry: cfg.IdleExpiry,
 		},
 	)
 	if cfg.DefaultTemplates {

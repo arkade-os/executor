@@ -74,12 +74,30 @@ FROM delegations WHERE status = 'active';
 DELETE FROM delegations
 WHERE stream_id IS NOT NULL AND status = 'expired' AND expires_at <= @before::timestamptz;
 
+-- name: PruneIdleDelegations :execrows
+DELETE FROM delegations d
+WHERE d.stream_id IS NULL AND d.status = 'expired' AND d.updated_at <= @before::timestamptz
+  AND NOT EXISTS (SELECT 1 FROM coins c WHERE c.delegation_id = d.id)
+  AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.delegation_id = d.id);
+
 -- name: UpdateDelegationStatus :execrows
 UPDATE delegations SET status = @status, updated_at = now() WHERE id = @id;
 
 -- name: ExpireDelegations :many
 UPDATE delegations SET status = 'expired', updated_at = now()
 WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= @before::timestamptz
+RETURNING *;
+
+-- name: ExpireIdleDelegations :many
+UPDATE delegations SET status = 'expired', updated_at = now()
+WHERE status = 'active' AND id IN (
+    SELECT d.id FROM delegations d
+    WHERE d.status = 'active' AND d.stream_id IS NULL AND d.created_at <= @registered_before::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM coins c WHERE c.delegation_id = d.id)
+    ORDER BY d.id
+    LIMIT @max_count::int
+    FOR UPDATE SKIP LOCKED
+)
 RETURNING *;
 
 -- name: ListDelegations :many

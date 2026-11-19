@@ -31,7 +31,8 @@ type Config struct {
 	MaxStreamChildren   int // active delegations the streams spawned, apart from MaxDelegations
 	MinDelegationExpiry time.Duration
 	ExpiryInterval      time.Duration
-	PruneAfter          time.Duration // how long after expiry a spawned delegation is deleted
+	PruneAfter          time.Duration
+	IdleExpiry          time.Duration
 	OffchainConcurrency int
 	AttemptTimeout      time.Duration // building and signing an offchain attempt
 	RetryDelay          time.Duration // before the coins of a failed attempt are tried again
@@ -66,7 +67,7 @@ func Default() Config {
 		RetryDelay: time.Minute, IntentsPerBatch: 128, IntentTimeout: 5 * time.Minute,
 		Reserve: 15 * time.Minute, BanDuration: 5 * time.Minute, LandingWindow: 5 * time.Minute,
 		TemplateMaxFailures: 10, LoopStall: 2 * time.Minute, PublicRateLimit: 5, LogLevel: 4,
-		DefaultTemplates: true,
+		DefaultTemplates: true, IdleExpiry: 7 * 24 * time.Hour,
 	}
 }
 
@@ -117,6 +118,7 @@ func Load() (Config, error) {
 		{"MIN_DELEGATION_EXPIRY", &cfg.MinDelegationExpiry},
 		{"EXPIRY_INTERVAL", &cfg.ExpiryInterval},
 		{"PRUNE_AFTER", &cfg.PruneAfter},
+		{"IDLE_DELEGATION_EXPIRY", &cfg.IdleExpiry},
 		{"ATTEMPT_TIMEOUT", &cfg.AttemptTimeout},
 		{"RETRY_DELAY", &cfg.RetryDelay},
 		{"INTENT_TIMEOUT", &cfg.IntentTimeout},

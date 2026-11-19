@@ -71,6 +71,9 @@ type DelegationRepository interface {
 	// Expire marks the active delegations whose expiry is not after before as expired and returns
 	// them.
 	Expire(ctx context.Context, before time.Time) ([]Delegation, error)
+	// ExpireIdle marks as expired at most limit of the active delegations clients registered
+	// before the time that never held a coin, and returns them.
+	ExpireIdle(ctx context.Context, registeredBefore time.Time, limit int) ([]Delegation, error)
 	// List returns the delegations matching f, newest first.
 	List(ctx context.Context, f ListFilter) ([]Delegation, error)
 	// CountActive counts the active delegations clients registered and those streams spawned.
@@ -78,6 +81,9 @@ type DelegationRepository interface {
 	// Prune deletes the delegations a stream spawned that expired before the time, unless a
 	// successor names one as its parent.
 	Prune(ctx context.Context, before time.Time) (int64, error)
+	// PruneIdle deletes the expired delegations clients registered that never held a coin nor
+	// made an attempt, and expired before the time.
+	PruneIdle(ctx context.Context, before time.Time) (int64, error)
 }
 
 type DelegationParams struct {

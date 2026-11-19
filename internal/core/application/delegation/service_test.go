@@ -3,6 +3,7 @@ package delegation
 import (
 	"context"
 	"testing"
+	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
@@ -56,6 +57,56 @@ func TestAddCapsOriginsApart(t *testing.T) {
 	require.NoError(t, err, "only active delegations count")
 }
 
+func TestExpireDelegations(t *testing.T) {
+	now := time.Now()
+	day := 24 * time.Hour
+	tests := []struct {
+		name            string
+		limits          Limits
+		count           int
+		notified        []int64
+		idleBefore      time.Time
+		pruneBefore     time.Time
+		pruneIdleBefore time.Time
+	}{
+		{
+			name: "idle expiry off", limits: Limits{PruneAfter: day},
+			count: 1, notified: []int64{1}, pruneBefore: now.Add(-day),
+		},
+		{
+			name: "idle expiry on", limits: Limits{PruneAfter: day, IdleExpiry: 2 * day},
+			count: 3, notified: []int64{1, 2, 3}, idleBefore: now.Add(-2 * day),
+			pruneBefore: now.Add(-day), pruneIdleBefore: now.Add(-day),
+		},
+		{
+			name: "pruning off", limits: Limits{IdleExpiry: 2 * day},
+			count: 3, notified: []int64{1, 2, 3}, idleBefore: now.Add(-2 * day),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &rows{
+				expired: []delegation.Delegation{{ID: 1}},
+				idle:    []delegation.Delegation{{ID: 2}, {ID: 3}},
+			}
+			s := &Service{delegations: repo, limits: tt.limits}
+			var notified []int64
+			s.OnChange(func(d delegation.Delegation) { notified = append(notified, d.ID) })
+
+			n, err := s.ExpireDelegations(t.Context(), now)
+			require.NoError(t, err)
+			require.Equal(t, tt.count, n)
+			require.Equal(t, tt.notified, notified)
+			require.Equal(t, tt.idleBefore, repo.idleBefore)
+			if !tt.idleBefore.IsZero() {
+				require.Equal(t, idleExpiryBatch, repo.idleLimit)
+			}
+			require.Equal(t, tt.pruneBefore, repo.pruneBefore)
+			require.Equal(t, tt.pruneIdleBefore, repo.pruneIdleBefore)
+		})
+	}
+}
+
 func TestDecryptFor(t *testing.T) {
 	key, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
@@ -82,10 +133,15 @@ func testDelegation(fingerprint string, streamID int64) *delegation.Delegation {
 	}
 }
 
-// rows is the part of a delegation.DelegationRepository that add uses.
 type rows struct {
 	delegation.DelegationRepository
 	list []delegation.Delegation
+
+	expired, idle   []delegation.Delegation
+	idleBefore      time.Time
+	idleLimit       int
+	pruneBefore     time.Time
+	pruneIdleBefore time.Time
 }
 
 func (r *rows) AddOrUpdate(_ context.Context, d *delegation.Delegation) error {
@@ -117,4 +173,25 @@ func (r *rows) CountActive(context.Context) (clients, spawned int64, err error) 
 		}
 	}
 	return clients, spawned, nil
+}
+
+func (r *rows) Expire(context.Context, time.Time) ([]delegation.Delegation, error) {
+	return r.expired, nil
+}
+
+func (r *rows) ExpireIdle(
+	_ context.Context, registeredBefore time.Time, limit int,
+) ([]delegation.Delegation, error) {
+	r.idleBefore, r.idleLimit = registeredBefore, limit
+	return r.idle, nil
+}
+
+func (r *rows) Prune(_ context.Context, before time.Time) (int64, error) {
+	r.pruneBefore = before
+	return 0, nil
+}
+
+func (r *rows) PruneIdle(_ context.Context, before time.Time) (int64, error) {
+	r.pruneIdleBefore = before
+	return 0, nil
 }

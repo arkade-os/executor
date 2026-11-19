@@ -224,6 +224,22 @@ func (r *delegations) Expire(_ context.Context, before time.Time) ([]delegation.
 	return expired, nil
 }
 
+func (r *delegations) ExpireIdle(
+	_ context.Context, registeredBefore time.Time, limit int,
+) ([]delegation.Delegation, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var expired []delegation.Delegation
+	for i := range r.rows {
+		if d := r.rows[i]; len(expired) < limit && d.Status == delegation.StatusActive &&
+			d.StreamID == 0 && !d.CreatedAt.After(registeredBefore) {
+			r.rows[i].Status, r.rows[i].UpdatedAt = delegation.StatusExpired, time.Now()
+			expired = append(expired, r.rows[i])
+		}
+	}
+	return expired, nil
+}
+
 func (r *delegations) List(
 	_ context.Context, f delegation.ListFilter,
 ) ([]delegation.Delegation, error) {
@@ -261,6 +277,21 @@ func (r *delegations) Prune(_ context.Context, before time.Time) (int64, error) 
 	r.rows = slices.DeleteFunc(r.rows, func(d delegation.Delegation) bool {
 		gone := d.StreamID != 0 && d.Status == delegation.StatusExpired &&
 			!d.ExpiresAt.After(before)
+		if gone {
+			n++
+		}
+		return gone
+	})
+	return n, nil
+}
+
+func (r *delegations) PruneIdle(_ context.Context, before time.Time) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var n int64
+	r.rows = slices.DeleteFunc(r.rows, func(d delegation.Delegation) bool {
+		gone := d.StreamID == 0 && d.Status == delegation.StatusExpired &&
+			!d.UpdatedAt.After(before)
 		if gone {
 			n++
 		}

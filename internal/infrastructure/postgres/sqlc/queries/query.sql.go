@@ -146,6 +146,58 @@ func (q *Queries) ExpireDelegations(ctx context.Context, before time.Time) ([]De
 	return items, nil
 }
 
+const expireIdleDelegations = `-- name: ExpireIdleDelegations :many
+UPDATE delegations SET status = 'expired', updated_at = now()
+WHERE status = 'active' AND id IN (
+    SELECT d.id FROM delegations d
+    WHERE d.status = 'active' AND d.stream_id IS NULL AND d.created_at <= $1::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM coins c WHERE c.delegation_id = d.id)
+    ORDER BY d.id
+    LIMIT $2::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at
+`
+
+type ExpireIdleDelegationsParams struct {
+	RegisteredBefore time.Time
+	MaxCount         int32
+}
+
+func (q *Queries) ExpireIdleDelegations(ctx context.Context, arg ExpireIdleDelegationsParams) ([]Delegation, error) {
+	rows, err := q.db.QueryContext(ctx, expireIdleDelegations, arg.RegisteredBefore, arg.MaxCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Delegation
+	for rows.Next() {
+		var i Delegation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fingerprint,
+			&i.TemplateID,
+			&i.Variables,
+			&i.Inputs,
+			&i.StreamID,
+			&i.ExpiresAt,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getWatchedStatus = `-- name: GetWatchedStatus :one
 SELECT coalesce((SELECT status FROM script_status WHERE script_status.script = $1), '')::text AS status,
     EXISTS (
@@ -1203,6 +1255,21 @@ WHERE stream_id IS NOT NULL AND status = 'expired' AND expires_at <= $1::timesta
 
 func (q *Queries) PruneDelegations(ctx context.Context, before time.Time) (int64, error) {
 	result, err := q.db.ExecContext(ctx, pruneDelegations, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const pruneIdleDelegations = `-- name: PruneIdleDelegations :execrows
+DELETE FROM delegations d
+WHERE d.stream_id IS NULL AND d.status = 'expired' AND d.updated_at <= $1::timestamptz
+  AND NOT EXISTS (SELECT 1 FROM coins c WHERE c.delegation_id = d.id)
+  AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.delegation_id = d.id)
+`
+
+func (q *Queries) PruneIdleDelegations(ctx context.Context, before time.Time) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneIdleDelegations, before)
 	if err != nil {
 		return 0, err
 	}

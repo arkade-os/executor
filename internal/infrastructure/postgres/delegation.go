@@ -104,6 +104,18 @@ func (r *DelegationRepository) Expire(
 	return toDelegations(rows)
 }
 
+func (r *DelegationRepository) ExpireIdle(
+	ctx context.Context, registeredBefore time.Time, limit int,
+) ([]delegation.Delegation, error) {
+	rows, err := r.db.querier.ExpireIdleDelegations(ctx, queries.ExpireIdleDelegationsParams{
+		RegisteredBefore: registeredBefore, MaxCount: int32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toDelegations(rows)
+}
+
 func (r *DelegationRepository) List(
 	ctx context.Context, f delegation.ListFilter,
 ) ([]delegation.Delegation, error) {
@@ -118,6 +130,10 @@ func (r *DelegationRepository) List(
 
 func (r *DelegationRepository) Prune(ctx context.Context, before time.Time) (int64, error) {
 	return r.db.querier.PruneDelegations(ctx, before)
+}
+
+func (r *DelegationRepository) PruneIdle(ctx context.Context, before time.Time) (int64, error) {
+	return r.db.querier.PruneIdleDelegations(ctx, before)
 }
 
 func (r *DelegationRepository) CountActive(

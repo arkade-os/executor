@@ -221,6 +221,112 @@ func TestDelegationExpire(t *testing.T) {
 	require.Empty(t, expired)
 }
 
+func TestDelegationExpireIdle(t *testing.T) {
+	t.Run("never-funded old clients", func(t *testing.T) {
+		repo := testDelegations(t)
+		stream := testStream()
+		require.NoError(t, repo.db.Streams().AddOrUpdate(t.Context(), &stream))
+		ids := map[string]int64{}
+		for _, name := range []string{"idle", "present coin", "spent coin", "recent", "cancelled"} {
+			created := testDelegation(name)
+			require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+			ids[name] = created.ID
+		}
+		spawned := testSpawned("spawned", stream.ID)
+		require.NoError(t, repo.AddOrUpdate(t.Context(), &spawned))
+		ids["spawned"] = spawned.ID
+		cancelled, err := repo.Get(t.Context(), ids["cancelled"])
+		require.NoError(t, err)
+		require.NoError(t, cancelled.Cancel())
+		require.NoError(t, repo.AddOrUpdate(t.Context(), cancelled))
+		for name, id := range ids {
+			if name != "recent" {
+				backdate(t, repo, "created_at", id, 48*time.Hour)
+			}
+		}
+		insertCoin(t, repo, "aa:0", ids["present coin"], delegation.Present)
+		insertCoin(t, repo, "bb:0", ids["spent coin"], delegation.Spent)
+
+		expired, err := repo.ExpireIdle(t.Context(), time.Now().Add(-24*time.Hour), 10)
+		require.NoError(t, err)
+		require.Equal(t, []int64{ids["idle"]}, listIDs(expired))
+		require.Equal(t, delegation.StatusExpired, expired[0].Status)
+		for name, status := range map[string]string{
+			"idle": delegation.StatusExpired, "present coin": delegation.StatusActive,
+			"spent coin": delegation.StatusActive, "recent": delegation.StatusActive,
+			"cancelled": delegation.StatusCancelled, "spawned": delegation.StatusActive,
+		} {
+			got, err := repo.Get(t.Context(), ids[name])
+			require.NoError(t, err)
+			require.Equal(t, status, got.Status, name)
+		}
+		expired, err = repo.ExpireIdle(t.Context(), time.Now().Add(-24*time.Hour), 10)
+		require.NoError(t, err)
+		require.Empty(t, expired)
+	})
+	t.Run("at most limit", func(t *testing.T) {
+		repo := testDelegations(t)
+		var ids []int64
+		for _, fp := range []string{"a", "b", "c"} {
+			created := testDelegation(fp)
+			require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+			backdate(t, repo, "created_at", created.ID, 48*time.Hour)
+			ids = append(ids, created.ID)
+		}
+
+		expired, err := repo.ExpireIdle(t.Context(), time.Now().Add(-24*time.Hour), 2)
+		require.NoError(t, err)
+		require.Equal(t, ids[:2], listIDs(expired), "the oldest first")
+		expired, err = repo.ExpireIdle(t.Context(), time.Now().Add(-24*time.Hour), 2)
+		require.NoError(t, err)
+		require.Equal(t, ids[2:], listIDs(expired), "the rest on the next call")
+	})
+}
+
+func TestDelegationPruneIdle(t *testing.T) {
+	repo := testDelegations(t)
+	stream := testStream()
+	require.NoError(t, repo.db.Streams().AddOrUpdate(t.Context(), &stream))
+	ids := map[string]int64{}
+	for _, name := range []string{"idle", "coin", "attempt", "recent", "active", "cancelled"} {
+		created := testDelegation(name)
+		require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+		ids[name] = created.ID
+	}
+	spawned := testSpawned("spawned", stream.ID)
+	require.NoError(t, repo.AddOrUpdate(t.Context(), &spawned))
+	ids["spawned"] = spawned.ID
+	for name, id := range ids {
+		status := delegation.StatusExpired
+		switch name {
+		case "active":
+			continue
+		case "cancelled":
+			status = delegation.StatusCancelled
+		}
+		require.NoError(
+			t, repo.AddOrUpdate(t.Context(), &delegation.Delegation{ID: id, Status: status}),
+		)
+		if name != "recent" {
+			backdate(t, repo, "updated_at", id, 48*time.Hour)
+		}
+	}
+	insertCoin(t, repo, "aa:0", ids["coin"], delegation.Spent)
+	require.NoError(t, repo.db.Attempts().AddOrUpdate(t.Context(), &delegation.Attempt{
+		DelegationID: ids["attempt"], Coins: []string{"moved:0"}, Status: delegation.Failed,
+	}), "an attempt whose coins moved to a successor")
+
+	n, err := repo.PruneIdle(t.Context(), time.Now().Add(-24*time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+	_, err = repo.Get(t.Context(), ids["idle"])
+	require.ErrorIs(t, err, delegation.ErrDelegationNotFound)
+	for _, name := range []string{"coin", "attempt", "recent", "active", "cancelled", "spawned"} {
+		_, err = repo.Get(t.Context(), ids[name])
+		require.NoError(t, err, name)
+	}
+}
+
 func TestDelegationListAndCount(t *testing.T) {
 	repo := testDelegations(t)
 	var ids []int64
@@ -307,6 +413,30 @@ func testStream() delegation.Stream {
 func withExpiry(d delegation.Delegation, at *time.Time) delegation.Delegation {
 	d.ExpiresAt = at
 	return d
+}
+
+func backdate(
+	t *testing.T, repo *DelegationRepository, column string, id int64, age time.Duration,
+) {
+	t.Helper()
+	_, err := repo.db.db.ExecContext(
+		t.Context(),
+		"UPDATE delegations SET "+column+" = now() - make_interval(secs => $1) WHERE id = $2",
+		age.Seconds(), id,
+	)
+	require.NoError(t, err)
+}
+
+func insertCoin(
+	t *testing.T, repo *DelegationRepository, outpoint string, id int64,
+	status delegation.CoinStatus,
+) {
+	t.Helper()
+	_, err := repo.db.db.ExecContext(
+		t.Context(), "INSERT INTO coins (outpoint, delegation_id, input, script, amount, "+
+			"created_at, status) VALUES ($1, $2, 0, 's', 1, now(), $3)", outpoint, id, status,
+	)
+	require.NoError(t, err)
 }
 
 func listIDs(list []delegation.Delegation) []int64 {

@@ -53,7 +53,8 @@ admin API and UI: keep it private. Back up the cosigner and encryption keys.
 | `EXECUTOR_PUBLIC_RATE_LIMIT` | requests per second per client address on the public port, loopback exempt; `0` disables | `5` |
 | `EXECUTOR_MAX_DELEGATIONS` | active delegations cap | `50000` |
 | `EXECUTOR_MAX_STREAM_CHILDREN` | active spawned delegations cap, apart from `MAX_DELEGATIONS` | `10000` |
-| `EXECUTOR_PRUNE_AFTER` | how long after expiry a delegation a stream spawned is deleted | `720h` |
+| `EXECUTOR_IDLE_DELEGATION_EXPIRY` | how long after registration a client delegation that never held a coin expires; `0` disables | `168h` |
+| `EXECUTOR_PRUNE_AFTER` | how long after expiry a delegation a stream spawned, or a client one that never held a coin, is deleted | `720h` |
 | `EXECUTOR_LOG_LEVEL` | logrus level | `4` |
 
 The delegations a stream spawns count only toward `MAX_STREAM_CHILDREN`, the others toward `MAX_DELEGATIONS`.

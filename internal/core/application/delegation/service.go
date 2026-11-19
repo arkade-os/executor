@@ -23,8 +23,11 @@ type Limits struct {
 	MaxDelegations      int
 	MaxStreamChildren   int           // active delegations the streams spawned, counted apart from MaxDelegations
 	ExpiryInterval      time.Duration // how often delegations past their expiry are marked
-	PruneAfter          time.Duration // how long after expiry a spawned delegation is deleted; zero keeps them
+	PruneAfter          time.Duration // how long after expiry a spawned or unfunded delegation is deleted; zero keeps them
+	IdleExpiry          time.Duration // how long a client delegation that never held a coin lives; zero keeps them
 }
+
+const idleExpiryBatch = 1000
 
 type Info struct {
 	Network       string
@@ -167,8 +170,6 @@ func (s *Service) ListDelegations(
 	return s.delegations.List(ctx, f)
 }
 
-// ExpireDelegations marks the active delegations whose expiry has passed at now and deletes the
-// spawned ones that expired PruneAfter ago.
 func (s *Service) ExpireDelegations(ctx context.Context, now time.Time) (int, error) {
 	expired, err := s.delegations.Expire(ctx, now)
 	if err != nil {
@@ -180,16 +181,39 @@ func (s *Service) ExpireDelegations(ctx context.Context, now time.Time) (int, er
 	for _, d := range expired {
 		s.notify(d)
 	}
+	count := len(expired)
+	if s.limits.IdleExpiry > 0 {
+		idle, err := s.delegations.ExpireIdle(ctx, now.Add(-s.limits.IdleExpiry), idleExpiryBatch)
+		if err != nil {
+			return count, err
+		}
+		if len(idle) > 0 {
+			log.WithField("count", len(idle)).Info("idle delegations expired")
+		}
+		for _, d := range idle {
+			s.notify(d)
+		}
+		count += len(idle)
+	}
 	if s.limits.PruneAfter > 0 {
 		pruned, err := s.delegations.Prune(ctx, now.Add(-s.limits.PruneAfter))
 		if err != nil {
-			return len(expired), err
+			return count, err
 		}
 		if pruned > 0 {
 			log.WithField("count", pruned).Info("spawned delegations pruned")
 		}
 	}
-	return len(expired), nil
+	if s.limits.PruneAfter > 0 && s.limits.IdleExpiry > 0 {
+		pruned, err := s.delegations.PruneIdle(ctx, now.Add(-s.limits.PruneAfter))
+		if err != nil {
+			return count, err
+		}
+		if pruned > 0 {
+			log.WithField("count", pruned).Info("idle delegations pruned")
+		}
+	}
+	return count, nil
 }
 
 // Start runs ExpireDelegations every ExpiryInterval and follows arkd's transactions while a stream
