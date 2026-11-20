@@ -80,11 +80,40 @@ Order a non-test Go file top to bottom like this.
   only when none does. Don't send a bare `fmt.Errorf` through the API: an unmapped error becomes
   `codes.Internal` with a generic message while the real one is logged.
 - Return errors. Don't add a `panic` to non-test code.
-- Comments concisely explain why the code exists, not what it does. No ticket numbers, PR links or
-  change history in comments.
+- Write no comment unless the [Comments](#comments) rules keep it.
 - Never hand-edit generated code in `api-spec/protobuf/gen`, `api-spec/openapi/swagger` or
   `internal/infrastructure/postgres/sqlc`. Edit the source and regenerate (`make proto`,
   `make sqlc`).
+
+## Comments
+
+Write no comment by default: names, types and structure carry the meaning. When code needs prose to
+be understood, rename, extract or retype it until it does not. The rules cover every comment a
+change adds or edits, tests included. Leave the comments of code the change doesn't touch.
+
+A comment stays only when it is one of these.
+
+- A license or legal header.
+- A doc comment that defines the contract of an exported identifier.
+- Behavior that is not obvious and that we cannot reshape, because an external dependency or a
+  protocol forces it: arkd, the emulator, electrum, bitcoin consensus or policy. A surprise in our
+  own code is not one: reshape the code.
+- A link to a specification (a BIP, an RFC) for a constraint the code cannot express. No ticket
+  numbers, PR links or change history.
+- A `//nolint` directive, only where the rule is wrong or purely stylistic. Where the rule protects
+  correctness or safety, fix the code.
+
+When in doubt, delete the comment.
+
+- Don't narrate what the code does, restate a name or a list in prose, add banners or leave
+  commented-out code.
+- `IMPORTANT`, `do not remove`, `fine for now` or a long justification don't earn a comment its
+  place. Check the claim against the code. Don't shorten such a comment: delete it.
+- A comment that excuses a workaround marks code to fix. Fix the cause when it is in the scope of
+  the change, else report it.
+- A comment that states a constraint (`do not remove`, `keep in sync with`) is better enforced. Ask
+  a human before you encode it as a type, a test or a lint rule, then delete it. If it cannot be
+  enforced, delete it and report the constraint.
 
 ## Unit tests
 

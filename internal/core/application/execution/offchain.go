@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	delegationapp "github.com/arkade-os/executor/internal/core/application/delegation"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
 	"github.com/arkade-os/executor/internal/core/domain/execution"
@@ -205,14 +206,26 @@ func rotates(err error) bool {
 		errors.Is(err, execution.ErrBadTx) || errors.Is(err, errRefused)
 }
 
-// chargesTemplate says a failed attempt counts against its template: the template could not build
-// it, or arkd or the emulator refused it. Outages, the daemon's own shutdown and sources fees or
-// dust refuse do not.
 func chargesTemplate(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, template.ErrUnaffordable) {
+		errors.Is(err, template.ErrUnaffordable) || refusesCoins(err) {
 		return false
 	}
 	return errors.Is(err, template.ErrIneligible) || errors.Is(err, execution.ErrBadTx) ||
 		errors.Is(err, errRefused)
+}
+
+// The emulator relays the status details of the refusals arkd gives it.
+func refusesCoins(err error) bool {
+	coinStates := []string{
+		"VTXO_ALREADY_REGISTERED", "VTXO_ALREADY_SPENT", "VTXO_ALREADY_UNROLLED",
+		"VTXO_RECOVERABLE", "VTXO_BANNED", "VTXO_NOT_FOUND", "AMOUNT_TOO_HIGH", "AMOUNT_TOO_LOW",
+	}
+	st, _ := status.FromError(err)
+	for _, detail := range st.Details() {
+		if d, ok := detail.(*arkv1.ErrorDetails); ok && slices.Contains(coinStates, d.GetName()) {
+			return true
+		}
+	}
+	return false
 }

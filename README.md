@@ -71,8 +71,9 @@ batches the plan expects.
 
 A template whose attempts arkd, the emulator or the template itself
 refuse `TEMPLATE_MAX_FAILURES` times in a row is disabled; a succeeded attempt
-resets the count. The templates registered at startup are `renew`, `board` and
-`claim`. An onchain template is registered by its document like any other: the
+resets the count. A coin arkd refuses for its state (spent, swept, banned,
+already in an intent, an amount outside its limits) does not count. The
+templates registered at startup are `renew`, `board` and `claim`. An onchain template is registered by its document like any other: the
 daemon watches its input addresses and the emulator signs the spend.
 
 Other limits and intervals are in [`internal/config/config.go`](internal/config/config.go).
