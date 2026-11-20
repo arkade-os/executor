@@ -100,3 +100,21 @@ func TestAssemble(t *testing.T) {
 		})
 	}
 }
+
+func TestOpcode(t *testing.T) {
+	tests := []struct {
+		name string
+		tok  string
+		want byte
+	}{
+		{"merkle branch root", "OP_MERKLEBRANCHROOT", 0xb3},
+		{"merkle branch verify alias", "OP_MERKLEBRANCHVERIFY", 0xb3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Opcode(tt.tok)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
