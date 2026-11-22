@@ -1,6 +1,6 @@
 module github.com/arkade-os/executor/pkg/template
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20261105114752-97386cb3d95c
