@@ -80,7 +80,10 @@ func TestRegisterOnchainTemplateIsUnsupported(t *testing.T) {
 }
 
 func TestTemplateIsDisabledByItsFailures(t *testing.T) {
-	d := Start(t, WithSessions(500*time.Millisecond, 128), WithTemplateMaxFailures(3))
+	d := Start(
+		t, WithSessions(500*time.Millisecond, 128), WithTemplateMaxFailures(3),
+		WithRetryDelay(500*time.Millisecond),
+	)
 	d.Emu.Refuse(status.Error(codes.InvalidArgument, "covenant not satisfied"))
 	templateID, w := refusedDelegation(t, d)
 
@@ -94,7 +97,10 @@ func TestTemplateIsDisabledByItsFailures(t *testing.T) {
 }
 
 func TestOutagesDoNotCountAndASuccessResetsTheFailures(t *testing.T) {
-	d := Start(t, WithSessions(500*time.Millisecond, 128), WithTemplateMaxFailures(3))
+	d := Start(
+		t, WithSessions(500*time.Millisecond, 128), WithTemplateMaxFailures(3),
+		WithRetryDelay(500*time.Millisecond),
+	)
 	d.Emu.Refuse(errors.New("connection refused"))
 	templateID, w := refusedDelegation(t, d)
 	require.Eventually(

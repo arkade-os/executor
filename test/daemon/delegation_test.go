@@ -94,10 +94,6 @@ func TestRegisterDelegationRefused(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, code, string(body))
 
-	two := registerFixture(t, d, "counter.json")
-	code, body = register(two, nil, 0)
-	require.Equal(t, http.StatusBadRequest, code, string(body))
-
 	release := registerFixture(t, d, "delegate_release.json")
 	code, body = register(release, nil, 0)
 	require.Equal(t, http.StatusPreconditionFailed, code, string(body))

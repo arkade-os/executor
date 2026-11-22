@@ -63,12 +63,11 @@ func TestStartupServesStoredCoinsThenReconciles(t *testing.T) {
 		require.NoError(t, d.DB.QueryRowContext(
 			t.Context(),
 			`
-			INSERT INTO delegations (fingerprint, address, template_id, variables, inputs)
-			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			INSERT INTO delegations (fingerprint, template_id, variables, inputs)
+			VALUES ($1, $2, $3, $4) RETURNING id`,
 			fmt.Sprintf(
 				"fp%d", i,
 			),
-			fmt.Sprintf("addr%d", i),
 			templateID,
 			variables,
 			inputs,
