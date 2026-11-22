@@ -197,7 +197,7 @@ func boardingVariables(t *testing.T) map[string]string {
 
 func coinsOf(t *testing.T, d *Daemon, id string) []coin {
 	t.Helper()
-	_, body := get(t, d.RestURL+"/v1/delegation?id="+id)
+	_, body := get(t, d.AdminURL+"/v1/admin/delegation/"+id)
 	return decodeCoins(t, body)
 }
 

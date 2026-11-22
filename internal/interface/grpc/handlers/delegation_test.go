@@ -39,10 +39,7 @@ func TestRegisterDelegationThenGet(t *testing.T) {
 	require.Equal(t, "active", d.GetStatus())
 	require.NotZero(t, d.GetCreatedAt())
 
-	got, err := h.GetDelegation(t.Context(), &executorv1.GetDelegationRequest{Id: d.GetId()})
-	require.NoError(t, err)
-	require.Equal(t, d.GetInputs()[0].GetAddress(), got.GetDelegation().GetInputs()[0].GetAddress())
-	got, err = h.GetDelegation(
+	got, err := h.GetDelegation(
 		t.Context(), &executorv1.GetDelegationRequest{Address: d.GetInputs()[0].GetAddress()},
 	)
 	require.NoError(t, err)
@@ -126,7 +123,8 @@ func TestGetDelegationListsCoins(t *testing.T) {
 	)
 	require.NoError(t, err)
 	d := reg.GetDelegation()
-	got, err := h.GetDelegation(t.Context(), &executorv1.GetDelegationRequest{Id: d.GetId()})
+	byAddress := &executorv1.GetDelegationRequest{Address: d.GetInputs()[0].GetAddress()}
+	got, err := h.GetDelegation(t.Context(), byAddress)
 	require.NoError(t, err)
 	require.Empty(t, got.GetCoins())
 
@@ -152,9 +150,7 @@ func TestGetDelegationListsCoins(t *testing.T) {
 	other.Outpoint, other.DelegationID = "dd:0", d.GetId()+1
 	require.NoError(t, coins.Upsert(t.Context(), present, spent, other))
 
-	got, err = h.GetDelegation(
-		t.Context(), &executorv1.GetDelegationRequest{Address: d.GetInputs()[0].GetAddress()},
-	)
+	got, err = h.GetDelegation(t.Context(), byAddress)
 	require.NoError(t, err)
 	require.Len(t, got.GetCoins(), 2)
 	first, second := got.GetCoins()[0], got.GetCoins()[1]
@@ -176,8 +172,6 @@ func TestGetDelegationErrors(t *testing.T) {
 	h := testHandler(t, 0)
 	_, err := h.GetDelegation(t.Context(), &executorv1.GetDelegationRequest{})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
-	_, err = h.GetDelegation(t.Context(), &executorv1.GetDelegationRequest{Id: 7})
-	require.Equal(t, codes.NotFound, status.Code(err))
 	_, err = h.GetDelegation(t.Context(), &executorv1.GetDelegationRequest{Address: "nowhere"})
 	require.Equal(t, codes.NotFound, status.Code(err))
 }

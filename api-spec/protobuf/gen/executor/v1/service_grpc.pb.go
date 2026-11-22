@@ -39,7 +39,7 @@ type ExecutorServiceClient interface {
 	// template's input addresses until expires_at. Registering an active delegation again returns it
 	// unchanged.
 	RegisterDelegation(ctx context.Context, in *RegisterDelegationRequest, opts ...grpc.CallOption) (*RegisterDelegationResponse, error)
-	// GetDelegation returns a delegation with its coins, by ?id= or by ?address=.
+	// GetDelegation returns a delegation with its coins, by ?address=.
 	GetDelegation(ctx context.Context, in *GetDelegationRequest, opts ...grpc.CallOption) (*GetDelegationResponse, error)
 	// RegisterArtifact stores a compiler artifact under its content id. Idempotent.
 	RegisterArtifact(ctx context.Context, in *RegisterArtifactRequest, opts ...grpc.CallOption) (*RegisterArtifactResponse, error)
@@ -149,7 +149,7 @@ type ExecutorServiceServer interface {
 	// template's input addresses until expires_at. Registering an active delegation again returns it
 	// unchanged.
 	RegisterDelegation(context.Context, *RegisterDelegationRequest) (*RegisterDelegationResponse, error)
-	// GetDelegation returns a delegation with its coins, by ?id= or by ?address=.
+	// GetDelegation returns a delegation with its coins, by ?address=.
 	GetDelegation(context.Context, *GetDelegationRequest) (*GetDelegationResponse, error)
 	// RegisterArtifact stores a compiler artifact under its content id. Idempotent.
 	RegisterArtifact(context.Context, *RegisterArtifactRequest) (*RegisterArtifactResponse, error)

@@ -57,7 +57,7 @@ func TestClaimLandsThroughAnOffchainAttempt(t *testing.T) {
 		attempts = listAttempts(t, d, w.ID)
 		return len(attempts) == 1 && attempts[0].Status == "succeeded"
 	}, 5*time.Second, 50*time.Millisecond)
-	_, body := get(t, d.RestURL+"/v1/delegation?id="+w.ID)
+	_, body := get(t, d.AdminURL+"/v1/admin/delegation/"+w.ID)
 	coins := decodeCoins(t, body)
 	require.Len(t, coins, 1)
 	require.Equal(t, "spent", coins[0].Status)
@@ -139,7 +139,7 @@ func TestRefusedAttemptsAreRetried(t *testing.T) {
 	require.Equal(t, "failed", attempts[0].Status)
 	require.Contains(t, attempts[0].Error, "emulator")
 	require.Contains(t, attempts[0].Error, "no preimage")
-	_, body := get(t, d.RestURL+"/v1/delegation?id="+w.ID)
+	_, body := get(t, d.AdminURL+"/v1/admin/delegation/"+w.ID)
 	require.Equal(t, "present", decodeCoins(t, body)[0].Status)
 
 	d.Emu.Refuse(nil)

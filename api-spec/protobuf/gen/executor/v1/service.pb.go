@@ -253,9 +253,8 @@ func (x *RegisterDelegationResponse) GetDelegation() *Delegation {
 
 type GetDelegationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Id    int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	// address matches any input address of the delegation.
-	Address       string `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	Address       string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -288,13 +287,6 @@ func (x *GetDelegationRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetDelegationRequest.ProtoReflect.Descriptor instead.
 func (*GetDelegationRequest) Descriptor() ([]byte, []int) {
 	return file_executor_v1_service_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *GetDelegationRequest) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
 }
 
 func (x *GetDelegationRequest) GetAddress() string {
@@ -1348,10 +1340,9 @@ const file_executor_v1_service_proto_rawDesc = "" +
 	"\x1aRegisterDelegationResponse\x127\n" +
 	"\n" +
 	"delegation\x18\x01 \x01(\v2\x17.executor.v1.DelegationR\n" +
-	"delegation\"@\n" +
-	"\x14GetDelegationRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x18\n" +
-	"\aaddress\x18\x02 \x01(\tR\aaddress\"y\n" +
+	"delegation\"0\n" +
+	"\x14GetDelegationRequest\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\"y\n" +
 	"\x15GetDelegationResponse\x127\n" +
 	"\n" +
 	"delegation\x18\x01 \x01(\v2\x17.executor.v1.DelegationR\n" +

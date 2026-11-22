@@ -91,17 +91,9 @@
         "tags": [
           "ExecutorService"
         ],
-        "description": "GetDelegation returns a delegation with its coins, by ?id= or by ?address=.",
+        "description": "GetDelegation returns a delegation with its coins, by ?address=.",
         "operationId": "ExecutorService_GetDelegation",
         "parameters": [
-          {
-            "name": "id",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
           {
             "name": "address",
             "in": "query",
@@ -476,10 +468,6 @@
           "address": {
             "type": "string",
             "description": "address matches any input address of the delegation."
-          },
-          "id": {
-            "type": "integer",
-            "format": "int64"
           }
         }
       },

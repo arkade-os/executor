@@ -38,6 +38,12 @@ service AdminService {
       get: "/v1/admin/delegations"
     };
   }
+  // GetDelegationDetail returns a delegation with its coins, by id.
+  rpc GetDelegationDetail(GetDelegationDetailRequest) returns (GetDelegationDetailResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/delegation/{id}"
+    };
+  }
   // CancelDelegation stops an active delegation; its fingerprint cannot be registered again until resumed.
   rpc CancelDelegation(CancelDelegationRequest) returns (CancelDelegationResponse) {
     option (meshapi.gateway.http) = {
@@ -136,6 +142,14 @@ message DelegationSummary {
   int64 next_due = 4;
   // last_attempt is the status of the newest attempt, empty without one.
   string last_attempt = 5;
+}
+message GetDelegationDetailRequest {
+  int64 id = 1;
+}
+message GetDelegationDetailResponse {
+  Delegation delegation = 1;
+  // coins are the vtxos found at the delegation's inputs, present and spent.
+  repeated Coin coins = 2;
 }
 message CancelDelegationRequest {
   int64 id = 1;
