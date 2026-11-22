@@ -52,8 +52,8 @@ func TestScale(t *testing.T) {
 	d = d.Restart(t, daemon.WithDefaultTemplates)
 	status, err := d.Admin.GetStatus(t.Context(), &executorv1.GetStatusRequest{})
 	require.NoError(t, err)
-	_, err = d.Client.GetDelegation(
-		t.Context(), &executorv1.GetDelegationRequest{Id: delegations / 2},
+	_, err = d.Admin.GetDelegationDetail(
+		t.Context(), &executorv1.GetDelegationDetailRequest{Id: delegations / 2},
 	)
 	require.NoError(t, err)
 	toAPI := time.Since(started)

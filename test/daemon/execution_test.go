@@ -22,7 +22,7 @@ func TestCoinLandsThenIsSpent(t *testing.T) {
 	d.Arkd.Land(w.Inputs[0].Script, outpoint, 10_000, expires)
 	var coins []coin
 	require.Eventually(t, func() bool {
-		_, body := get(t, d.RestURL+"/v1/delegation?id="+w.ID)
+		_, body := get(t, d.AdminURL+"/v1/admin/delegation/"+w.ID)
 		coins = decodeCoins(t, body)
 		return len(coins) == 1
 	}, 5*time.Second, 50*time.Millisecond)
@@ -39,7 +39,7 @@ func TestCoinLandsThenIsSpent(t *testing.T) {
 
 	d.Arkd.Spend(outpoint, "bb")
 	require.Eventually(t, func() bool {
-		_, body := get(t, d.RestURL+"/v1/delegation?id="+w.ID)
+		_, body := get(t, d.AdminURL+"/v1/admin/delegation/"+w.ID)
 		coins = decodeCoins(t, body)
 		return len(coins) == 1 && coins[0].Status == "spent"
 	}, 5*time.Second, 50*time.Millisecond)
@@ -63,12 +63,11 @@ func TestStartupServesStoredCoinsThenReconciles(t *testing.T) {
 		require.NoError(t, d.DB.QueryRowContext(
 			t.Context(),
 			`
-			INSERT INTO delegations (fingerprint, address, template_id, variables, inputs)
-			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			INSERT INTO delegations (fingerprint, template_id, variables, inputs)
+			VALUES ($1, $2, $3, $4) RETURNING id`,
 			fmt.Sprintf(
 				"fp%d", i,
 			),
-			fmt.Sprintf("addr%d", i),
 			templateID,
 			variables,
 			inputs,
@@ -96,7 +95,7 @@ func TestStartupServesStoredCoinsThenReconciles(t *testing.T) {
 	d.Arkd.Land(script, kept, 1000, time.Now().Add(time.Hour))
 
 	d = d.Restart(t, WithVtxosDelay(500*time.Millisecond))
-	url := fmt.Sprintf("%s/v1/delegation?id=%d", d.RestURL, first)
+	url := fmt.Sprintf("%s/v1/admin/delegation/%d", d.AdminURL, first)
 	code, body := get(t, url)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(

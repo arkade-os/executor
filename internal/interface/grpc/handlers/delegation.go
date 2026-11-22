@@ -33,16 +33,10 @@ func (h *Executor) RegisterDelegation(
 func (h *Executor) GetDelegation(
 	ctx context.Context, req *executorv1.GetDelegationRequest,
 ) (*executorv1.GetDelegationResponse, error) {
-	var d *delegation.Delegation
-	var err error
-	switch {
-	case req.GetId() != 0:
-		d, err = h.delegations.GetDelegation(ctx, req.GetId())
-	case req.GetAddress() != "":
-		d, err = h.delegations.GetDelegationByAddress(ctx, req.GetAddress())
-	default:
-		return nil, status.Error(codes.InvalidArgument, "missing id or address")
+	if req.GetAddress() == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing address")
 	}
+	d, err := h.delegations.GetDelegationByAddress(ctx, req.GetAddress())
 	if err != nil {
 		return nil, toStatus(err)
 	}

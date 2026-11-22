@@ -137,14 +137,14 @@ func TestListDelegationsByNextDueWithItsDetail(t *testing.T) {
 	code, _ = get(t, d.AdminURL+"/v1/admin/delegations?cursor=garbage")
 	require.Equal(t, http.StatusBadRequest, code)
 
-	code, body = get(t, d.AdminURL+"/v1/delegation?id="+sooner.ID)
+	code, body = get(t, d.AdminURL+"/v1/admin/delegation/"+sooner.ID)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, sooner.ID, decodeDelegation(t, body).ID)
 	require.Equal(
 		t, []string{strings.Repeat("bb", 32) + ":0", strings.Repeat("cc", 32) + ":0"},
 		coinOutpoints(decodeCoins(t, body)),
 	)
-	code, _ = get(t, d.AdminURL+"/v1/delegation?id=404")
+	code, _ = get(t, d.AdminURL+"/v1/admin/delegation/404")
 	require.Equal(t, http.StatusNotFound, code)
 }
 

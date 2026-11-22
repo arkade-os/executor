@@ -151,6 +151,25 @@ func (h *Admin) ListDelegations(
 	return resp, nil
 }
 
+func (h *Admin) GetDelegationDetail(
+	ctx context.Context, req *executorv1.GetDelegationDetailRequest,
+) (*executorv1.GetDelegationDetailResponse, error) {
+	if req.GetId() == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing id")
+	}
+	d, err := h.delegations.GetDelegation(ctx, req.GetId())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	coins, err := h.execution.Coins(ctx, d.ID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &executorv1.GetDelegationDetailResponse{
+		Delegation: toDelegation(d), Coins: toCoins(coins),
+	}, nil
+}
+
 func (h *Admin) CancelDelegation(
 	ctx context.Context, req *executorv1.CancelDelegationRequest,
 ) (*executorv1.CancelDelegationResponse, error) {

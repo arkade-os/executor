@@ -8,8 +8,9 @@ controls, graceful shutdown and browser UI.
 ## How to get to it (user POV)
 
 The operator visits the private admin UI on port 7081. Health is at `/healthz`, metrics at
-`/metrics`, and API detail at `/v1/admin/status`, `/v1/admin/health` and `/v1/admin/delegations`.
-Public port 7080 must not expose these admin operations.
+`/metrics`, and API detail at `/v1/admin/status`, `/v1/admin/health`, `/v1/admin/delegations` and
+`/v1/admin/delegation/{id}`. Public port 7080 must not expose these admin operations: there a
+delegation is found by `?address=` only, because ids are sequential.
 
 ## Driving it with the Go harness
 
