@@ -42,9 +42,9 @@ func TestAliveFailsOnceTheBatchEventsAreLostForLong(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s.batch.lostAt.Store(0)
+			s.batch.lostAtNano.Store(0)
 			if !tt.lostAt.IsZero() {
-				s.batch.lostAt.Store(tt.lostAt.UnixNano())
+				s.batch.lostAtNano.Store(tt.lostAt.UnixNano())
 			}
 			require.Equal(t, tt.alive, s.Alive(now) == nil)
 		})
