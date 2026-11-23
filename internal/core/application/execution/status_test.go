@@ -25,3 +25,28 @@ func TestAliveFailsWhenWorkIsDueAndTheLoopIsSilent(t *testing.T) {
 		t, s.Alive(now.Add(time.Hour+2*time.Minute)), "the loop handled something since",
 	)
 }
+
+func TestAliveFailsOnceTheBatchEventsAreLostForLong(t *testing.T) {
+	s := NewService(
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, Limits{LoopStall: time.Minute},
+	)
+	now := time.Unix(1_800_000_000, 0)
+	tests := []struct {
+		name   string
+		lostAt time.Time
+		alive  bool
+	}{
+		{name: "followed", alive: true},
+		{name: "lost within the bound", lostAt: now.Add(-30 * time.Second), alive: true},
+		{name: "lost for longer", lostAt: now.Add(-2 * time.Minute)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s.batch.lostAt.Store(0)
+			if !tt.lostAt.IsZero() {
+				s.batch.lostAt.Store(tt.lostAt.UnixNano())
+			}
+			require.Equal(t, tt.alive, s.Alive(now) == nil)
+		})
+	}
+}

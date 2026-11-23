@@ -26,8 +26,15 @@ func (r *CoinRepository) Upsert(ctx context.Context, coins ...delegation.Coin) e
 	if len(coins) == 0 {
 		return nil
 	}
-	return r.db.inTx(ctx, func(q *queries.Queries) error {
+	var orphans []string
+	err := r.db.inTx(ctx, func(q *queries.Queries) error {
 		for _, c := range coins {
+			if _, err := q.LockDelegation(ctx, c.DelegationID); errors.Is(err, sql.ErrNoRows) {
+				orphans = append(orphans, c.Outpoint)
+				continue
+			} else if err != nil {
+				return err
+			}
 			stored, err := q.SelectCoinOnchain(ctx, c.Outpoint)
 			switch {
 			case errors.Is(err, sql.ErrNoRows):
@@ -62,6 +69,12 @@ func (r *CoinRepository) Upsert(ctx context.Context, coins ...delegation.Coin) e
 		}
 		return nil
 	})
+	if err == nil && len(orphans) > 0 {
+		return fmt.Errorf(
+			"%w: of %s", delegation.ErrDelegationNotFound, strings.Join(orphans, ", "),
+		)
+	}
+	return err
 }
 
 func (r *CoinRepository) ListByDelegation(

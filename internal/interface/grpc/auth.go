@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -90,6 +91,17 @@ func newBasicAuth(users []AdminUser) *basicAuth {
 		a.hashes[u.Name] = []byte(u.PasswordHash)
 	}
 	return a
+}
+
+func adminOnly(methods ...string) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
+	) (any, error) {
+		if slices.Contains(methods, info.FullMethod) {
+			return nil, status.Error(codes.PermissionDenied, "served on the admin port only")
+		}
+		return handler(ctx, req)
+	}
 }
 
 func parseBasic(values []string) (user, pass string, ok bool) {

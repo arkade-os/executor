@@ -36,6 +36,8 @@ type Coin struct {
 }
 
 type CoinRepository interface {
+	// Upsert stores the coins; one whose delegation is gone is left out, and reported with
+	// ErrDelegationNotFound once the others are stored.
 	Upsert(ctx context.Context, coins ...Coin) error
 	ListByDelegation(ctx context.Context, id int64) ([]Coin, error)
 	// Watched returns those of scripts the active delegations claim, with their present coins.

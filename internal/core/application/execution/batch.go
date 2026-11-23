@@ -52,6 +52,7 @@ type batchWorker struct {
 	exited   chan struct{}
 	idle     chan struct{} // closed once no batch holds our intents, when Stop waits for it
 	closing  bool          // no new intent is registered or confirmed
+	lostAt   atomic.Int64  // when arkd ended the batch events, unix nanoseconds, zero once back
 }
 
 func (r *registration) proofTxid() string {
@@ -259,7 +260,10 @@ func (b *batchWorker) handle(ev ports.BatchEvent) {
 		if b.inFlight != nil && b.inFlight.id == ev.ID {
 			b.abort(fmt.Errorf("batch %s failed: %s", ev.ID, ev.Reason), ev.Blamed...)
 		}
+	case ports.StreamLost:
+		b.lose()
 	case ports.StreamReconnected:
+		b.lostAt.Store(0)
 		if b.inFlight != nil {
 			b.abort(errors.New("batch events interrupted"))
 		}
@@ -467,6 +471,20 @@ func (b *batchWorker) finalized(ev ports.BatchFinalized) {
 	}
 	log.WithFields(log.Fields{"batch": ev.ID, "commitment_txid": ev.CommitmentTxid, "intents": len(r.intents)}).
 		Info("batch finalized")
+}
+
+func (b *batchWorker) lose() {
+	b.lostAt.Store(time.Now().UnixNano())
+	r := b.inFlight
+	b.inFlight = nil
+	defer b.settled()
+	if r == nil {
+		return
+	}
+	log.WithField("batch", r.id).Warn("batch events lost: its attempts wait to land")
+	for _, h := range r.intents {
+		b.s.send(attemptLost{attempt: h.attempt})
+	}
 }
 
 // abort fails the attempts of the batch: their coins are tried again on a later one, the blamed

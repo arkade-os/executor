@@ -57,6 +57,89 @@ func TestAddCapsOriginsApart(t *testing.T) {
 	require.NoError(t, err, "only active delegations count")
 }
 
+func TestAddNotifiesWhatItEvicts(t *testing.T) {
+	repo := &rows{}
+	s := &Service{delegations: repo, limits: Limits{EvictIdleAfter: time.Hour}}
+	var notified []delegation.Delegation
+	s.OnChange(func(d delegation.Delegation) { notified = append(notified, d) })
+	first, err := s.add(t.Context(), testDelegation("a", 0), 1)
+	require.NoError(t, err)
+	repo.idle = []delegation.Delegation{*first}
+
+	_, err = s.add(t.Context(), testDelegation("b", 0), 1)
+	require.NoError(t, err)
+	require.Len(t, notified, 1)
+	require.Equal(t, first.ID, notified[0].ID)
+	require.Equal(t, delegation.StatusExpired, notified[0].Status, "so its scripts are forgotten")
+}
+
+func TestMakeRoom(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	limits := Limits{EvictIdleAfter: time.Hour, ExpiryInterval: time.Minute}
+	coinless := []delegation.Delegation{{ID: 1}}
+	tests := []struct {
+		name         string
+		spawned      bool
+		limits       Limits
+		coinless     []delegation.Delegation
+		err          error
+		evictBefore  time.Time
+		settledSince time.Time
+	}{
+		{
+			name: "a client's that never held a coin goes", limits: limits, coinless: coinless,
+			evictBefore: now.Add(-time.Hour),
+		},
+		{
+			name: "a spawned one without an unspent coin goes", spawned: true, limits: limits,
+			coinless: coinless, settledSince: now.Add(-time.Minute),
+		},
+		{
+			name: "none serves no coin", limits: limits, err: delegation.ErrCapReached,
+			evictBefore: now.Add(-time.Hour),
+		},
+		{
+			name: "clients are kept", limits: Limits{ExpiryInterval: time.Minute},
+			coinless: coinless, err: delegation.ErrCapReached,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &rows{idle: tt.coinless, settled: tt.coinless}
+			s := &Service{delegations: repo, limits: tt.limits}
+			streamID := int64(0)
+			if tt.spawned {
+				streamID = 7
+			}
+			_, err := s.add(t.Context(), testDelegation("a", streamID), 1)
+			require.NoError(t, err)
+
+			evicted, err := s.makeRoom(t.Context(), tt.spawned, 1, now)
+			require.ErrorIs(t, err, tt.err)
+			require.Equal(t, tt.err == nil, len(evicted) == 1)
+			require.Equal(t, tt.evictBefore, repo.evictBefore)
+			require.Equal(t, tt.settledSince, repo.settledSince)
+		})
+	}
+
+	t.Run("a search that fell short waits for the next expiry round", func(t *testing.T) {
+		repo := &rows{}
+		s := &Service{delegations: repo, limits: limits}
+		_, err := s.add(t.Context(), testDelegation("a", 0), 1)
+		require.NoError(t, err)
+		_, err = s.makeRoom(t.Context(), false, 1, now)
+		require.ErrorIs(t, err, delegation.ErrCapReached)
+
+		repo.evictBefore = time.Time{}
+		_, err = s.makeRoom(t.Context(), false, 1, now.Add(30*time.Second))
+		require.ErrorIs(t, err, delegation.ErrCapReached)
+		require.Zero(t, repo.evictBefore)
+		_, err = s.makeRoom(t.Context(), false, 1, now.Add(time.Minute))
+		require.ErrorIs(t, err, delegation.ErrCapReached)
+		require.Equal(t, now.Add(time.Minute-time.Hour), repo.evictBefore)
+	})
+}
+
 func TestExpireDelegations(t *testing.T) {
 	now := time.Now()
 	day := 24 * time.Hour
@@ -140,6 +223,9 @@ type rows struct {
 	expired, idle   []delegation.Delegation
 	idleBefore      time.Time
 	idleLimit       int
+	evictBefore     time.Time
+	settled         []delegation.Delegation
+	settledSince    time.Time
 	pruneBefore     time.Time
 	pruneIdleBefore time.Time
 }
@@ -184,6 +270,20 @@ func (r *rows) ExpireIdle(
 ) ([]delegation.Delegation, error) {
 	r.idleBefore, r.idleLimit = registeredBefore, limit
 	return r.idle, nil
+}
+
+func (r *rows) EvictIdle(
+	_ context.Context, registeredBefore time.Time, _ int,
+) ([]delegation.Delegation, error) {
+	r.evictBefore = registeredBefore
+	return r.idle, nil
+}
+
+func (r *rows) ExpireSettled(
+	_ context.Context, quietSince time.Time, _ int,
+) ([]delegation.Delegation, error) {
+	r.settledSince = quietSince
+	return r.settled, nil
 }
 
 func (r *rows) Prune(_ context.Context, before time.Time) (int64, error) {

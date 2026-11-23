@@ -106,6 +106,59 @@ func (q *Queries) DeleteTemplate(ctx context.Context, id string) (bool, error) {
 	return referenced_in_use, err
 }
 
+const evictIdleDelegations = `-- name: EvictIdleDelegations :many
+DELETE FROM delegations
+WHERE id IN (
+    SELECT d.id FROM delegations d
+    WHERE d.status = 'active' AND d.stream_id IS NULL AND d.created_at <= $1::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM coins c WHERE c.delegation_id = d.id)
+      AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.delegation_id = d.id)
+    ORDER BY d.id
+    LIMIT $2::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at
+`
+
+type EvictIdleDelegationsParams struct {
+	RegisteredBefore time.Time
+	MaxCount         int32
+}
+
+func (q *Queries) EvictIdleDelegations(ctx context.Context, arg EvictIdleDelegationsParams) ([]Delegation, error) {
+	rows, err := q.db.QueryContext(ctx, evictIdleDelegations, arg.RegisteredBefore, arg.MaxCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Delegation
+	for rows.Next() {
+		var i Delegation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fingerprint,
+			&i.TemplateID,
+			&i.Variables,
+			&i.Inputs,
+			&i.StreamID,
+			&i.ExpiresAt,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const expireDelegations = `-- name: ExpireDelegations :many
 UPDATE delegations SET status = 'expired', updated_at = now()
 WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= $1::timestamptz
@@ -166,6 +219,60 @@ type ExpireIdleDelegationsParams struct {
 
 func (q *Queries) ExpireIdleDelegations(ctx context.Context, arg ExpireIdleDelegationsParams) ([]Delegation, error) {
 	rows, err := q.db.QueryContext(ctx, expireIdleDelegations, arg.RegisteredBefore, arg.MaxCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Delegation
+	for rows.Next() {
+		var i Delegation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fingerprint,
+			&i.TemplateID,
+			&i.Variables,
+			&i.Inputs,
+			&i.StreamID,
+			&i.ExpiresAt,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const expireSettledDelegations = `-- name: ExpireSettledDelegations :many
+UPDATE delegations SET status = 'expired', updated_at = now()
+WHERE status = 'active' AND id IN (
+    SELECT d.id FROM delegations d
+    WHERE d.status = 'active' AND d.stream_id IS NOT NULL AND d.updated_at <= $1::timestamptz
+      AND NOT EXISTS (
+          SELECT 1 FROM coins c WHERE c.delegation_id = d.id
+            AND (c.status = 'present' OR c.updated_at > $1::timestamptz)
+      )
+    LIMIT $2::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, fingerprint, template_id, variables, inputs, stream_id, expires_at, status, created_at, updated_at
+`
+
+type ExpireSettledDelegationsParams struct {
+	QuietSince time.Time
+	MaxCount   int32
+}
+
+func (q *Queries) ExpireSettledDelegations(ctx context.Context, arg ExpireSettledDelegationsParams) ([]Delegation, error) {
+	rows, err := q.db.QueryContext(ctx, expireSettledDelegations, arg.QuietSince, arg.MaxCount)
 	if err != nil {
 		return nil, err
 	}
@@ -1139,6 +1246,17 @@ func (q *Queries) ListWatchedScripts(ctx context.Context, onchain bool) ([]strin
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockDelegation = `-- name: LockDelegation :one
+SELECT id FROM delegations WHERE id = $1 FOR KEY SHARE
+`
+
+// a delete of the delegation waits for the transaction to end; no row when it is already gone
+func (q *Queries) LockDelegation(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, lockDelegation, id)
+	err := row.Scan(&id)
+	return id, err
 }
 
 const moveCoins = `-- name: MoveCoins :many

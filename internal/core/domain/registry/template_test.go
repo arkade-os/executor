@@ -96,6 +96,8 @@ func TestNewTemplateRefusesAllOutputs(t *testing.T) {
 	require.NoError(t, json.Unmarshal(doc, &decoded))
 	trigger := decoded["delegation"].(map[string]any)["trigger"].(map[string]any)
 	trigger["htlc"].(map[string]any)["all_outputs"] = true
+	delete(decoded["outputs"].([]any)[0].(map[string]any), "index")
+	delete(decoded["packets"].(map[string]any), "output_index")
 	raw, err := json.Marshal(decoded)
 	require.NoError(t, err)
 	_, err = newTemplate(raw, nil)

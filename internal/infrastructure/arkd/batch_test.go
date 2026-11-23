@@ -1,6 +1,7 @@
 package arkd
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -16,6 +17,35 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBatchEvents(t *testing.T) {
+	first := make(chan clientlib.BatchEventChannel, 1)
+	second := make(chan clientlib.BatchEventChannel, 1)
+	c := &Client{ark: &streams{open: []chan clientlib.BatchEventChannel{first, second}}}
+	events, stop, err := c.BatchEvents(t.Context())
+	require.NoError(t, err)
+	t.Cleanup(stop)
+	next := func() ports.BatchEvent {
+		select {
+		case ev := <-events:
+			return ev
+		case <-time.After(10 * time.Second):
+			require.FailNow(t, "no batch event")
+			return nil
+		}
+	}
+
+	first <- event(clientlib.TreeNoncesAggregatedEvent{Id: "a"})
+	require.Equal(t, ports.TreeNoncesAggregated{ID: "a"}, next())
+	close(first)
+	require.Equal(t, ports.StreamLost{}, next(), "arkd ended the stream")
+	require.Equal(t, ports.StreamReconnected{}, next(), "it is opened again")
+	second <- event(clientlib.TreeNoncesAggregatedEvent{Id: "b"})
+	require.Equal(t, ports.TreeNoncesAggregated{ID: "b"}, next())
+
+	stop()
+	require.Nil(t, next(), "the events end with stop")
+}
 
 func TestConvertBatchEvents(t *testing.T) {
 	r := trees{intents: &intents{}}
@@ -247,4 +277,17 @@ func flatTree(t *testing.T, n int) []tree.TxTreeNode {
 func register(m *intents, proofTxid, id string) {
 	m.begin()
 	m.end(proofTxid, id)
+}
+
+type streams struct {
+	clientlib.Client
+	open []chan clientlib.BatchEventChannel
+}
+
+func (s *streams) GetEventStream(
+	context.Context, []string,
+) (<-chan clientlib.BatchEventChannel, func(), error) {
+	next := s.open[0]
+	s.open = s.open[1:]
+	return next, func() {}, nil
 }

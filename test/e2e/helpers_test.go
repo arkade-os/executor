@@ -48,7 +48,7 @@ func registerTemplate(t *testing.T, d executor, file string) string {
 	doc := fixture(t, file)
 	for id, raw := range artifacts(t) {
 		if bytes.Contains(raw, []byte(id)) {
-			_, err := d.client.RegisterArtifact(
+			_, err := d.registry.RegisterArtifact(
 				t.Context(), &executorv1.RegisterArtifactRequest{Document: string(raw)},
 			)
 			require.NoError(t, err)
@@ -59,7 +59,7 @@ func registerTemplate(t *testing.T, d executor, file string) string {
 
 func registerDocument(t *testing.T, d executor, doc []byte) string {
 	t.Helper()
-	resp, err := d.client.RegisterTemplate(
+	resp, err := d.registry.RegisterTemplate(
 		t.Context(), &executorv1.RegisterTemplateRequest{Document: string(doc)},
 	)
 	require.NoError(t, err)

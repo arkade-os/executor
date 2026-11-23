@@ -181,7 +181,7 @@ func registerShipped(t *testing.T, d *Daemon, name string) (artifactID, template
 			continue
 		}
 		code, body := post(
-			t, d.RestURL+"/v1/artifact",
+			t, d.AdminURL+"/v1/artifact",
 			map[string]string{"document": string(templates.Artifacts[file])},
 		)
 		require.Equal(t, http.StatusOK, code, string(body))
@@ -189,7 +189,7 @@ func registerShipped(t *testing.T, d *Daemon, name string) (artifactID, template
 			artifactID = decodeArtifact(t, body).ID
 		}
 	}
-	code, body := post(t, d.RestURL+"/v1/template", map[string]string{"document": string(doc)})
+	code, body := post(t, d.AdminURL+"/v1/template", map[string]string{"document": string(doc)})
 	require.Equal(t, http.StatusOK, code, string(body))
 	return artifactID, decodeTemplate(t, body).ID
 }

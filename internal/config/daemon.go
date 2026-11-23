@@ -73,8 +73,9 @@ func NewDaemon(ctx context.Context, cfg Config) (_ *Daemon, err error) {
 		arkInfo.Network,
 		delegationapp.Limits{
 			MinDelegationExpiry: cfg.MinDelegationExpiry, MaxDelegations: cfg.MaxDelegations,
-			MaxStreamChildren: cfg.MaxStreamChildren, ExpiryInterval: cfg.ExpiryInterval,
-			PruneAfter: cfg.PruneAfter, IdleExpiry: cfg.IdleExpiry,
+			MaxStreamChildren: cfg.MaxStreamChildren, MaxVariablesBytes: cfg.MaxVariablesBytes,
+			ExpiryInterval: cfg.ExpiryInterval, PruneAfter: cfg.PruneAfter,
+			IdleExpiry: cfg.IdleExpiry, EvictIdleAfter: cfg.EvictIdleAfter,
 		},
 	)
 	if cfg.DefaultTemplates {
@@ -112,7 +113,8 @@ func NewDaemon(ctx context.Context, cfg Config) (_ *Daemon, err error) {
 		ctx,
 		grpcserver.Options{
 			PublicPort: cfg.Port, AdminPort: cfg.AdminPort, PublicRateLimit: cfg.PublicRateLimit,
-			Users: cfg.AdminUsers, Status: execution, Health: checker,
+			PublicRegistry: cfg.PublicRegistry, Users: cfg.AdminUsers, Status: execution,
+			Health: checker,
 		},
 		handlers.NewExecutor(
 			reg, delegations, execution, cfg.Version,

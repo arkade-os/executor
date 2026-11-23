@@ -240,6 +240,18 @@ func (r *delegations) ExpireIdle(
 	return expired, nil
 }
 
+func (r *delegations) EvictIdle(
+	context.Context, time.Time, int,
+) ([]delegation.Delegation, error) {
+	return nil, nil
+}
+
+func (r *delegations) ExpireSettled(
+	context.Context, time.Time, int,
+) ([]delegation.Delegation, error) {
+	return nil, nil
+}
+
 func (r *delegations) List(
 	_ context.Context, f delegation.ListFilter,
 ) ([]delegation.Delegation, error) {

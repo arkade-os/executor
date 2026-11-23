@@ -30,13 +30,13 @@ func TestVHTLCClaimIsPrompt(t *testing.T) {
 	require.Less(t, took, 30*time.Second)
 }
 
-// the funding transaction carries the sealed preimage and nobody registers anything
 func TestStreamClaim(t *testing.T) {
 	d := start(t)
 	claim := registerTemplate(t, d, "claim.json")
 	streamActive(t, d, claim)
 
 	swap := newSwap(t, d, claim)
+	swap.sealTerms(t, d, claim, swap.variables["receiver_program"], 10_000)
 	funding := streamFunding(t, d, fundedWallet(t), swap)
 	paid := waitForVtxo(t, d, hex.EncodeToString(swap.receiverScript), funding)
 	require.EqualValues(t, 10_000, paid.Amount)
@@ -53,11 +53,13 @@ func TestStreamClaimRefusesASecretSealedToAnotherTemplate(t *testing.T) {
 
 	wrong := registerTemplate(t, d, "vhtlc_claim.json")
 	swap := newSwap(t, d, wrong)
+	swap.sealTerms(t, d, wrong, swap.variables["receiver_program"], 10_000)
 	funding := streamFunding(t, d, alice, swap)
 	neverSpent(t, d, funding+":0")
 	require.Empty(t, vtxosAt(t, d, hex.EncodeToString(swap.receiverScript)), "nothing was paid")
 
 	control := newSwap(t, d, claim)
+	control.sealTerms(t, d, claim, control.variables["receiver_program"], 10_000)
 	controlFunding := streamFunding(t, d, alice, control)
 	paid := waitForVtxo(t, d, hex.EncodeToString(control.receiverScript), controlFunding)
 	require.EqualValues(t, 10_000, paid.Amount)
@@ -67,11 +69,8 @@ func TestStreamClaimRefusesASecretSealedToAnotherTemplate(t *testing.T) {
 // keeps it
 func TestStreamClaimEnforcesTheSealedTerms(t *testing.T) {
 	d := start(t)
-	claim := registerTemplate(t, d, "offline_receive.json")
-	_, err := d.admin.RegisterStream(
-		t.Context(), &executorv1.RegisterStreamRequest{TemplateId: claim},
-	)
-	require.NoError(t, err)
+	claim := registerTemplate(t, d, "claim.json")
+	streamActive(t, d, claim)
 	alice := fundedWallet(t)
 
 	swap := newSwap(t, d, claim)

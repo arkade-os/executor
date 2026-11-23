@@ -30,12 +30,13 @@ const (
 )
 
 type executor struct {
-	cfg     config.Config
-	client  executorv1.ExecutorServiceClient
-	admin   executorv1.AdminServiceClient
-	indexer clientlib.Indexer
-	url     string
-	stop    func()
+	cfg      config.Config
+	client   executorv1.ExecutorServiceClient
+	registry executorv1.ExecutorServiceClient
+	admin    executorv1.AdminServiceClient
+	indexer  clientlib.Indexer
+	url      string
+	stop     func()
 }
 
 func start(t *testing.T, tweak ...func(*config.Config)) executor {
@@ -68,15 +69,17 @@ func boot(t *testing.T, cfg config.Config, tweak []func(*config.Config)) executo
 	go func() { _ = d.Server.Serve() }()
 	t.Cleanup(d.Stop)
 
+	adminConn := daemon.Dial(t, d.Server.AdminAddr())
 	idx, err := indexer.NewClient(arkURL)
 	require.NoError(t, err)
 	t.Cleanup(idx.Close)
 	return executor{
-		cfg:     cfg,
-		indexer: idx,
-		stop:    d.Stop,
-		url:     "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.Port)),
-		client:  executorv1.NewExecutorServiceClient(daemon.Dial(t, d.Server.PublicAddr())),
-		admin:   executorv1.NewAdminServiceClient(daemon.Dial(t, d.Server.AdminAddr())),
+		cfg:      cfg,
+		indexer:  idx,
+		stop:     d.Stop,
+		url:      "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.Port)),
+		client:   executorv1.NewExecutorServiceClient(daemon.Dial(t, d.Server.PublicAddr())),
+		registry: executorv1.NewExecutorServiceClient(adminConn),
+		admin:    executorv1.NewAdminServiceClient(adminConn),
 	}
 }

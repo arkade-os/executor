@@ -20,7 +20,7 @@ func TestRegisterArtifactOverREST(t *testing.T) {
 	d := Start(t)
 	doc := artifactDocument(t)
 
-	code, body := post(t, d.RestURL+"/v1/artifact", map[string]string{"document": doc})
+	code, body := post(t, d.AdminURL+"/v1/artifact", map[string]string{"document": doc})
 	require.Equal(t, http.StatusOK, code, string(body))
 	first := decodeArtifact(t, body)
 	require.Len(t, first.ID, 64)
@@ -31,7 +31,7 @@ func TestRegisterArtifactOverREST(t *testing.T) {
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, first, decodeArtifact(t, body))
 
-	code, body = post(t, d.RestURL+"/v1/artifact", map[string]string{"document": doc})
+	code, body = post(t, d.AdminURL+"/v1/artifact", map[string]string{"document": doc})
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, first.ID, decodeArtifact(t, body).ID)
 	require.Equal(t, 1, tableRows(t, d, "artifacts"))
@@ -46,19 +46,19 @@ func TestRegisterArtifactRefused(t *testing.T) {
 	doc := artifactDocument(t)
 
 	code, body := post(
-		t, d.RestURL+"/v1/artifact", map[string]string{"document": "not an artifact"},
+		t, d.AdminURL+"/v1/artifact", map[string]string{"document": "not an artifact"},
 	)
 	require.Equal(t, http.StatusBadRequest, code, string(body))
 	require.Equal(t, 0, tableRows(t, d, "artifacts"))
 
-	_, err := d.Client.RegisterArtifact(
+	_, err := d.Registry.RegisterArtifact(
 		t.Context(), &executorv1.RegisterArtifactRequest{Document: doc},
 	)
 	require.NoError(t, err)
 	other := strings.Replace(doc, `"DelegatedVtxo"`, `"Other"`, 1)
-	code, body = post(t, d.RestURL+"/v1/artifact", map[string]string{"document": other})
+	code, body = post(t, d.AdminURL+"/v1/artifact", map[string]string{"document": other})
 	require.Equal(t, http.StatusTooManyRequests, code, string(body))
-	_, err = d.Client.RegisterArtifact(
+	_, err = d.Registry.RegisterArtifact(
 		t.Context(), &executorv1.RegisterArtifactRequest{Document: other},
 	)
 	require.Equal(t, codes.ResourceExhausted, status.Code(err))

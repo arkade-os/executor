@@ -100,6 +100,37 @@ WHERE status = 'active' AND id IN (
 )
 RETURNING *;
 
+-- name: EvictIdleDelegations :many
+DELETE FROM delegations
+WHERE id IN (
+    SELECT d.id FROM delegations d
+    WHERE d.status = 'active' AND d.stream_id IS NULL AND d.created_at <= @registered_before::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM coins c WHERE c.delegation_id = d.id)
+      AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.delegation_id = d.id)
+    ORDER BY d.id
+    LIMIT @max_count::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING *;
+
+-- name: LockDelegation :one
+-- a delete of the delegation waits for the transaction to end; no row when it is already gone
+SELECT id FROM delegations WHERE id = @id FOR KEY SHARE;
+
+-- name: ExpireSettledDelegations :many
+UPDATE delegations SET status = 'expired', updated_at = now()
+WHERE status = 'active' AND id IN (
+    SELECT d.id FROM delegations d
+    WHERE d.status = 'active' AND d.stream_id IS NOT NULL AND d.updated_at <= @quiet_since::timestamptz
+      AND NOT EXISTS (
+          SELECT 1 FROM coins c WHERE c.delegation_id = d.id
+            AND (c.status = 'present' OR c.updated_at > @quiet_since::timestamptz)
+      )
+    LIMIT @max_count::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING *;
+
 -- name: ListDelegations :many
 SELECT * FROM delegations
 WHERE (@status::text = '' OR status = @status::text)

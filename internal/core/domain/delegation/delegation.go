@@ -74,6 +74,14 @@ type DelegationRepository interface {
 	// ExpireIdle marks as expired at most limit of the active delegations clients registered
 	// before the time that never held a coin, and returns them.
 	ExpireIdle(ctx context.Context, registeredBefore time.Time, limit int) ([]Delegation, error)
+	// EvictIdle deletes at most limit of the active delegations clients registered before the
+	// time that never held a coin nor made an attempt, the oldest first, and returns them as they
+	// were.
+	EvictIdle(ctx context.Context, registeredBefore time.Time, limit int) ([]Delegation, error)
+	// ExpireSettled marks as expired at most limit of the active delegations streams spawned
+	// that hold no unspent coin and, like their coins, did not change since the time, and returns
+	// them.
+	ExpireSettled(ctx context.Context, quietSince time.Time, limit int) ([]Delegation, error)
 	// List returns the delegations matching f, newest first.
 	List(ctx context.Context, f ListFilter) ([]Delegation, error)
 	// CountActive counts the active delegations clients registered and those streams spawned.
@@ -87,14 +95,15 @@ type DelegationRepository interface {
 }
 
 type DelegationParams struct {
-	Template  *template.Template
-	Variables map[string]string
-	ExpiresAt *time.Time
-	Now       time.Time
-	MinExpiry time.Duration // zero only refuses the past
-	Keys      template.Keys
-	Decrypt   func([]byte) ([]byte, error) // nil without an encryption key
-	Network   arklib.Network
+	Template          *template.Template
+	Variables         map[string]string
+	MaxVariablesBytes int // what the variables may weigh together, zero for no cap
+	ExpiresAt         *time.Time
+	Now               time.Time
+	MinExpiry         time.Duration // zero only refuses the past
+	Keys              template.Keys
+	Decrypt           func([]byte) ([]byte, error) // nil without an encryption key
+	Network           arklib.Network
 }
 
 func NewDelegation(p DelegationParams) (*Delegation, error) {
@@ -103,6 +112,9 @@ func NewDelegation(p DelegationParams) (*Delegation, error) {
 	}
 	if len(p.Template.Triggers()) > 0 {
 		return nil, ErrStreamOnly
+	}
+	if err := checkVariablesSize(p.Variables, p.MaxVariablesBytes); err != nil {
+		return nil, err
 	}
 	if p.ExpiresAt != nil &&
 		(!p.ExpiresAt.After(p.Now) || p.ExpiresAt.Before(p.Now.Add(p.MinExpiry))) {
@@ -225,6 +237,20 @@ func fingerprint(templateID string, variables map[string]string) string {
 	h.Write([]byte{0})
 	h.Write(vars)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func checkVariablesSize(variables map[string]string, max int) error {
+	if max <= 0 {
+		return nil
+	}
+	size := 0
+	for _, value := range variables {
+		size += hex.DecodedLen(len(value))
+	}
+	if size > max {
+		return fmt.Errorf("%w: variables weigh %d bytes, over %d", ErrInvalidArgs, size, max)
+	}
+	return nil
 }
 
 func decodeVariables(variables map[string]string) (map[string][]byte, error) {

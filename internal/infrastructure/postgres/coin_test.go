@@ -106,7 +106,14 @@ func TestScriptStatus(t *testing.T) {
 
 func TestCoinNeedsItsDelegation(t *testing.T) {
 	repo, id := testCoins(t)
-	require.Error(t, repo.Upsert(t.Context(), testCoin("a:0", id+1, time.Now())))
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	kept := testCoin("b:0", id, now)
+
+	err := repo.Upsert(t.Context(), testCoin("a:0", id+1, now), kept)
+	require.ErrorIs(t, err, delegation.ErrDelegationNotFound)
+	got, err := repo.ListByDelegation(t.Context(), id)
+	require.NoError(t, err)
+	require.Equal(t, []delegation.Coin{kept}, got, "the coins of the others are stored")
 }
 
 func TestClaimsFollowTheActiveDelegations(t *testing.T) {

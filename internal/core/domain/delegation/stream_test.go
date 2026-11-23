@@ -130,7 +130,6 @@ func unboundTrigger(t *testing.T) *template.Template {
 	return parseDoc(t, raw)
 }
 
-// spawnParams is a funding output of the vhtlc test vector, whose preimage is its own ciphertext.
 func spawnParams(t *testing.T) SpawnParams {
 	t.Helper()
 	var v struct {
@@ -154,7 +153,7 @@ func spawnParams(t *testing.T) SpawnParams {
 		Output:   output,
 		Captured: map[string]string{
 			"taptree": hex.EncodeToString(tree), "receiver_program": v.ReceiverProgram,
-			"preimage": v.Preimage,
+			"terms": v.Preimage + v.ReceiverProgram + scriptNum(1000),
 		},
 		Now: time.Unix(1_800_000_000, 0),
 		Keys: template.Keys{

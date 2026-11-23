@@ -141,6 +141,12 @@ func (a *ark) ConfirmRegistration(_ context.Context, id string) error {
 	return nil
 }
 
+// LoseBatchEvents says arkd ended the batch events, as its client does before it opens them again.
+func (a *ark) LoseBatchEvents() { a.emit(ports.StreamLost{}) }
+
+// ResumeBatchEvents says the batch events are open again.
+func (a *ark) ResumeBatchEvents() { a.emit(ports.StreamReconnected{}) }
+
 func (a *ark) BatchEvents(ctx context.Context) (<-chan ports.BatchEvent, func(), error) {
 	ch := make(chan ports.BatchEvent, 1024)
 	a.mu.Lock()

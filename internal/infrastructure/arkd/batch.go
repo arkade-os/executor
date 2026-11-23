@@ -13,8 +13,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// blockExpiryLimit is the first batch expiry arkd gives in seconds rather than blocks.
-const blockExpiryLimit = 512
+const (
+	// blockExpiryLimit is the first batch expiry arkd gives in seconds rather than blocks.
+	blockExpiryLimit = 512
+
+	reopenMin = time.Second
+	reopenMax = 30 * time.Second
+)
 
 type trees struct {
 	intents                 *intents
@@ -25,40 +30,70 @@ type trees struct {
 }
 
 func (c *Client) BatchEvents(ctx context.Context) (<-chan ports.BatchEvent, func(), error) {
+	ctx, cancel := context.WithCancel(ctx)
 	events, stop, err := c.ark.GetEventStream(ctx, nil)
 	if err != nil {
+		cancel()
 		return nil, nil, err
 	}
 	out := make(chan ports.BatchEvent, 64)
 	go func() {
 		defer close(out)
-		r := trees{intents: &c.intents}
+		delay := reopenMin
 		for {
-			select {
-			case <-ctx.Done():
+			opened := time.Now()
+			ended := c.forward(ctx, events, out)
+			stop()
+			if !ended || !emit(ctx, out, ports.StreamLost{}) {
 				return
-			case ev, ok := <-events:
-				if !ok {
-					return
-				}
-				converted := r.convert(ev)
-				if converted == nil {
-					continue
-				}
+			}
+			log.Error("batch event stream ended")
+			if time.Since(opened) > reopenMax {
+				delay = reopenMin
+			}
+			for {
 				select {
-				case out <- converted:
 				case <-ctx.Done():
 					return
+				case <-time.After(delay):
 				}
+				delay = min(2*delay, reopenMax)
+				if events, stop, err = c.ark.GetEventStream(ctx, nil); err == nil {
+					break
+				}
+				log.WithError(err).Warn("reopen the batch event stream")
+			}
+			if !emit(ctx, out, ports.StreamReconnected{}) {
+				stop()
+				return
 			}
 		}
 	}()
-	return out, stop, nil
+	return out, cancel, nil
 }
 
 func (c *Client) UpdateTopics(ctx context.Context, add, remove []string) error {
 	_, _, _, err := c.ark.ModifyStreamTopics(ctx, add, remove)
 	return err
+}
+
+func (c *Client) forward(
+	ctx context.Context, events <-chan clientlib.BatchEventChannel, out chan<- ports.BatchEvent,
+) bool {
+	r := trees{intents: &c.intents}
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case ev, ok := <-events:
+			if !ok {
+				return true
+			}
+			if converted := r.convert(ev); converted != nil && !emit(ctx, out, converted) {
+				return false
+			}
+		}
+	}
 }
 
 func (r *trees) convert(ev clientlib.BatchEventChannel) ports.BatchEvent {
@@ -152,5 +187,14 @@ func (r *trees) end(batch string) {
 	if batch == r.batch {
 		r.intents.forget(r.ours)
 		r.ours = nil
+	}
+}
+
+func emit(ctx context.Context, out chan<- ports.BatchEvent, ev ports.BatchEvent) bool {
+	select {
+	case out <- ev:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }

@@ -30,10 +30,20 @@ skills/verify-executor/scripts/verify.sh e2e \
 A secret sealed to a different template leaves funding unspent and pays nothing; a valid control
 must still succeed. Sealed amount and receiver violations likewise leave their funding unspent.
 
+Without the regtest stack, the same binding is checked against stand-ins and in the engine:
+
+```bash
+skills/verify-executor/scripts/verify.sh daemon '^TestStreamKeepsThePreimageFromADecoy$'
+(cd pkg/template && go test -run '^TestNonInteractiveClaimTerms$' ./internal/version/v1/)
+```
+
+A decoy carrying honest sealed terms but paying another receiver, or less than the amount sealed,
+must get no claim built, must leave the `claim` template active whatever
+`EXECUTOR_TEMPLATE_MAX_FAILURES` is, and a control funding must still be claimed.
+
 ## Gotchas
 
 The harness configures an encryption key. A standalone executor without `EXECUTOR_ENCRYPTION_KEY`
-cannot reproduce that setup. `TestStreamClaimEnforcesTheSealedTerms` registers the
-`offline_receive.json` fixture and a stream explicitly; it does not prove that fixture is a
-default startup template. Use the packet/sealing helpers rather than fabricated preimages or
-directly inserted child rows. Keep test secrets in local evidence only.
+cannot reproduce that setup. The default `claim` seals terms, not a bare preimage: the preimage,
+the receiver program and the least amount. Use the packet/sealing helpers rather than fabricated
+preimages or directly inserted child rows. Keep test secrets in local evidence only.

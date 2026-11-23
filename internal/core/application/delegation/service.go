@@ -22,12 +22,17 @@ type Limits struct {
 	MinDelegationExpiry time.Duration
 	MaxDelegations      int
 	MaxStreamChildren   int           // active delegations the streams spawned, counted apart from MaxDelegations
+	MaxVariablesBytes   int           // of a client delegation; zero for no cap
 	ExpiryInterval      time.Duration // how often delegations past their expiry are marked
 	PruneAfter          time.Duration // how long after expiry a spawned or unfunded delegation is deleted; zero keeps them
 	IdleExpiry          time.Duration // how long a client delegation that never held a coin lives; zero keeps them
+	EvictIdleAfter      time.Duration // at the cap, the age a never-funded one is deleted at; zero keeps it
 }
 
-const idleExpiryBatch = 1000
+const (
+	idleExpiryBatch = 1000
+	evictionBatch   = 100
+)
 
 type Info struct {
 	Network       string
@@ -49,6 +54,7 @@ type Service struct {
 	limits      Limits
 	onChange    func(delegation.Delegation)
 	addMu       sync.Mutex // one add at a time, so the fingerprint and cap checks hold
+	evictions   struct{ retryIdleAt, retrySettledAt time.Time }
 	changed     chan struct{}
 	stop        context.CancelFunc
 	wg          sync.WaitGroup
@@ -102,8 +108,8 @@ func (s *Service) RegisterDelegation(
 	}
 
 	d, err := delegation.NewDelegation(delegation.DelegationParams{
-		Template: tmpl, Variables: variables, ExpiresAt: expiresAt,
-		Now: time.Now(), MinExpiry: s.limits.MinDelegationExpiry,
+		Template: tmpl, Variables: variables, MaxVariablesBytes: s.limits.MaxVariablesBytes,
+		ExpiresAt: expiresAt, Now: time.Now(), MinExpiry: s.limits.MinDelegationExpiry,
 		Keys: s.keys.Keys, Decrypt: s.decryptFor(templateID), Network: s.network,
 	})
 	if err != nil {
@@ -261,13 +267,15 @@ func (s *Service) decryptFor(templateID string) func([]byte) ([]byte, error) {
 	}
 }
 
-// add stores d, or returns the active delegation of its fingerprint when there is one. It fails
-// with ErrBlocked when the newest delegation of the fingerprint is cancelled, and with
-// ErrCapReached when max active delegations of its origin exist (0: no cap): those streams spawned
-// count apart.
 func (s *Service) add(
 	ctx context.Context, d *delegation.Delegation, max int,
 ) (*delegation.Delegation, error) {
+	var evicted []delegation.Delegation
+	defer func() {
+		for _, e := range evicted {
+			s.notify(e)
+		}
+	}()
 	s.addMu.Lock()
 	defer s.addMu.Unlock()
 	newest, err := s.delegations.GetByFingerprint(ctx, d.Fingerprint)
@@ -279,23 +287,69 @@ func (s *Service) add(
 	case err != nil && !errors.Is(err, delegation.ErrDelegationNotFound):
 		return nil, err
 	}
-	if max > 0 {
-		clients, spawned, err := s.delegations.CountActive(ctx)
-		if err != nil {
-			return nil, err
-		}
-		active := clients
-		if d.StreamID != 0 {
-			active = spawned
-		}
-		if active >= int64(max) {
-			return nil, delegation.ErrCapReached
-		}
+	if evicted, err = s.makeRoom(ctx, d.StreamID != 0, max, time.Now()); err != nil {
+		return nil, err
 	}
 	if err := s.delegations.AddOrUpdate(ctx, d); err != nil {
 		return nil, err
 	}
 	return d, nil
+}
+
+func (s *Service) makeRoom(
+	ctx context.Context, spawned bool, max int, now time.Time,
+) ([]delegation.Delegation, error) {
+	if max <= 0 {
+		return nil, nil
+	}
+	active, children, err := s.delegations.CountActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if spawned {
+		active = children
+	}
+	if active < int64(max) {
+		return nil, nil
+	}
+	evicted, err := s.evict(ctx, spawned, now)
+	if err != nil {
+		return nil, err
+	}
+	if active-int64(len(evicted)) >= int64(max) {
+		return evicted, delegation.ErrCapReached
+	}
+	return evicted, nil
+}
+
+func (s *Service) evict(
+	ctx context.Context, spawned bool, now time.Time,
+) ([]delegation.Delegation, error) {
+	after, retryAt := s.limits.EvictIdleAfter, &s.evictions.retryIdleAt
+	evict := s.delegations.EvictIdle
+	if spawned {
+		after, retryAt = s.limits.ExpiryInterval, &s.evictions.retrySettledAt
+		evict = s.delegations.ExpireSettled
+	}
+	if after <= 0 || now.Before(*retryAt) {
+		return nil, nil
+	}
+	evicted, err := evict(ctx, now.Add(-after), evictionBatch)
+	if err != nil {
+		return nil, err
+	}
+	if len(evicted) < evictionBatch {
+		*retryAt = now.Add(s.limits.ExpiryInterval)
+	}
+	if len(evicted) == 0 {
+		return nil, nil
+	}
+	for i := range evicted {
+		evicted[i].Status = delegation.StatusExpired
+	}
+	log.WithFields(log.Fields{"count": len(evicted), "spawned": spawned}).
+		Warn("cap reached: delegations without a coin evicted")
+	return evicted, nil
 }
 
 func (s *Service) transition(
