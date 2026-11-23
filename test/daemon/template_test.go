@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/arkade-os/executor/internal/config"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,13 +17,13 @@ import (
 func TestRegisterTemplateOverREST(t *testing.T) {
 	d := Start(t)
 	code, body := post(
-		t, d.RestURL+"/v1/artifact", map[string]string{"document": artifactDocument(t)},
+		t, d.AdminURL+"/v1/artifact", map[string]string{"document": artifactDocument(t)},
 	)
 	require.Equal(t, http.StatusOK, code, string(body))
 	artifactID := decodeArtifact(t, body).ID
 	doc := templateDocument(t)
 
-	code, body = post(t, d.RestURL+"/v1/template", map[string]string{"document": doc})
+	code, body = post(t, d.AdminURL+"/v1/template", map[string]string{"document": doc})
 	require.Equal(t, http.StatusOK, code, string(body))
 	first := decodeTemplate(t, body)
 	require.Len(t, first.ID, 64)
@@ -48,7 +49,7 @@ func TestRegisterTemplateOverREST(t *testing.T) {
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, first, decodeTemplate(t, body))
 
-	code, body = post(t, d.RestURL+"/v1/template", map[string]string{"document": doc})
+	code, body = post(t, d.AdminURL+"/v1/template", map[string]string{"document": doc})
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, first.ID, decodeTemplate(t, body).ID)
 	require.Equal(t, 1, tableRows(t, d, "templates"))
@@ -57,11 +58,13 @@ func TestRegisterTemplateOverREST(t *testing.T) {
 func TestRegisterTemplateRefused(t *testing.T) {
 	d := Start(t)
 
-	code, body := post(t, d.RestURL+"/v1/template", map[string]string{"document": "not a template"})
+	code, body := post(
+		t, d.AdminURL+"/v1/template", map[string]string{"document": "not a template"},
+	)
 	require.Equal(t, http.StatusBadRequest, code, string(body))
 
 	code, body = post(
-		t, d.RestURL+"/v1/template", map[string]string{"document": templateDocument(t)},
+		t, d.AdminURL+"/v1/template", map[string]string{"document": templateDocument(t)},
 	)
 	require.Equal(t, http.StatusNotFound, code, string(body))
 	require.Equal(t, 0, tableRows(t, d, "templates"))
@@ -70,11 +73,41 @@ func TestRegisterTemplateRefused(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, code)
 }
 
+func TestPublicPortRegistersDocumentsOnlyWhenOpened(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []func(*config.Config)
+		code int
+	}{
+		{name: "closed by default", code: http.StatusForbidden},
+		{
+			name: "opened by the operator",
+			opts: []func(*config.Config){func(c *config.Config) { c.PublicRegistry = true }},
+			code: http.StatusOK,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := Start(t, tt.opts...)
+			code, body := post(
+				t, d.RestURL+"/v1/artifact", map[string]string{"document": artifactDocument(t)},
+			)
+			require.Equal(t, tt.code, code, string(body))
+			code, body = post(
+				t, d.RestURL+"/v1/template", map[string]string{"document": templateDocument(t)},
+			)
+			require.Equal(t, tt.code, code, string(body))
+			code, body = get(t, d.RestURL+"/v1/templates")
+			require.Equal(t, http.StatusOK, code, string(body))
+		})
+	}
+}
+
 func TestRegisterOnchainTemplateIsUnsupported(t *testing.T) {
 	d := Start(t)
 	doc, err := os.ReadFile("../../pkg/template/testdata/onchain_release.json")
 	require.NoError(t, err)
-	code, body := post(t, d.RestURL+"/v1/template", map[string]string{"document": string(doc)})
+	code, body := post(t, d.AdminURL+"/v1/template", map[string]string{"document": string(doc)})
 	require.Equal(t, http.StatusPreconditionFailed, code, string(body))
 	require.Equal(t, 0, tableRows(t, d, "templates"))
 }

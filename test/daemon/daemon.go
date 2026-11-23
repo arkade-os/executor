@@ -29,6 +29,7 @@ import (
 
 type Daemon struct {
 	Client   executorv1.ExecutorServiceClient
+	Registry executorv1.ExecutorServiceClient // on the admin port, which registers documents
 	Admin    executorv1.AdminServiceClient
 	RestURL  string
 	AdminURL string
@@ -135,6 +136,11 @@ func WithVtxosDelay(d time.Duration) func(*config.Config) {
 	return func(c *config.Config) { c.Ark.(*ark).vtxosDelay = d }
 }
 
+// WithIdleEviction sets how old a client delegation that never held a coin makes room at the cap.
+func WithIdleEviction(after time.Duration) func(*config.Config) {
+	return func(c *config.Config) { c.EvictIdleAfter = after }
+}
+
 // WithPublicRateLimit caps the requests per second one client address may send to the public port.
 func WithPublicRateLimit(perSecond int) func(*config.Config) {
 	return func(c *config.Config) { c.PublicRateLimit = perSecond }
@@ -220,6 +226,7 @@ func boot(
 	adminConn := Dial(t, d.Server.AdminAddr())
 	return &Daemon{
 		Client:   executorv1.NewExecutorServiceClient(conn),
+		Registry: executorv1.NewExecutorServiceClient(adminConn),
 		Admin:    executorv1.NewAdminServiceClient(adminConn),
 		RestURL:  "http://127.0.0.1:" + strconv.Itoa(cfg.Port),
 		AdminURL: "http://127.0.0.1:" + strconv.Itoa(cfg.AdminPort),

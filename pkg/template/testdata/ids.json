@@ -6,7 +6,6 @@
   "vhtlc_refund.json": "30f61607826886439788b434605fbd083e8d3dbf1a8d8b5770490bdfc2bdb5e2",
   "onchain_release.json": "e09bbc0b3400b3b357747cb00282c167ecb52652dcb011170d153e7dcf9517d2",
   "counter_seed.json": "dc6ca69c4a7b7a6272aeb8dbcba03dd718e0ece325ed9a4e0ad0e766b47609cb",
-  "claim.json": "0c150be4575aa2c90384ad9a0f9883b73d91d9e6a58422f9164f871b365bc994",
-  "offline_receive.json": "4e8674c7b52609cf03221665fbe2b1199616558514b4baaf64ffd07338e0e08e",
+  "claim.json": "4e8674c7b52609cf03221665fbe2b1199616558514b4baaf64ffd07338e0e08e",
   "minimal.json": "7b2dca63e79d0e11e202d020384031fbc9acec9e49a42ff92136ac44b31aa3f0"
 }

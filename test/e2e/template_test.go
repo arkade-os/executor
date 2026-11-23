@@ -17,7 +17,7 @@ func TestTemplateRegistry(t *testing.T) {
 	ctx := t.Context()
 	d := start(t)
 	require.Equal(t, registerTemplate(t, d, "renew.json"), registerTemplate(t, d, "renew.json"))
-	_, err := d.client.RegisterTemplate(
+	_, err := d.registry.RegisterTemplate(
 		ctx, &executorv1.RegisterTemplateRequest{Document: `{"format":"template/v1"}`},
 	)
 	require.Equal(t, codes.InvalidArgument, status.Code(err), "%v", err)

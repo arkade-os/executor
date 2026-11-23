@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
+	"github.com/arkade-os/executor/internal/infrastructure/postgres/sqlc/queries"
 	"github.com/stretchr/testify/require"
 )
 
@@ -280,6 +281,154 @@ func TestDelegationExpireIdle(t *testing.T) {
 		expired, err = repo.ExpireIdle(t.Context(), time.Now().Add(-24*time.Hour), 2)
 		require.NoError(t, err)
 		require.Equal(t, ids[2:], listIDs(expired), "the rest on the next call")
+	})
+}
+
+func TestDelegationEvictIdle(t *testing.T) {
+	t.Run("old clients that never held a coin nor made an attempt", func(t *testing.T) {
+		repo := testDelegations(t)
+		stream := testStream()
+		require.NoError(t, repo.db.Streams().AddOrUpdate(t.Context(), &stream))
+		ids := map[string]int64{}
+		for _, name := range []string{"idle", "coin", "attempt", "recent", "cancelled"} {
+			created := testDelegation(name)
+			require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+			ids[name] = created.ID
+		}
+		spawned := testSpawned("spawned", stream.ID)
+		require.NoError(t, repo.AddOrUpdate(t.Context(), &spawned))
+		ids["spawned"] = spawned.ID
+		cancelled := delegation.Delegation{ID: ids["cancelled"], Status: delegation.StatusCancelled}
+		require.NoError(t, repo.AddOrUpdate(t.Context(), &cancelled))
+		for name, id := range ids {
+			if name != "recent" {
+				backdate(t, repo, "created_at", id, 48*time.Hour)
+			}
+		}
+		insertCoin(t, repo, "aa:0", ids["coin"], delegation.Spent)
+		require.NoError(t, repo.db.Attempts().AddOrUpdate(t.Context(), &delegation.Attempt{
+			DelegationID: ids["attempt"], Coins: []string{"moved:0"}, Status: delegation.Failed,
+		}))
+
+		evicted, err := repo.EvictIdle(t.Context(), time.Now().Add(-24*time.Hour), 10)
+		require.NoError(t, err)
+		require.Equal(t, []int64{ids["idle"]}, listIDs(evicted))
+		require.Equal(t, "5120aa", evicted[0].Inputs[0].Script, "it comes back as it was")
+		_, err = repo.Get(t.Context(), ids["idle"])
+		require.ErrorIs(t, err, delegation.ErrDelegationNotFound)
+		var claims int
+		require.NoError(t, repo.db.db.QueryRowContext(
+			t.Context(), "SELECT COUNT(*) FROM claims WHERE delegation_id = $1", ids["idle"],
+		).Scan(&claims))
+		require.Zero(t, claims, "its claims go with it")
+		for _, name := range []string{"coin", "attempt", "recent", "cancelled", "spawned"} {
+			_, err = repo.Get(t.Context(), ids[name])
+			require.NoError(t, err, name)
+		}
+	})
+	t.Run("at most limit", func(t *testing.T) {
+		repo := testDelegations(t)
+		var ids []int64
+		for _, fp := range []string{"a", "b", "c"} {
+			created := testDelegation(fp)
+			require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+			backdate(t, repo, "created_at", created.ID, 48*time.Hour)
+			ids = append(ids, created.ID)
+		}
+
+		evicted, err := repo.EvictIdle(t.Context(), time.Now().Add(-24*time.Hour), 2)
+		require.NoError(t, err)
+		require.ElementsMatch(t, ids[:2], listIDs(evicted), "the oldest first")
+		evicted, err = repo.EvictIdle(t.Context(), time.Now().Add(-24*time.Hour), 2)
+		require.NoError(t, err)
+		require.Equal(t, ids[2:], listIDs(evicted), "the rest on the next call")
+	})
+	t.Run("not one a coin is being stored for", func(t *testing.T) {
+		repo := testDelegations(t)
+		created := testDelegation("a")
+		require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+		backdate(t, repo, "created_at", created.ID, 48*time.Hour)
+
+		require.NoError(t, repo.db.inTx(t.Context(), func(q *queries.Queries) error {
+			if _, err := q.LockDelegation(t.Context(), created.ID); err != nil {
+				return err
+			}
+			evicted, err := repo.EvictIdle(t.Context(), time.Now().Add(-24*time.Hour), 10)
+			require.Empty(t, evicted)
+			return err
+		}))
+		evicted, err := repo.EvictIdle(t.Context(), time.Now().Add(-24*time.Hour), 10)
+		require.NoError(t, err)
+		require.Equal(t, []int64{created.ID}, listIDs(evicted), "once the coins are stored")
+	})
+}
+
+func TestDelegationExpireSettled(t *testing.T) {
+	t.Run("spawned ones without an unspent coin, left alone", func(t *testing.T) {
+		repo := testDelegations(t)
+		stream := testStream()
+		require.NoError(t, repo.db.Streams().AddOrUpdate(t.Context(), &stream))
+		ids := map[string]int64{}
+		for _, name := range []string{
+			"spent", "never funded", "present coin", "just spent", "recent", "cancelled",
+		} {
+			created := testSpawned(name, stream.ID)
+			require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+			ids[name] = created.ID
+		}
+		client := testDelegation("client")
+		require.NoError(t, repo.AddOrUpdate(t.Context(), &client))
+		ids["client"] = client.ID
+		cancelled, err := repo.Get(t.Context(), ids["cancelled"])
+		require.NoError(t, err)
+		require.NoError(t, cancelled.Cancel())
+		require.NoError(t, repo.AddOrUpdate(t.Context(), cancelled))
+		for name, id := range ids {
+			if name != "recent" {
+				backdate(t, repo, "updated_at", id, 2*time.Hour)
+			}
+		}
+		insertCoin(t, repo, "aa:0", ids["spent"], delegation.Spent)
+		insertCoin(t, repo, "bb:0", ids["present coin"], delegation.Present)
+		insertCoin(t, repo, "cc:0", ids["just spent"], delegation.Spent)
+		_, err = repo.db.db.ExecContext(
+			t.Context(),
+			"UPDATE coins SET updated_at = now() - interval '2 hours' WHERE outpoint <> 'cc:0'",
+		)
+		require.NoError(t, err)
+
+		expired, err := repo.ExpireSettled(t.Context(), time.Now().Add(-time.Hour), 10)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []int64{ids["spent"], ids["never funded"]}, listIDs(expired))
+		for name, status := range map[string]string{
+			"spent": delegation.StatusExpired, "never funded": delegation.StatusExpired,
+			"present coin": delegation.StatusActive, "just spent": delegation.StatusActive,
+			"recent": delegation.StatusActive, "cancelled": delegation.StatusCancelled,
+			"client": delegation.StatusActive,
+		} {
+			got, err := repo.Get(t.Context(), ids[name])
+			require.NoError(t, err)
+			require.Equal(t, status, got.Status, name)
+		}
+	})
+	t.Run("at most limit", func(t *testing.T) {
+		repo := testDelegations(t)
+		stream := testStream()
+		require.NoError(t, repo.db.Streams().AddOrUpdate(t.Context(), &stream))
+		var ids []int64
+		for _, fp := range []string{"a", "b", "c"} {
+			created := testSpawned(fp, stream.ID)
+			require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+			backdate(t, repo, "updated_at", created.ID, 2*time.Hour)
+			ids = append(ids, created.ID)
+		}
+
+		first, err := repo.ExpireSettled(t.Context(), time.Now().Add(-time.Hour), 2)
+		require.NoError(t, err)
+		require.Len(t, first, 2)
+		rest, err := repo.ExpireSettled(t.Context(), time.Now().Add(-time.Hour), 2)
+		require.NoError(t, err)
+		require.ElementsMatch(t, ids, listIDs(append(first, rest...)), "the rest on the next call")
 	})
 }
 

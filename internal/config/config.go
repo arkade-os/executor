@@ -29,10 +29,12 @@ type Config struct {
 	MaxDocumentBytes    int
 	MaxDelegations      int
 	MaxStreamChildren   int // active delegations the streams spawned, apart from MaxDelegations
+	MaxVariablesBytes   int // variables of one client delegation, 0 for no cap
 	MinDelegationExpiry time.Duration
 	ExpiryInterval      time.Duration
 	PruneAfter          time.Duration
 	IdleExpiry          time.Duration
+	EvictIdleAfter      time.Duration // at MaxDelegations, the age an unfunded one is deleted at
 	OffchainConcurrency int
 	AttemptTimeout      time.Duration // building and signing an offchain attempt
 	RetryDelay          time.Duration // before the coins of a failed attempt are tried again
@@ -44,6 +46,7 @@ type Config struct {
 	TemplateMaxFailures int           // consecutive failed attempts that disable a template
 	LoopStall           time.Duration // how long the loop may stay silent past a due time before it is unhealthy
 	PublicRateLimit     int           // requests per second per client address on the public port, 0 for none
+	PublicRegistry      bool          // the public port registers artifacts and templates too
 	LogLevel            int
 	DefaultTemplates    bool
 	CosignerKey         *btcec.PrivateKey
@@ -62,12 +65,12 @@ func Default() Config {
 	return Config{
 		Port: 7080, AdminPort: 7081, MaxArtifacts: 1000, MaxTemplates: 1000,
 		MaxDocumentBytes: 1 << 20, MaxDelegations: 500000, MaxStreamChildren: 10000,
-		MinDelegationExpiry: 24 * time.Hour, ExpiryInterval: time.Minute,
+		MaxVariablesBytes: 4096, MinDelegationExpiry: 24 * time.Hour, ExpiryInterval: time.Minute,
 		PruneAfter: 30 * 24 * time.Hour, OffchainConcurrency: 8, AttemptTimeout: time.Minute,
 		RetryDelay: time.Minute, IntentsPerBatch: 128, IntentTimeout: 5 * time.Minute,
 		Reserve: 15 * time.Minute, BanDuration: 5 * time.Minute, LandingWindow: 5 * time.Minute,
 		TemplateMaxFailures: 10, LoopStall: 2 * time.Minute, PublicRateLimit: 5, LogLevel: 4,
-		DefaultTemplates: true, IdleExpiry: 7 * 24 * time.Hour,
+		DefaultTemplates: true, IdleExpiry: 7 * 24 * time.Hour, EvictIdleAfter: time.Hour,
 	}
 }
 
@@ -95,6 +98,7 @@ func Load() (Config, error) {
 		{"MAX_DOCUMENT_BYTES", &cfg.MaxDocumentBytes},
 		{"MAX_DELEGATIONS", &cfg.MaxDelegations},
 		{"MAX_STREAM_CHILDREN", &cfg.MaxStreamChildren},
+		{"MAX_VARIABLES_BYTES", &cfg.MaxVariablesBytes},
 		{"OFFCHAIN_CONCURRENCY", &cfg.OffchainConcurrency},
 		{"INTENTS_PER_BATCH", &cfg.IntentsPerBatch},
 		{"TEMPLATE_MAX_FAILURES", &cfg.TemplateMaxFailures},
@@ -119,6 +123,7 @@ func Load() (Config, error) {
 		{"EXPIRY_INTERVAL", &cfg.ExpiryInterval},
 		{"PRUNE_AFTER", &cfg.PruneAfter},
 		{"IDLE_DELEGATION_EXPIRY", &cfg.IdleExpiry},
+		{"EVICT_IDLE_AFTER", &cfg.EvictIdleAfter},
 		{"ATTEMPT_TIMEOUT", &cfg.AttemptTimeout},
 		{"RETRY_DELAY", &cfg.RetryDelay},
 		{"INTENT_TIMEOUT", &cfg.IntentTimeout},
@@ -145,6 +150,9 @@ func Load() (Config, error) {
 		)
 	}
 	if cfg.DefaultTemplates, err = envBool("DEFAULT_TEMPLATES", cfg.DefaultTemplates); err != nil {
+		return Config{}, err
+	}
+	if cfg.PublicRegistry, err = envBool("PUBLIC_REGISTRY", cfg.PublicRegistry); err != nil {
 		return Config{}, err
 	}
 	if os.Getenv(envPrefix+"COSIGNER_KEY") == "" {

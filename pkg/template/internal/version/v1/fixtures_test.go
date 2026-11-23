@@ -37,7 +37,10 @@ func TestFixtures(t *testing.T) {
 	var ids map[string]string
 	require.NoError(t, json.Unmarshal(fixture(t, "ids.json"), &ids))
 	docs := artifacts(t)
-	for _, name := range []string{"renew.json", "board.json", "counter.json", "vhtlc_claim.json", "vhtlc_refund.json", "claim.json", "offline_receive.json", "onchain_release.json", "counter_seed.json", "minimal.json"} {
+	for _, name := range []string{
+		"renew.json", "board.json", "counter.json", "vhtlc_claim.json", "vhtlc_refund.json",
+		"claim.json", "onchain_release.json", "counter_seed.json", "minimal.json",
+	} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := Parse(fixture(t, name), docs)
 			require.NoError(t, err)
@@ -425,6 +428,45 @@ func TestNonInteractiveClaimCovenant(t *testing.T) {
 	require.Error(t, claim(func(o *wire.TxOut) { o.Value-- }), "less than the input")
 }
 
+func TestNonInteractiveClaimTerms(t *testing.T) {
+	v := vhtlcVector(t)
+	tests := []struct {
+		name  string
+		terms []byte
+		err   error
+	}{
+		{
+			name:  "the receiver and the amount sealed",
+			terms: claimTerms(t, v, v.ReceiverProgram, 100_000),
+		},
+		{
+			name:  "another receiver sealed",
+			terms: claimTerms(t, v, hex.EncodeToString(otherScript[2:]), 100_000),
+			err:   failure.ErrIneligible,
+		},
+		{
+			name:  "a funding short of the amount sealed",
+			terms: claimTerms(t, v, v.ReceiverProgram, 100_001), err: failure.ErrIneligible,
+		},
+		{
+			name:  "no amount sealed",
+			terms: claimTerms(t, v, v.ReceiverProgram, 0), err: failure.ErrIneligible,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			htlc := sourceWith(t, 100_000)
+			watch, err := instantiateClaimUnder(t, v, v.Tapscripts, tt.terms)
+			require.NoError(t, err)
+			lockTo(htlc, watch.PkScript(0))
+			inst, err := instantiateClaimUnder(t, v, v.Tapscripts, tt.terms, htlc)
+			require.NoError(t, err)
+			_, err = inst.Build([]*model.Source{htlc}, model.Fee{Dust: 330})
+			require.ErrorIs(t, err, tt.err)
+		})
+	}
+}
+
 func TestNonInteractiveClaimTrigger(t *testing.T) {
 	v := vhtlcVector(t)
 	enc, err := btcec.NewPrivateKey()
@@ -449,7 +491,7 @@ func TestNonInteractiveClaimTrigger(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, []model.Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
-		"preimage": "010203", "receiver_program": v.ReceiverProgram,
+		"terms": "010203", "receiver_program": v.ReceiverProgram,
 		"taptree": hex.EncodeToString(tree),
 	}}}, got)
 
@@ -972,30 +1014,43 @@ func vhtlcVector(t *testing.T) vhtlcVec {
 	return v
 }
 
-// instantiateNonInteractiveClaim builds claim.json for a funding output whose tree is leaves; the
-// sealed preimage is its own ciphertext.
 func instantiateNonInteractiveClaim(
 	t *testing.T, v vhtlcVec, leaves []string, sources ...*model.Source,
 ) (*Instance, error) {
 	t.Helper()
+	return instantiateClaimUnder(
+		t, v, leaves, claimTerms(t, v, v.ReceiverProgram, 1000), sources...,
+	)
+}
+
+func instantiateClaimUnder(
+	t *testing.T, v vhtlcVec, leaves []string, terms []byte, sources ...*model.Source,
+) (*Instance, error) {
+	t.Helper()
 	tree, err := txutils.TapTree(leaves).Encode()
 	require.NoError(t, err)
-	unhex := func(s string) []byte {
-		b, err := hex.DecodeString(s)
-		require.NoError(t, err)
-		return b
-	}
-	server, err := btcec.ParsePubKey(unhex(v.Server))
+	server, err := btcec.ParsePubKey(unhex(t, v.Server))
 	require.NoError(t, err)
 	return parseFixture(t, "claim.json").Instantiate(model.Context{
 		Keys: model.Keys{Server: server, Emulator: testKey(t, 3)},
 		Variables: map[string][]byte{
-			"taptree": tree, "receiver_program": unhex(v.ReceiverProgram),
-			"preimage": unhex(v.Preimage),
+			"taptree": tree, "receiver_program": unhex(t, v.ReceiverProgram), "terms": terms,
 		},
 		Decrypt: func(ciphertext []byte) ([]byte, error) { return ciphertext, nil },
 		Sources: sources,
 	})
+}
+
+func claimTerms(t *testing.T, v vhtlcVec, program string, least int64) []byte {
+	t.Helper()
+	return slices.Concat(unhex(t, v.Preimage), unhex(t, program), asm.ScriptNum(least))
+}
+
+func unhex(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(s)
+	require.NoError(t, err)
+	return b
 }
 
 // nonInteractiveClaimCovenant is covclaimd's EnforcePayTo with the program as a asm.Placeholder.

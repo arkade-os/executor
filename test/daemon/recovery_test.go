@@ -42,47 +42,64 @@ func TestRestartFailsARegisteredIntentAtTheLandingWindowAndRegistersAgain(t *tes
 	require.Equal(t, attempts[0].Txid, d.Arkd.Commitments()[0])
 }
 
-// the daemon dies after its forfeits reached arkd and the batch lands meanwhile.
-func TestRestartLandsAForfeitedAttemptOnce(t *testing.T) {
-	d := Start(t, WithSessions(500*time.Millisecond, 128))
-	d.Arkd.HoldLanding(true)
-	d.Arkd.CrashAfterForfeits(true)
-	_, templateID := registerRenewal(t, d)
-	w := renewalDelegation(t, d, templateID, 1024, 1000)
-	outpoint := d.Arkd.FundAged(
-		w.Inputs[0].Script, 10_000, time.Hour, time.Now().Add(500*time.Second),
-	)
-	require.Eventually(
-		t, func() bool { return len(d.Arkd.Commitments()) == 1 }, 10*time.Second,
-		20*time.Millisecond,
-	)
-	require.Equal(
-		t, "submitted", listAttempts(t, d, w.ID)[0].Status, "the daemon never saw the batch end",
-	)
+func TestForfeitedAttemptLandsOnce(t *testing.T) {
+	tests := []struct {
+		name    string
+		restart bool
+	}{
+		{name: "the daemon dies and restarts while its batch lands", restart: true},
+		{name: "the batch events are lost while its batch lands"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := Start(t, WithSessions(500*time.Millisecond, 128))
+			d.Arkd.HoldLanding(true)
+			d.Arkd.CrashAfterForfeits(tt.restart)
+			_, templateID := registerRenewal(t, d)
+			w := renewalDelegation(t, d, templateID, 1024, 1000)
+			outpoint := d.Arkd.FundAged(
+				w.Inputs[0].Script, 10_000, time.Hour, time.Now().Add(500*time.Second),
+			)
+			require.Eventually(
+				t, func() bool { return len(d.Arkd.Commitments()) == 1 }, 10*time.Second,
+				20*time.Millisecond,
+			)
+			require.Equal(
+				t, "submitted", listAttempts(t, d, w.ID)[0].Status,
+				"the daemon never saw the batch end",
+			)
 
-	d.stop()
-	d.Arkd.CrashAfterForfeits(false)
-	d.Arkd.HoldLanding(false)
-	require.Eventually(
-		t, func() bool { return d.Arkd.spent(outpoint) }, 5*time.Second, 20*time.Millisecond,
-	)
-	d = d.Restart(t)
-	require.Eventually(
-		t, func() bool { return attemptRows(t, d, "succeeded") == 1 }, 10*time.Second,
-		20*time.Millisecond,
-	)
-	time.Sleep(300 * time.Millisecond)
+			if tt.restart {
+				d.stop()
+				d.Arkd.CrashAfterForfeits(false)
+				d.Arkd.HoldLanding(false)
+				require.Eventually(
+					t, func() bool { return d.Arkd.spent(outpoint) }, 5*time.Second,
+					20*time.Millisecond,
+				)
+				d = d.Restart(t)
+			} else {
+				d.Arkd.LoseBatchEvents()
+				d.Arkd.HoldLanding(false)
+			}
+			require.Eventually(
+				t, func() bool { return attemptRows(t, d, "succeeded") == 1 }, 10*time.Second,
+				20*time.Millisecond,
+			)
+			time.Sleep(300 * time.Millisecond)
 
-	require.Equal(t, 1, attemptRows(t, d, ""))
-	require.Equal(t, 1, attemptRows(t, d, "succeeded"), "recorded once")
-	require.Equal(t, d.Arkd.Commitments()[0], listAttempts(t, d, w.ID)[0].Txid)
-	coins := coinsOf(t, d, w.ID)
-	require.Len(t, coins, 2)
-	require.Contains(t, coinOutpoints(coins), outpoint)
-	present := presentCoins(t, d, w.ID)
-	require.Len(t, present, 1, "the renewed coin")
-	require.Equal(t, "10000", present[0].Amount)
-	require.NotEqual(t, outpoint, present[0].Outpoint)
+			require.Equal(t, 1, attemptRows(t, d, ""))
+			require.Equal(t, 1, attemptRows(t, d, "succeeded"), "recorded once")
+			require.Equal(t, d.Arkd.Commitments()[0], listAttempts(t, d, w.ID)[0].Txid)
+			coins := coinsOf(t, d, w.ID)
+			require.Len(t, coins, 2)
+			require.Contains(t, coinOutpoints(coins), outpoint)
+			present := presentCoins(t, d, w.ID)
+			require.Len(t, present, 1, "the renewed coin")
+			require.Equal(t, "10000", present[0].Amount)
+			require.NotEqual(t, outpoint, present[0].Outpoint)
+		})
+	}
 }
 
 // the daemon dies after its forfeits reached arkd and the batch fails.

@@ -3,10 +3,12 @@ package daemon
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
 
+	executorv1 "github.com/arkade-os/executor/api-spec/protobuf/gen/executor/v1"
 	"github.com/arkade-os/executor/internal/config"
 	"github.com/stretchr/testify/require"
 )
@@ -55,6 +57,36 @@ func TestRenewalGoesThroughARound(t *testing.T) {
 	require.Equal(t, "present", renewed.Status)
 	require.Equal(t, "10000", renewed.Amount)
 	require.Equal(t, 1, attemptRows(t, d, "succeeded"))
+}
+
+func TestRenewalsResumeAfterTheBatchEventsAreLost(t *testing.T) {
+	d := Start(
+		t, WithSessions(500*time.Millisecond, 128),
+		func(c *config.Config) { c.LoopStall = 100 * time.Millisecond },
+	)
+	_, templateID := registerRenewal(t, d)
+	w := renewalDelegation(t, d, templateID, 1024, 1000)
+	loopDown := func() bool {
+		health, err := d.Admin.GetHealth(t.Context(), &executorv1.GetHealthRequest{})
+		require.NoError(t, err)
+		return slices.Contains(unhealthy(health), "loop")
+	}
+	require.False(t, loopDown())
+
+	d.Arkd.LoseBatchEvents()
+	require.Eventually(
+		t, loopDown, 5*time.Second, 50*time.Millisecond, "the health says so once lost for long",
+	)
+	d.Arkd.ResumeBatchEvents()
+	require.Eventually(
+		t, func() bool { return !loopDown() }, 5*time.Second, 50*time.Millisecond,
+	)
+
+	d.Arkd.FundAged(w.Inputs[0].Script, 10_000, time.Hour, time.Now().Add(500*time.Second))
+	require.Eventually(t, func() bool {
+		attempts := listAttempts(t, d, w.ID)
+		return len(attempts) == 1 && attempts[0].Status == "succeeded"
+	}, 15*time.Second, 20*time.Millisecond, "a batch takes the renewal again")
 }
 
 // at most one batch's worth stays registered, oldest deadline first, and the next worth follows a

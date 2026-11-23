@@ -45,7 +45,7 @@ type Limits struct {
 	IntentTimeout       time.Duration // an intent not selected by then is forgotten and queued again
 	Reserve             time.Duration // before expiry, the latest a coin enters a batch
 	BanDuration         time.Duration // the coins of an intent a batch failed on keep out of the queue
-	LandingWindow       time.Duration // after a restart, how long a batched attempt waits to see its coins spent
+	LandingWindow       time.Duration // after a restart or the loss of the batch events, how long a batched attempt waits to see its coins spent
 	TemplateMaxFailures int           // consecutive failed attempts that disable a template
 	LoopStall           time.Duration // how long the loop may stay silent past a due time before it is unhealthy
 }
@@ -98,7 +98,7 @@ type pending struct {
 	attempt delegation.Attempt
 	busy    bool              // a worker is talking to arkd about it
 	spent   map[string]string // its stored coins seen spent, by what spent them
-	landBy  time.Time         // when a batched attempt of a previous run must have landed, zero for the others
+	landBy  time.Time
 }
 
 type reconnected struct{}
@@ -121,6 +121,8 @@ type attemptUpdate struct{ attempt delegation.Attempt }
 
 // attemptDone says arkd finalized the attempt: it waits for its coins to be seen spent.
 type attemptDone struct{ attempt delegation.Attempt }
+
+type attemptLost struct{ attempt delegation.Attempt }
 
 // attemptFailed carries a worker's failure.
 type attemptFailed struct {
@@ -334,6 +336,10 @@ func (s *Service) handle(ev any, now time.Time) {
 		p := s.track(ev.attempt)
 		p.busy = false
 		s.settle(p, now)
+	case attemptLost:
+		p := s.track(ev.attempt)
+		p.busy, p.landBy = false, now.Add(s.limits.LandingWindow)
+		s.settle(p, now)
 	case attemptFailed:
 		s.failed(ev, now)
 	case skipped:
@@ -437,8 +443,7 @@ func (s *Service) failed(ev attemptFailed, now time.Time) {
 	delete(s.pending, a.ID)
 	s.attemptsFailed++
 	if chargesTemplate(ev.err) {
-		s.templateFailures++
-		s.record(a.DelegationID, false)
+		s.record(a.DelegationID, ev.err)
 	}
 	s.dequeue(a.DelegationID)
 	if rotates(ev.err) {
@@ -466,17 +471,23 @@ func (s *Service) succeed(p *pending) {
 	}
 	delete(s.pending, a.ID)
 	s.attemptsSucceeded++
-	s.record(a.DelegationID, true)
+	s.record(a.DelegationID, nil)
 	log.WithFields(fields).Info("attempt succeeded")
 }
 
-func (s *Service) record(delegationID int64, success bool) {
+func (s *Service) record(delegationID int64, failure error) {
 	d, err := s.delegations.GetDelegation(s.ctx, delegationID)
+	if err == nil && sparesTemplate(d, failure) {
+		return
+	}
+	if failure != nil {
+		s.templateFailures++
+	}
 	if err == nil {
 		var failures int
 		var status string
 		if failures, status, err = s.templates.RecordOutcome(
-			s.ctx, d.TemplateID, success, s.limits.TemplateMaxFailures,
+			s.ctx, d.TemplateID, failure == nil, s.limits.TemplateMaxFailures,
 		); err == nil &&
 			status == registry.TemplateStatusDisabled &&
 			failures == s.limits.TemplateMaxFailures {

@@ -36,6 +36,18 @@ The registry journey verifies idempotent registration, invalid-template rejectio
 delegations against a disabled template and refusal to delete a referenced template. A template
 naming the executor's cosigner key must be rejected for delegation.
 
+For the limits on what the public port may register and keep:
+
+```bash
+skills/verify-executor/scripts/verify.sh daemon \
+  '^(TestPublicPortRegistersDocumentsOnlyWhenOpened|TestRegisterDelegationCapsItsVariables|TestRegisterDelegationMakesRoomAtTheCap|TestSpawnedDelegationMakesRoomOnceItsCoinIsSpent)$'
+```
+
+The public port must answer `POST /v1/artifact` and `POST /v1/template` with 403 unless
+`EXECUTOR_PUBLIC_REGISTRY` is on, while the admin port serves them. At a full cap, a client
+delegation that never held a coin must be deleted and a spawned one whose coin is spent must
+expire to make room; one holding an unspent coin must stay active.
+
 For delegation controls and graceful shutdown:
 
 ```bash

@@ -1,7 +1,7 @@
 {
   "format": "template/v1",
   "type": "virtual",
-  "variables": {"taptree": "bytes", "receiver_program": "bytes32", "preimage": "bytes32"},
+  "variables": {"taptree": "bytes", "receiver_program": "bytes32", "terms": "bytes"},
   "inputs": [
     {
       "name": "htlc",
@@ -55,34 +55,31 @@
             }
           ]
         },
-        "arguments": {"preimageHash": "$(<preimage> OP_HASH160)", "receiverProgram": "<receiver_program>"},
+        "arguments": {"preimageHash": "$(<terms> 32 OP_LEFT OP_HASH160)", "receiverProgram": "<receiver_program>"},
         "taptree": "<taptree>"
       },
-      "spend": {"function": "claim", "leaf": "claim", "witness": {"preimage": "<preimage>"}}
+      "spend": {"function": "claim", "leaf": "claim", "witness": {"preimage": "$(<terms> 32 OP_LEFT)"}}
     }
   ],
   "outputs": [
     {
       "name": "payout",
+      "index": 0,
       "value": {"from": "htlc"},
-      "locking": "5120<receiver_program>",
+      "locking": "5120$(<terms> 32 32 OP_SUBSTR <receiver_program> OP_EQUALVERIFY OP_PUSHCURRENTINPUTINDEX OP_INSPECTINPUTVALUE <terms> OP_SIZE 64 OP_SUB OP_RIGHT OP_DUP 0 OP_GREATERTHAN OP_VERIFY OP_GREATERTHANOREQUAL OP_VERIFY <receiver_program>)",
       "assets": [{"from": "htlc"}]
     }
   ],
-  "packets": {"unmatched": "drop"},
+  "packets": {"output_index": 1, "unmatched": "drop"},
   "delegation": {
-    "sealed": ["preimage"],
+    "sealed": ["terms"],
     "trigger": {
       "htlc": {
         "packet": 4,
         "decode": "tlv",
         "min_value": 1000,
         "require": {"tlv:3": "<ENCRYPTION_KEY>"},
-        "capture": {
-          "preimage": "tlv:1",
-          "receiver_program": "$(<tlv:2> 6 32 OP_SUBSTR)",
-          "taptree": "output:taptree"
-        },
+        "capture": {"terms": "tlv:1", "receiver_program": "$(<tlv:2> 6 32 OP_SUBSTR)", "taptree": "output:taptree"},
         "expires_after_seconds": 86400
       }
     }

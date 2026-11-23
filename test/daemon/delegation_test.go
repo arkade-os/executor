@@ -129,6 +129,43 @@ func TestRegisterDelegationRefused(t *testing.T) {
 	require.Equal(t, 1, tableRows(t, d, "delegations"))
 }
 
+func TestRegisterDelegationMakesRoomAtTheCap(t *testing.T) {
+	d := Start(t, WithMaxDelegations(2, 0), WithIdleEviction(200*time.Millisecond))
+	_, templateID := registerRenewal(t, d)
+	funded := registerDelegationWith(t, d, templateID, renewalVariables(t))
+	d.Arkd.Fund(funded.Inputs[0].Script, 10_000, time.Now().Add(time.Hour))
+	waitCoins(t, d, funded.ID, 1)
+	idle := registerDelegationWith(t, d, templateID, renewalVariables(t))
+	time.Sleep(300 * time.Millisecond)
+
+	registerDelegationWith(t, d, templateID, renewalVariables(t))
+	code, body := get(t, d.RestURL+"/v1/delegation?id="+funded.ID)
+	require.Equal(t, http.StatusOK, code, string(body))
+	require.Equal(t, "active", decodeDelegation(t, body).Status)
+	code, body = get(t, d.RestURL+"/v1/delegation?id="+idle.ID)
+	require.Equal(t, http.StatusNotFound, code, "deleted to make room: %s", string(body))
+
+	code, body = post(
+		t, d.RestURL+"/v1/delegation",
+		map[string]any{"templateId": templateID, "variables": renewalVariables(t)},
+	)
+	require.Equal(
+		t, http.StatusTooManyRequests, code, "the newest is too young to go: %s", string(body),
+	)
+}
+
+func TestRegisterDelegationCapsItsVariables(t *testing.T) {
+	d := Start(t, func(c *config.Config) { c.MaxVariablesBytes = 16 })
+	_, templateID := registerRenewal(t, d)
+	code, body := post(
+		t, d.RestURL+"/v1/delegation",
+		map[string]any{"templateId": templateID, "variables": renewalVariables(t)},
+	)
+	require.Equal(t, http.StatusBadRequest, code, string(body))
+	require.Contains(t, string(body), "variables weigh")
+	require.Equal(t, 0, tableRows(t, d, "delegations"))
+}
+
 func TestGetInfoOverREST(t *testing.T) {
 	d := Start(t)
 	code, body := get(t, d.RestURL+"/v1/info")
@@ -323,7 +360,7 @@ func registerFixture(t *testing.T, d *Daemon, name string) string {
 	t.Helper()
 	doc, err := os.ReadFile("../../pkg/template/testdata/" + name)
 	require.NoError(t, err)
-	code, body := post(t, d.RestURL+"/v1/template", map[string]string{"document": string(doc)})
+	code, body := post(t, d.AdminURL+"/v1/template", map[string]string{"document": string(doc)})
 	require.Equal(t, http.StatusOK, code, string(body))
 	return decodeTemplate(t, body).ID
 }

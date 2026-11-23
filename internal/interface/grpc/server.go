@@ -43,6 +43,7 @@ type port struct {
 type Options struct {
 	PublicPort, AdminPort int
 	PublicRateLimit       int
+	PublicRegistry        bool // the public port registers artifacts and templates too
 	Users                 []AdminUser
 	Status                StatusSource
 	Health                handlers.Health
@@ -67,7 +68,14 @@ func Listen(
 		interceptors = append(interceptors, auth.unary)
 		pages = auth.pages(pages)
 	}
-	publicSrv, err := listen(opts.PublicPort, publicServices, nil, logUnary)
+	publicInterceptors := []grpc.UnaryServerInterceptor{logUnary}
+	if !opts.PublicRegistry {
+		publicInterceptors = append(publicInterceptors, adminOnly(
+			executorv1.ExecutorService_RegisterArtifact_FullMethodName,
+			executorv1.ExecutorService_RegisterTemplate_FullMethodName,
+		))
+	}
+	publicSrv, err := listen(opts.PublicPort, publicServices, nil, publicInterceptors...)
 	if err != nil {
 		return nil, err
 	}

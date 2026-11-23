@@ -3,11 +3,80 @@ package grpc
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	executorv1 "github.com/arkade-os/executor/api-spec/protobuf/gen/executor/v1"
 	"github.com/arkade-os/executor/internal/interface/grpc/handlers"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
+
+func TestListen(t *testing.T) {
+	tests := []struct {
+		name           string
+		publicRegistry bool
+		public         codes.Code
+		rest           int
+	}{
+		{
+			name:   "the public port refuses the registry",
+			public: codes.PermissionDenied, rest: http.StatusForbidden,
+		},
+		{
+			name: "the public port registers when opened", publicRegistry: true,
+			public: codes.InvalidArgument, rest: http.StatusBadRequest,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := Listen(
+				t.Context(),
+				Options{
+					PublicRegistry: tt.publicRegistry, Status: statusStub{}, Health: &healthStub{},
+				},
+				&handlers.Executor{}, &handlers.Admin{},
+			)
+			require.NoError(t, err)
+			t.Cleanup(s.Stop)
+			go func() { _ = s.Serve() }()
+
+			register := func(addr string) []codes.Code {
+				conn, err := grpc.NewClient(
+					addr, grpc.WithTransportCredentials(insecure.NewCredentials()),
+				)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = conn.Close() })
+				client := executorv1.NewExecutorServiceClient(conn)
+				_, artifact := client.RegisterArtifact(
+					t.Context(), &executorv1.RegisterArtifactRequest{},
+				)
+				_, template := client.RegisterTemplate(
+					t.Context(), &executorv1.RegisterTemplateRequest{},
+				)
+				_, read := client.GetArtifact(t.Context(), &executorv1.GetArtifactRequest{})
+				require.Equal(t, codes.InvalidArgument, status.Code(read), "reading is served")
+				return []codes.Code{status.Code(artifact), status.Code(template)}
+			}
+			require.Equal(t, []codes.Code{tt.public, tt.public}, register(s.PublicAddr()))
+			require.Equal(
+				t, []codes.Code{codes.InvalidArgument, codes.InvalidArgument},
+				register(s.AdminAddr()), "the admin port reaches the handler",
+			)
+
+			resp, err := http.Post(
+				"http://"+s.PublicAddr()+"/v1/template", "application/json",
+				strings.NewReader(`{}`),
+			)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = resp.Body.Close() })
+			require.Equal(t, tt.rest, resp.StatusCode)
+		})
+	}
+}
 
 func TestOnlyThePublicPortIsRateLimited(t *testing.T) {
 	s, err := Listen(

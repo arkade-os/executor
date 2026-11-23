@@ -215,6 +215,10 @@ func chargesTemplate(err error) bool {
 		errors.Is(err, errRefused)
 }
 
+func sparesTemplate(d *delegation.Delegation, failure error) bool {
+	return d.StreamID != 0 && errors.Is(failure, template.ErrIneligible)
+}
+
 // The emulator relays the status details of the refusals arkd gives it.
 func refusesCoins(err error) bool {
 	coinStates := []string{

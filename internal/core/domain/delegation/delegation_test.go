@@ -147,6 +147,30 @@ func TestNewDelegationRefusesMalformedOrMismatchedVariables(t *testing.T) {
 	}
 }
 
+func TestNewDelegationCapsTheSizeOfVariables(t *testing.T) {
+	size := 0
+	for _, value := range renewalParams(t).Variables {
+		size += len(value) / 2
+	}
+	tests := []struct {
+		name string
+		max  int
+		err  error
+	}{
+		{name: "no cap"},
+		{name: "at the cap", max: size},
+		{name: "over the cap", max: size - 1, err: ErrInvalidArgs},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := renewalParams(t)
+			p.MaxVariablesBytes = tt.max
+			_, err := NewDelegation(p)
+			require.ErrorIs(t, err, tt.err)
+		})
+	}
+}
+
 func TestNewDelegationWithSecretsNeedsAnEncryptionKey(t *testing.T) {
 	_, err := NewDelegation(secretParams(t, nil))
 	require.ErrorIs(t, err, ErrNoEncryptionKey)

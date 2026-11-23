@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	tpl "github.com/arkade-os/executor/pkg/template"
 	"github.com/arkade-os/executor/pkg/template/artifact"
-	"github.com/arkade-os/executor/pkg/template/ecies"
 	"github.com/arkade-os/executor/pkg/template/packets"
 	"github.com/arkade-os/executor/templates"
 	"github.com/btcsuite/btcd/psbt/v2"
@@ -54,6 +54,65 @@ func TestDefaultStreamSpawnsADelegationThatClaims(t *testing.T) {
 	require.Equal(
 		t, sw.receiverScript, ptx.UnsignedTx.TxOut[0].PkScript, "the claim pays the receiver",
 	)
+}
+
+func TestStreamKeepsThePreimageFromADecoy(t *testing.T) {
+	tests := []struct {
+		name       string
+		redirected bool
+		amount     int64
+	}{
+		{name: "paying another receiver", redirected: true, amount: 10_000},
+		{name: "funded short of the amount sealed", amount: 1_000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := Start(
+				t, WithEncryptionKey, WithDefaultTemplates, WithTemplateMaxFailures(1),
+				WithRetryDelay(100*time.Millisecond),
+			)
+			waitStreaming(t, d)
+			streamed := claimStreamTemplate(t, d)
+			honest := newSwap(t, d, streamed)
+			decoy := honest
+			if tt.redirected {
+				decoy = newSwap(t, d, streamed)
+				decoy.preimage = honest.preimage
+			}
+			decoy.terms = honest.sealTerms(
+				t, d, streamed, honest.variables["receiver_program"], 10_000,
+			)
+			_, funding := fundingTx(t, d, decoy, tt.amount)
+			d.Arkd.Stream(funding)
+			w := waitDelegations(t, d, 1)[0]
+			d.Arkd.Fund(w.Inputs[0].Script, uint64(tt.amount), time.Now().Add(time.Hour))
+
+			require.Eventually(
+				t, func() bool { return len(listAttempts(t, d, w.ID)) > 1 }, 5*time.Second,
+				50*time.Millisecond, "the template refuses the coin, time after time",
+			)
+			var built int
+			require.NoError(t, d.DB.QueryRowContext(
+				t.Context(),
+				"SELECT COUNT(*) FROM attempts WHERE status <> 'failed' OR txs <> '[]'",
+			).Scan(&built))
+			require.Zero(t, built, "no claim was built, so the preimage stays sealed")
+			require.Equal(
+				t, "active", getTemplate(t, d, streamed).Status,
+				"a stranger's decoy is not the template's failure",
+			)
+
+			control := newSwap(t, d, streamed)
+			script, funding := fundingTx(t, d, control, 10_000)
+			d.Arkd.Stream(funding)
+			for _, spawned := range waitDelegations(t, d, 2) {
+				if spawned.Inputs[0].Script == hex.EncodeToString(script) {
+					d.Arkd.Fund(spawned.Inputs[0].Script, 10_000, time.Now().Add(time.Hour))
+					waitAttempts(t, d, spawned.ID, 1, "submitted")
+				}
+			}
+		})
+	}
 }
 
 func TestStreamedTransactionsThatDoNotMatchSpawnNothing(t *testing.T) {
@@ -145,6 +204,31 @@ func TestSpawnedDelegationsHaveTheirOwnCap(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, code, string(body))
 }
 
+func TestSpawnedDelegationMakesRoomOnceItsCoinIsSpent(t *testing.T) {
+	d := Start(
+		t, WithEncryptionKey, WithDefaultTemplates, WithMaxDelegations(1, 1),
+		WithDelegationExpiry(24*time.Hour, 200*time.Millisecond, 0),
+	)
+	waitStreaming(t, d)
+	streamed := claimStreamTemplate(t, d)
+	_, first := fundingTx(t, d, newSwap(t, d, streamed), 10_000)
+	d.Arkd.Stream(first)
+	settled := waitDelegations(t, d, 1)[0]
+	outpoint := d.Arkd.Fund(settled.Inputs[0].Script, 10_000, time.Now().Add(time.Hour))
+	waitCoins(t, d, settled.ID, 1)
+	d.Arkd.Spend(outpoint, strings.Repeat("ab", 32))
+	require.Eventually(t, func() bool {
+		return coinsOf(t, d, settled.ID)[0].Status == "spent"
+	}, 5*time.Second, 50*time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+
+	_, second := fundingTx(t, d, newSwap(t, d, streamed), 10_000)
+	d.Arkd.Stream(second)
+	for _, w := range waitDelegations(t, d, 2) {
+		require.Equal(t, w.ID == settled.ID, w.Status == "expired", w.ID)
+	}
+}
+
 func TestPublicDelegationDoesNotTakeTheCoinOfASpawnedOne(t *testing.T) {
 	d := Start(t, WithEncryptionKey, WithDefaultTemplates)
 	waitStreaming(t, d)
@@ -159,7 +243,7 @@ func TestPublicDelegationDoesNotTakeTheCoinOfASpawnedOne(t *testing.T) {
 			funding.Outputs[0].TaprootTapTree,
 		),
 		"receiver_program": sw.variables["receiver_program"],
-		"preimage":         seal(t, d, sw.preimage, public),
+		"terms":            sw.sealTerms(t, d, public, sw.variables["receiver_program"], 1),
 	}
 	older := registerDelegationWith(t, d, public, vars)
 	require.Equal(t, hex.EncodeToString(script), older.Inputs[0].Script)
@@ -308,7 +392,7 @@ func waitDelegations(t *testing.T, d *Daemon, n int) []delegation {
 func claimStreamTemplate(t *testing.T, d *Daemon) string {
 	t.Helper()
 	code, body := post(
-		t, d.RestURL+"/v1/template",
+		t, d.AdminURL+"/v1/template",
 		map[string]string{"document": string(templates.Templates["claim.json"])},
 	)
 	require.Equal(t, http.StatusOK, code, string(body))
@@ -345,13 +429,11 @@ func editClaim(t *testing.T, edit func(map[string]any)) []byte {
 
 func registerDoc(t *testing.T, d *Daemon, doc []byte) string {
 	t.Helper()
-	code, body := post(t, d.RestURL+"/v1/template", map[string]string{"document": string(doc)})
+	code, body := post(t, d.AdminURL+"/v1/template", map[string]string{"document": string(doc)})
 	require.Equal(t, http.StatusOK, code, string(body))
 	return decodeTemplate(t, body).ID
 }
 
-// fundingTx is the transaction funding a swap's VHTLC the way covclaimd does: the output carries
-// its taptree and the packet seals the preimage to the daemon. It returns the output's script.
 func fundingTx(t *testing.T, d *Daemon, sw swap, amount int64) ([]byte, *psbt.Packet) {
 	t.Helper()
 	parsed, err := tpl.Parse(fixture(t, "vhtlc_claim.json"), artifactDocs())
@@ -363,15 +445,17 @@ func fundingTx(t *testing.T, d *Daemon, sw swap, amount int64) ([]byte, *psbt.Pa
 	inst, err := parsed.Instantiate(tpl.Context{
 		Keys:      tpl.Keys{Server: d.Server, Emulator: d.Emulator, Cosigner: d.Cosigner},
 		Variables: vars,
-		Decrypt: func(ciphertext []byte) ([]byte, error) {
-			return ecies.Decrypt(newKey(9), ciphertext, sw.templateID)
-		},
+		Decrypt:   func([]byte) ([]byte, error) { return sw.preimage, nil },
 	})
 	require.NoError(t, err)
 	tree, err := txutils.TapTree(inst.Tapscripts(0)).Encode()
 	require.NoError(t, err)
 	program := mustHex(t, sw.variables["receiver_program"])
-	body := TLV(mustHex(t, sw.variables["preimage"]), EnforcePayTo(t, program), encryptionKey(t, d))
+	terms := sw.terms
+	if terms == "" {
+		terms = sw.sealTerms(t, d, sw.templateID, sw.variables["receiver_program"], amount)
+	}
+	body := TLV(mustHex(t, terms), EnforcePayTo(t, program), encryptionKey(t, d))
 	ext, err := extension.Extension{packets.Raw(4, body)}.TxOut()
 	require.NoError(t, err)
 

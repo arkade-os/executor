@@ -31,8 +31,9 @@ type Signer interface {
 	// ConfirmRegistration confirms the intent of proofTxid, which a batch selected.
 	ConfirmRegistration(ctx context.Context, proofTxid string) error
 	// BatchEvents follows every batch, whoever's intents it takes, until ctx ends or stop is
-	// called. The trees of a batch come only for the topics added: the cosigner keys and the coin
-	// outpoints of its intents.
+	// called: a stream arkd ends is opened again, StreamLost then StreamReconnected telling so. The
+	// trees of a batch come only for the topics added: the cosigner keys and the coin outpoints of
+	// its intents.
 	BatchEvents(ctx context.Context) (events <-chan BatchEvent, stop func(), err error)
 	UpdateTopics(ctx context.Context, add, remove []string) error
 	SubmitTreeNonces(ctx context.Context, batchID, cosigner string, nonces tree.TreeNonces) error
@@ -95,6 +96,9 @@ type BatchFailed struct {
 // StreamReconnected says the batch events may have been missed.
 type StreamReconnected struct{}
 
+// StreamLost says arkd ended the batch events: none comes before StreamReconnected.
+type StreamLost struct{}
+
 type Database interface {
 	Ping(ctx context.Context) error
 }
@@ -129,3 +133,4 @@ func (BatchFinalization) batchEvent()    {}
 func (BatchFinalized) batchEvent()       {}
 func (BatchFailed) batchEvent()          {}
 func (StreamReconnected) batchEvent()    {}
+func (StreamLost) batchEvent()           {}

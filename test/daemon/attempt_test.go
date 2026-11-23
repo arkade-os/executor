@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -211,6 +212,7 @@ type swap struct {
 	receiverScript []byte
 	preimage       []byte
 	templateID     string
+	terms          string
 }
 
 func newSwap(t *testing.T, d *Daemon, templateID string) swap {
@@ -243,6 +245,13 @@ func newSwap(t *testing.T, d *Daemon, templateID string) swap {
 		preimage:       preimage,
 		templateID:     templateID,
 	}
+}
+
+func (s swap) sealTerms(
+	t *testing.T, d *Daemon, templateID, program string, least int64,
+) string {
+	t.Helper()
+	return seal(t, d, slices.Concat(s.preimage, mustHex(t, program+ScriptNum(least))), templateID)
 }
 
 func seal(t *testing.T, d *Daemon, preimage []byte, templateID string) string {
