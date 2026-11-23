@@ -82,7 +82,7 @@ func (s *Service) Status(ctx context.Context, forecast bool) (Status, error) {
 // Alive fails when the loop has been silent for LoopStall past the time its timer should have
 // fired, or when arkd's batch events have been lost for that long.
 func (s *Service) Alive(now time.Time) error {
-	if lostAt := s.batch.lostAt.Load(); lostAt != 0 {
+	if lostAt := s.batch.lostAtNano.Load(); lostAt != 0 {
 		if lost := now.Sub(time.Unix(0, lostAt)); lost > s.limits.LoopStall {
 			return fmt.Errorf("batch events lost for %s", lost.Round(time.Second))
 		}

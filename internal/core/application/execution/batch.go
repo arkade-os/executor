@@ -21,38 +21,38 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
-// registration is an intent registered at arkd, with what signs for it.
 type registration struct {
 	attempt delegation.Attempt
 	intent  *execution.Intent
-	dead    atomic.Bool // arkd refused the intent
+	dead    atomic.Bool
 }
 
-// current is the batch that carries our intents.
 type current struct {
-	id      string
-	expiry  arklib.RelativeLocktime
-	intents []*registration    // the ones we confirmed
-	session tree.SignerSession // nil until arkd asks our key to cosign
-	topics  []string           // our cosigner key and coin outpoints, which arkd sends our trees for
+	id         string
+	expiry     arklib.RelativeLocktime
+	intents    []*registration
+	session    tree.SignerSession
+	signed     bool
+	commitment string
+	topics     []string
 }
 
-// batchWorker owns the intents registered at arkd and follows the batches that take them.
 type batchWorker struct {
-	s        *Service
-	commands chan []execution.Entry
-	built    chan *registration
-	intents  map[string]*registration // by proof txid
-	inFlight *current
-	quiet    chan chan struct{}
-	exited   chan struct{}
-	idle     chan struct{} // closed once no batch holds our intents, when Stop waits for it
-	closing  bool          // no new intent is registered or confirmed
-	lostAt   atomic.Int64  // when arkd ended the batch events, unix nanoseconds, zero once back
+	s          *Service
+	commands   chan []execution.Entry
+	built      chan *registration
+	intents    map[string]*registration
+	inFlight   *current
+	quiet      chan chan struct{}
+	exited     chan struct{}
+	idle       chan struct{}
+	closing    bool
+	lostAtNano atomic.Int64
 }
 
 func (r *registration) proofTxid() string {
@@ -67,7 +67,6 @@ func (b *batchWorker) register(entries []execution.Entry) {
 	}
 }
 
-// adopt takes the intents already registered, so a batch event never misses one arkd knows.
 func (b *batchWorker) adopt() {
 	for {
 		select {
@@ -115,8 +114,6 @@ func (b *batchWorker) run(events <-chan ports.BatchEvent, stop func()) {
 	}
 }
 
-// quiesce stops the worker from taking part in new batches and waits at most d for the batch in
-// flight.
 func (b *batchWorker) quiesce(d time.Duration) {
 	idle := make(chan struct{})
 	timeout := time.After(d)
@@ -141,7 +138,6 @@ func (b *batchWorker) settled() {
 	}
 }
 
-// build registers the entry's intent at arkd and persists the attempt; a failure ends the attempt.
 func (b *batchWorker) build(e execution.Entry) {
 	s := b.s
 	select {
@@ -211,8 +207,6 @@ func (b *batchWorker) build(e execution.Entry) {
 		Info("intent registered")
 }
 
-// intentOf builds the intent of the entry's coins, cosigned by the emulator when the covenant needs
-// it.
 func (b *batchWorker) intentOf(
 	ctx context.Context, inst *delegationapp.Instance, e execution.Entry,
 ) (*execution.Intent, error) {
@@ -237,9 +231,14 @@ func (b *batchWorker) intentOf(
 		return nil, err
 	}
 	if in.HasArkadePacket {
-		if in.Proof, err = s.emulator.SubmitIntent(ctx, *in); err != nil {
+		cosigned, err := s.emulator.SubmitIntent(ctx, *in)
+		if err != nil {
 			return nil, fmt.Errorf("emulator: %w", refusal(ctx, err))
 		}
+		if err := sameProofTx(in.Proof, cosigned); err != nil {
+			return nil, fmt.Errorf("emulator: %w", err)
+		}
+		in.Proof = cosigned
 	}
 	return in, nil
 }
@@ -263,14 +262,13 @@ func (b *batchWorker) handle(ev ports.BatchEvent) {
 	case ports.StreamLost:
 		b.lose()
 	case ports.StreamReconnected:
-		b.lostAt.Store(0)
+		b.lostAtNano.Store(0)
 		if b.inFlight != nil {
 			b.abort(errors.New("batch events interrupted"))
 		}
 	}
 }
 
-// started confirms the intents the batch selected and tells the loop to register the next ones.
 func (b *batchWorker) started(ev ports.BatchStarted) {
 	if b.closing {
 		return
@@ -355,6 +353,10 @@ func (b *batchWorker) signing(ev ports.TreeSigningStarted) {
 	if r.session != nil || !slices.Contains(ev.CosignersPubkeys, b.s.cosigner) {
 		return
 	}
+	if err := b.checkTree(r, commitment, ev.VtxoTree); err != nil {
+		b.abort(err)
+		return
+	}
 	session := tree.NewTreeSignerSession(b.s.cosignerKey)
 	if err := session.Init(root, commitment.UnsignedTx.TxOut[0].Value, ev.VtxoTree); err != nil {
 		b.abort(err)
@@ -369,13 +371,15 @@ func (b *batchWorker) signing(ev ports.TreeSigningStarted) {
 		return
 	}
 	r.session = session
+	r.commitment = commitment.UnsignedTx.TxHash().String()
 }
 
 func (b *batchWorker) signatures(ev ports.TreeNoncesAggregated) {
 	r := b.inFlight
-	if r == nil || r.id != ev.ID || r.session == nil {
+	if r == nil || r.id != ev.ID || r.session == nil || r.signed {
 		return
 	}
+	r.signed = true
 	r.session.SetAggregatedNonces(ev.TreeNonces)
 	sigs, err := r.session.Sign()
 	if err == nil {
@@ -387,9 +391,57 @@ func (b *batchWorker) signatures(ev ports.TreeNoncesAggregated) {
 	}
 }
 
+func (b *batchWorker) checkTree(
+	r *current, commitment *psbt.Packet, vtxoTree *tree.TxTree,
+) error {
+	if vtxoTree == nil {
+		return errors.New("batch has no vtxo tree")
+	}
+	if err := tree.ValidateVtxoTree(
+		vtxoTree, commitment, b.s.info.ForfeitPubkey, r.expiry,
+	); err != nil {
+		return fmt.Errorf("vtxo tree: %w", err)
+	}
+	var wanted []*wire.TxOut
+	for _, h := range r.intents {
+		wanted = append(wanted, h.intent.Outputs...)
+	}
+	var delivered []*wire.TxOut
+	for _, leaf := range vtxoTree.Leaves() {
+		delivered = append(delivered, leaf.UnsignedTx.TxOut...)
+	}
+	if !delivers(delivered, wanted) {
+		return errors.New("vtxo tree does not deliver the registered outputs")
+	}
+	return nil
+}
+
+func (r *current) checkFinalization(ev ports.BatchFinalization) error {
+	commitment, err := psbt.NewFromRawBytes(strings.NewReader(ev.CommitmentTx), true)
+	if err != nil || commitment.UnsignedTx == nil {
+		return errors.New("finalization has no commitment tx")
+	}
+	txid := commitment.UnsignedTx.TxHash()
+	if txid.String() != r.commitment {
+		return errors.New("finalization commitment tx differs from the one signed")
+	}
+	if ev.ConnectorTree != nil {
+		root := ev.ConnectorTree.Root
+		if root == nil || len(root.UnsignedTx.TxIn) == 0 ||
+			root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash != txid {
+			return errors.New("connector tree is not rooted in the commitment tx")
+		}
+	}
+	return nil
+}
+
 func (b *batchWorker) finalization(ev ports.BatchFinalization) {
 	r := b.inFlight
 	if r == nil || r.id != ev.ID || r.session == nil {
+		return
+	}
+	if err := r.checkFinalization(ev); err != nil {
+		b.abort(err)
 		return
 	}
 	var flat tree.FlatTxTree
@@ -452,7 +504,6 @@ func (b *batchWorker) forfeit(
 	return nil
 }
 
-// finalized ends the batch: our attempts wait for the coins table to show them spent.
 func (b *batchWorker) finalized(ev ports.BatchFinalized) {
 	r := b.inFlight
 	if r == nil || r.id != ev.ID {
@@ -474,7 +525,7 @@ func (b *batchWorker) finalized(ev ports.BatchFinalized) {
 }
 
 func (b *batchWorker) lose() {
-	b.lostAt.Store(time.Now().UnixNano())
+	b.lostAtNano.Store(time.Now().UnixNano())
 	r := b.inFlight
 	b.inFlight = nil
 	defer b.settled()
@@ -487,8 +538,6 @@ func (b *batchWorker) lose() {
 	}
 }
 
-// abort fails the attempts of the batch: their coins are tried again on a later one, the blamed
-// ones after a ban. A daemon that is stopping leaves them as they are.
 func (b *batchWorker) abort(err error, blamed ...string) {
 	r := b.inFlight
 	b.inFlight = nil
@@ -507,7 +556,6 @@ func (b *batchWorker) abort(err error, blamed ...string) {
 	}
 }
 
-// expire forgets the intents no batch selected within the timeout; their coins are queued again.
 func (b *batchWorker) expire(now time.Time) {
 	for id, h := range b.intents {
 		a := h.attempt
@@ -569,6 +617,35 @@ func topicsOf(cosigner string, intents []*registration) []string {
 	}
 	slices.Sort(topics)
 	return slices.Compact(topics)
+}
+
+func delivers(delivered, wanted []*wire.TxOut) bool {
+	left := slices.Clone(delivered)
+	for _, w := range wanted {
+		i := slices.IndexFunc(left, func(o *wire.TxOut) bool {
+			return o.Value == w.Value && bytes.Equal(o.PkScript, w.PkScript)
+		})
+		if i < 0 {
+			return false
+		}
+		left = slices.Delete(left, i, i+1)
+	}
+	return true
+}
+
+func sameProofTx(local, remote string) error {
+	txids := make([]string, 0, 2)
+	for _, raw := range []string{local, remote} {
+		p, err := psbt.NewFromRawBytes(strings.NewReader(raw), true)
+		if err != nil {
+			return fmt.Errorf("intent proof: %w", err)
+		}
+		txids = append(txids, p.UnsignedTx.TxHash().String())
+	}
+	if txids[0] != txids[1] {
+		return errors.New("cosigned intent proof differs from the one submitted")
+	}
+	return nil
 }
 
 func sweepTapTreeRoot(forfeitKey *btcec.PublicKey, expiry arklib.RelativeLocktime) ([]byte, error) {
