@@ -1,6 +1,6 @@
 module github.com/arkade-os/executor/api-spec
 
-go 1.26.11
+go 1.27.4
 
 require (
 	github.com/meshapi/grpc-api-gateway v0.1.0

@@ -77,6 +77,48 @@
         }
       }
     },
+    "/v1/admin/delegation/{id}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "description": "GetDelegationDetail returns a delegation with its coins, by id.",
+        "operationId": "AdminService_GetDelegationDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDelegationDetailResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/delegation/{id}/attempts": {
       "get": {
         "tags": [
@@ -738,6 +780,49 @@
         "title": "CancelStreamResponse",
         "type": "object"
       },
+      "Coin": {
+        "title": "Coin",
+        "type": "object",
+        "description": "Coin is a vtxo found at a delegation's input.",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "confirmations": {
+            "type": "integer",
+            "description": "confirmations is how deep an onchain coin is buried, 0 in the mempool and for vtxos.",
+            "format": "int32"
+          },
+          "due": {
+            "type": "integer",
+            "description": "due is unix seconds, when the delegation becomes eligible to spend the coin.",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "description": "expires_at is unix seconds, 0 when the coin never expires.",
+            "format": "int64"
+          },
+          "input": {
+            "type": "integer",
+            "description": "input is the index of the delegation input the coin landed at.",
+            "format": "int32"
+          },
+          "outpoint": {
+            "type": "string",
+            "description": "outpoint is txid:vout."
+          },
+          "spentBy": {
+            "type": "string",
+            "description": "spent_by is the txid that consumed the coin, empty while present or unknown."
+          },
+          "status": {
+            "type": "string",
+            "description": "status is present or spent."
+          }
+        }
+      },
       "Delegation": {
         "title": "Delegation",
         "type": "object",
@@ -867,6 +952,32 @@
             "type": "integer",
             "description": "due and deadline are unix seconds.",
             "format": "int64"
+          }
+        }
+      },
+      "GetDelegationDetailRequest": {
+        "title": "GetDelegationDetailRequest",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "GetDelegationDetailResponse": {
+        "title": "GetDelegationDetailResponse",
+        "type": "object",
+        "properties": {
+          "coins": {
+            "type": "array",
+            "description": "coins are the vtxos found at the delegation's inputs, present and spent.",
+            "items": {
+              "$ref": "#/components/schemas/Coin"
+            }
+          },
+          "delegation": {
+            "$ref": "#/components/schemas/Delegation"
           }
         }
       },

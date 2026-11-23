@@ -20,7 +20,7 @@ service ExecutorService {
       body: "*"
     };
   }
-  // GetDelegation returns a delegation with its coins, by ?id= or by ?address=.
+  // GetDelegation returns a delegation with its coins, by ?address=.
   rpc GetDelegation(GetDelegationRequest) returns (GetDelegationResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/delegation"
@@ -82,9 +82,8 @@ message RegisterDelegationResponse {
   Delegation delegation = 1;
 }
 message GetDelegationRequest {
-  int64 id = 1;
   // address matches any input address of the delegation.
-  string address = 2;
+  string address = 1;
 }
 message GetDelegationResponse {
   Delegation delegation = 1;

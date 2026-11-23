@@ -19,19 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AdminService_UpdateTemplate_FullMethodName   = "/executor.v1.AdminService/UpdateTemplate"
-	AdminService_DeleteTemplate_FullMethodName   = "/executor.v1.AdminService/DeleteTemplate"
-	AdminService_ListArtifacts_FullMethodName    = "/executor.v1.AdminService/ListArtifacts"
-	AdminService_DeleteArtifact_FullMethodName   = "/executor.v1.AdminService/DeleteArtifact"
-	AdminService_ListDelegations_FullMethodName  = "/executor.v1.AdminService/ListDelegations"
-	AdminService_CancelDelegation_FullMethodName = "/executor.v1.AdminService/CancelDelegation"
-	AdminService_ResumeDelegation_FullMethodName = "/executor.v1.AdminService/ResumeDelegation"
-	AdminService_ListAttempts_FullMethodName     = "/executor.v1.AdminService/ListAttempts"
-	AdminService_RegisterStream_FullMethodName   = "/executor.v1.AdminService/RegisterStream"
-	AdminService_ListStreams_FullMethodName      = "/executor.v1.AdminService/ListStreams"
-	AdminService_CancelStream_FullMethodName     = "/executor.v1.AdminService/CancelStream"
-	AdminService_GetHealth_FullMethodName        = "/executor.v1.AdminService/GetHealth"
-	AdminService_GetStatus_FullMethodName        = "/executor.v1.AdminService/GetStatus"
+	AdminService_UpdateTemplate_FullMethodName      = "/executor.v1.AdminService/UpdateTemplate"
+	AdminService_DeleteTemplate_FullMethodName      = "/executor.v1.AdminService/DeleteTemplate"
+	AdminService_ListArtifacts_FullMethodName       = "/executor.v1.AdminService/ListArtifacts"
+	AdminService_DeleteArtifact_FullMethodName      = "/executor.v1.AdminService/DeleteArtifact"
+	AdminService_ListDelegations_FullMethodName     = "/executor.v1.AdminService/ListDelegations"
+	AdminService_GetDelegationDetail_FullMethodName = "/executor.v1.AdminService/GetDelegationDetail"
+	AdminService_CancelDelegation_FullMethodName    = "/executor.v1.AdminService/CancelDelegation"
+	AdminService_ResumeDelegation_FullMethodName    = "/executor.v1.AdminService/ResumeDelegation"
+	AdminService_ListAttempts_FullMethodName        = "/executor.v1.AdminService/ListAttempts"
+	AdminService_RegisterStream_FullMethodName      = "/executor.v1.AdminService/RegisterStream"
+	AdminService_ListStreams_FullMethodName         = "/executor.v1.AdminService/ListStreams"
+	AdminService_CancelStream_FullMethodName        = "/executor.v1.AdminService/CancelStream"
+	AdminService_GetHealth_FullMethodName           = "/executor.v1.AdminService/GetHealth"
+	AdminService_GetStatus_FullMethodName           = "/executor.v1.AdminService/GetStatus"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -50,6 +51,8 @@ type AdminServiceClient interface {
 	DeleteArtifact(ctx context.Context, in *DeleteArtifactRequest, opts ...grpc.CallOption) (*DeleteArtifactResponse, error)
 	// ListDelegations lists delegations by the earliest due of their coins, those without coins last, paged by cursor.
 	ListDelegations(ctx context.Context, in *ListDelegationsRequest, opts ...grpc.CallOption) (*ListDelegationsResponse, error)
+	// GetDelegationDetail returns a delegation with its coins, by id.
+	GetDelegationDetail(ctx context.Context, in *GetDelegationDetailRequest, opts ...grpc.CallOption) (*GetDelegationDetailResponse, error)
 	// CancelDelegation stops an active delegation; its fingerprint cannot be registered again until resumed.
 	CancelDelegation(ctx context.Context, in *CancelDelegationRequest, opts ...grpc.CallOption) (*CancelDelegationResponse, error)
 	// ResumeDelegation puts a cancelled delegation back to active.
@@ -120,6 +123,16 @@ func (c *adminServiceClient) ListDelegations(ctx context.Context, in *ListDelega
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListDelegationsResponse)
 	err := c.cc.Invoke(ctx, AdminService_ListDelegations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetDelegationDetail(ctx context.Context, in *GetDelegationDetailRequest, opts ...grpc.CallOption) (*GetDelegationDetailResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDelegationDetailResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetDelegationDetail_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -222,6 +235,8 @@ type AdminServiceServer interface {
 	DeleteArtifact(context.Context, *DeleteArtifactRequest) (*DeleteArtifactResponse, error)
 	// ListDelegations lists delegations by the earliest due of their coins, those without coins last, paged by cursor.
 	ListDelegations(context.Context, *ListDelegationsRequest) (*ListDelegationsResponse, error)
+	// GetDelegationDetail returns a delegation with its coins, by id.
+	GetDelegationDetail(context.Context, *GetDelegationDetailRequest) (*GetDelegationDetailResponse, error)
 	// CancelDelegation stops an active delegation; its fingerprint cannot be registered again until resumed.
 	CancelDelegation(context.Context, *CancelDelegationRequest) (*CancelDelegationResponse, error)
 	// ResumeDelegation puts a cancelled delegation back to active.
@@ -261,6 +276,9 @@ func (UnimplementedAdminServiceServer) DeleteArtifact(context.Context, *DeleteAr
 }
 func (UnimplementedAdminServiceServer) ListDelegations(context.Context, *ListDelegationsRequest) (*ListDelegationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDelegations not implemented")
+}
+func (UnimplementedAdminServiceServer) GetDelegationDetail(context.Context, *GetDelegationDetailRequest) (*GetDelegationDetailResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDelegationDetail not implemented")
 }
 func (UnimplementedAdminServiceServer) CancelDelegation(context.Context, *CancelDelegationRequest) (*CancelDelegationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelDelegation not implemented")
@@ -392,6 +410,24 @@ func _AdminService_ListDelegations_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).ListDelegations(ctx, req.(*ListDelegationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetDelegationDetail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDelegationDetailRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetDelegationDetail(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetDelegationDetail_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetDelegationDetail(ctx, req.(*GetDelegationDetailRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -566,6 +602,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDelegations",
 			Handler:    _AdminService_ListDelegations_Handler,
+		},
+		{
+			MethodName: "GetDelegationDetail",
+			Handler:    _AdminService_GetDelegationDetail_Handler,
 		},
 		{
 			MethodName: "CancelDelegation",

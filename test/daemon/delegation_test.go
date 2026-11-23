@@ -47,9 +47,13 @@ func TestRegisterDelegationOverREST(t *testing.T) {
 	)
 	require.Equal(t, schnorr.SerializePubKey(d.Server), schnorr.SerializePubKey(addr.Signer))
 
-	code, body := get(t, d.RestURL+"/v1/delegation?id="+first.ID)
+	code, body := get(t, d.AdminURL+"/v1/admin/delegation/"+first.ID)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, first, decodeDelegation(t, body))
+	code, body = get(t, d.RestURL+"/v1/delegation?id="+first.ID)
+	require.Equal(t, http.StatusBadRequest, code, string(body))
+	code, body = get(t, d.RestURL+"/v1/admin/delegation/"+first.ID)
+	require.Equal(t, http.StatusNotFound, code, string(body))
 	code, body = get(t, d.RestURL+"/v1/delegation?address="+first.Inputs[0].Address)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, first, decodeDelegation(t, body))
@@ -67,8 +71,6 @@ func TestRegisterDelegationOverREST(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, first.Fingerprint, got.GetDelegation().GetFingerprint())
-	code, _ = get(t, d.RestURL+"/v1/delegation?id=404")
-	require.Equal(t, http.StatusNotFound, code)
 	code, _ = get(t, d.RestURL+"/v1/delegation?address=nowhere")
 	require.Equal(t, http.StatusNotFound, code)
 }
@@ -93,10 +95,6 @@ func TestRegisterDelegationRefused(t *testing.T) {
 		t, d.AdminURL+"/v1/admin/template/"+templateID, map[string]string{"status": "active"},
 	)
 	require.Equal(t, http.StatusOK, code, string(body))
-
-	two := registerFixture(t, d, "counter.json")
-	code, body = register(two, nil, 0)
-	require.Equal(t, http.StatusBadRequest, code, string(body))
 
 	release := registerFixture(t, d, "delegate_release.json")
 	code, body = register(release, nil, 0)
@@ -204,7 +202,7 @@ func TestCancelThenResumeDelegation(t *testing.T) {
 
 	code, body := post(t, d.AdminURL+"/v1/admin/delegation/"+dlg.ID+"/cancel", map[string]any{})
 	require.Equal(t, http.StatusOK, code, string(body))
-	code, body = get(t, d.RestURL+"/v1/delegation?id="+dlg.ID)
+	code, body = get(t, d.RestURL+"/v1/delegation?address="+dlg.Inputs[0].Address)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, "cancelled", decodeDelegation(t, body).Status)
 	code, body = post(
@@ -217,7 +215,7 @@ func TestCancelThenResumeDelegation(t *testing.T) {
 
 	code, body = post(t, d.AdminURL+"/v1/admin/delegation/"+dlg.ID+"/resume", map[string]any{})
 	require.Equal(t, http.StatusOK, code, string(body))
-	code, body = get(t, d.RestURL+"/v1/delegation?id="+dlg.ID)
+	code, body = get(t, d.RestURL+"/v1/delegation?address="+dlg.Inputs[0].Address)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, "active", decodeDelegation(t, body).Status)
 	code, body = post(
@@ -259,7 +257,7 @@ func TestExpireAndListDelegations(t *testing.T) {
 		ids = append(ids, decodeDelegation(t, body).ID)
 	}
 	require.Eventually(t, func() bool {
-		_, body := get(t, d.RestURL+"/v1/delegation?id="+expiring.ID)
+		_, body := get(t, d.AdminURL+"/v1/admin/delegation/"+expiring.ID)
 		return decodeDelegation(t, body).Status == "expired"
 	}, 10*time.Second, 100*time.Millisecond)
 

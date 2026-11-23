@@ -479,6 +479,7 @@ func (a *ark) settle(
 	if err != nil {
 		return err
 	}
+	serverKey := hex.EncodeToString(a.server.PubKey().SerializeCompressed())
 	var leaves []tree.Leaf
 	var boardings []boardingInput
 	vtxos := 0
@@ -502,7 +503,7 @@ func (a *ark) settle(
 				Outputs: []tree.LeafOutput{
 					{Amount: uint64(out.Value), Script: hex.EncodeToString(out.PkScript)},
 				},
-				CosignersPublicKeys: r.cosigners,
+				CosignersPublicKeys: slices.Concat(r.cosigners, []string{serverKey}),
 			})
 		}
 		for _, c := range r.cosigners {
@@ -575,6 +576,15 @@ func (a *ark) settle(
 	if err != nil {
 		return err
 	}
+	server := tree.NewTreeSignerSession(a.server)
+	if err := server.Init(sweepRoot, batchAmount, vtxoTree); err != nil {
+		return err
+	}
+	serverNonces, err := server.GetNonces()
+	if err != nil {
+		return err
+	}
+	coordinator.AddNonce(a.server.PubKey(), serverNonces)
 
 	keys := slices.Collect(maps.Keys(cosigners))
 	a.pause()
@@ -594,6 +604,14 @@ func (a *ark) settle(
 	a.mu.Unlock()
 	aggregated, err := coordinator.AggregateNonces()
 	if err != nil {
+		return err
+	}
+	server.SetAggregatedNonces(aggregated)
+	serverSigs, err := server.Sign()
+	if err != nil {
+		return err
+	}
+	if _, err := coordinator.AddSignatures(a.server.PubKey(), serverSigs); err != nil {
 		return err
 	}
 	a.pause()

@@ -538,8 +538,8 @@ function lifeBar(c, batchAt, reserve) {
 }
 
 async function delegationDetail(key) {
-  const lookup = /^\d+$/.test(key) ? `id=${key}` : `address=${encodeURIComponent(decodeURIComponent(key))}`;
-  const detail = await api(`delegation?${lookup}`);
+  const lookup = /^\d+$/.test(key) ? `admin/delegation/${key}` : `delegation?address=${encodeURIComponent(decodeURIComponent(key))}`;
+  const detail = await api(lookup);
   const d = detail.delegation;
   const [{ attempts = [], nextCursor = 0 }, forecast] = await Promise.all([
     api(`admin/delegation/${d.id}/attempts?limit=100`), api(`admin/status`), load('templates', 'info'),

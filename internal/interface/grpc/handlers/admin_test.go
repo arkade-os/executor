@@ -112,8 +112,8 @@ func TestCancelThenResumeDelegation(t *testing.T) {
 		t.Context(), &executorv1.CancelDelegationRequest{Id: delegationID},
 	)
 	require.NoError(t, err)
-	got, err := public.GetDelegation(
-		t.Context(), &executorv1.GetDelegationRequest{Id: delegationID},
+	got, err := admin.GetDelegationDetail(
+		t.Context(), &executorv1.GetDelegationDetailRequest{Id: delegationID},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "cancelled", got.GetDelegation().GetStatus())
@@ -130,7 +130,9 @@ func TestCancelThenResumeDelegation(t *testing.T) {
 		t.Context(), &executorv1.ResumeDelegationRequest{Id: delegationID},
 	)
 	require.NoError(t, err)
-	got, err = public.GetDelegation(t.Context(), &executorv1.GetDelegationRequest{Id: delegationID})
+	got, err = admin.GetDelegationDetail(
+		t.Context(), &executorv1.GetDelegationDetailRequest{Id: delegationID},
+	)
 	require.NoError(t, err)
 	require.Equal(t, "active", got.GetDelegation().GetStatus())
 	again, err := public.RegisterDelegation(
@@ -221,6 +223,46 @@ func TestListDelegations(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	_, err = admin.ListDelegations(t.Context(), &executorv1.ListDelegationsRequest{Limit: -1})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestGetDelegationDetail(t *testing.T) {
+	public, coins, _ := testHandlerAndStores(
+		t, 10, delegationapp.Limits{MinDelegationExpiry: 24 * time.Hour},
+	)
+	admin := NewAdmin(public.registry, public.delegations, public.execution, nil)
+	reg, err := public.RegisterDelegation(t.Context(), &executorv1.RegisterDelegationRequest{
+		TemplateId: registerDefault(t, public), Variables: renewalVariables(t),
+	})
+	require.NoError(t, err)
+	d := reg.GetDelegation()
+	require.NoError(t, coins.Upsert(t.Context(), delegation.Coin{
+		Outpoint: "aa:0", DelegationID: d.GetId(), Script: d.GetInputs()[0].GetScript(),
+		Amount: 1000, CreatedAt: time.Now(), Status: delegation.Present,
+	}))
+
+	tests := []struct {
+		name string
+		id   int64
+		want codes.Code
+	}{
+		{"known id", d.GetId(), codes.OK},
+		{"unknown id", d.GetId() + 1, codes.NotFound},
+		{"missing id", 0, codes.InvalidArgument},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := admin.GetDelegationDetail(
+				t.Context(), &executorv1.GetDelegationDetailRequest{Id: tt.id},
+			)
+			require.Equal(t, tt.want, status.Code(err))
+			if tt.want != codes.OK {
+				return
+			}
+			require.Equal(t, d.GetFingerprint(), got.GetDelegation().GetFingerprint())
+			require.Len(t, got.GetCoins(), 1)
+			require.Equal(t, "aa:0", got.GetCoins()[0].GetOutpoint())
+		})
+	}
 }
 
 func TestGetHealth(t *testing.T) {
@@ -327,13 +369,13 @@ func TestExpireDelegations(t *testing.T) {
 	n, err = admin.delegations.ExpireDelegations(t.Context(), soon)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
-	gone, err := public.GetDelegation(
-		t.Context(), &executorv1.GetDelegationRequest{Id: reg.GetDelegation().GetId()},
+	gone, err := admin.GetDelegationDetail(
+		t.Context(), &executorv1.GetDelegationDetailRequest{Id: reg.GetDelegation().GetId()},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "expired", gone.GetDelegation().GetStatus())
-	got, err := public.GetDelegation(
-		t.Context(), &executorv1.GetDelegationRequest{Id: forever.GetDelegation().GetId()},
+	got, err := admin.GetDelegationDetail(
+		t.Context(), &executorv1.GetDelegationDetailRequest{Id: forever.GetDelegation().GetId()},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "active", got.GetDelegation().GetStatus())
