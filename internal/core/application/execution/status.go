@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	delegationapp "github.com/arkade-os/executor/internal/core/application/delegation"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
 	"github.com/arkade-os/executor/internal/core/domain/execution"
 )
@@ -32,6 +33,7 @@ type Status struct {
 	TemplateFailures uint64
 	Reserve          time.Duration // before expiry, the latest a coin enters a batch
 	Session          execution.Session
+	Capacity         delegationapp.Capacity
 }
 
 // BatchForecast is what a coming batch is expected to carry of ours.
@@ -67,9 +69,10 @@ func (s *Service) Status(ctx context.Context, forecast bool) (Status, error) {
 		out = *p
 	}
 	var err error
-	if out.Active, err = s.delegations.CountActive(ctx); err != nil {
+	if out.Capacity, err = s.delegations.Capacity(ctx, forecast); err != nil {
 		return out, err
 	}
+	out.Active = out.Capacity.Clients.Active + out.Capacity.Spawned.Active
 	if out.Coins, out.Amount, err = s.coins.Totals(ctx); err != nil {
 		return out, err
 	}

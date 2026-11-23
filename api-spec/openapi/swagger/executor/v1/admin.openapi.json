@@ -780,6 +780,48 @@
         "title": "CancelStreamResponse",
         "type": "object"
       },
+      "CapUsage": {
+        "title": "CapUsage",
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "evicted": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "max": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refused": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "Capacity": {
+        "title": "Capacity",
+        "type": "object",
+        "properties": {
+          "clients": {
+            "$ref": "#/components/schemas/CapUsage"
+          },
+          "clientsHoldingCoin": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "clientsNeverFunded": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "spawned": {
+            "$ref": "#/components/schemas/CapUsage"
+          }
+        }
+      },
       "Coin": {
         "title": "Coin",
         "type": "object",
@@ -1025,6 +1067,9 @@
             "items": {
               "$ref": "#/components/schemas/BatchForecast"
             }
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/Capacity"
           },
           "coins": {
             "type": "integer",

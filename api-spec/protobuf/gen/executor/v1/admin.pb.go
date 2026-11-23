@@ -1628,8 +1628,9 @@ type GetStatusResponse struct {
 	// reserve_seconds is how long before expiry a coin enters a batch at the latest.
 	ReserveSeconds int64 `protobuf:"varint,13,opt,name=reserve_seconds,json=reserveSeconds,proto3" json:"reserve_seconds,omitempty"`
 	// session_seconds is how often arkd runs a batch, max_intents how many of ours one batch takes.
-	SessionSeconds int64 `protobuf:"varint,14,opt,name=session_seconds,json=sessionSeconds,proto3" json:"session_seconds,omitempty"`
-	MaxIntents     int64 `protobuf:"varint,15,opt,name=max_intents,json=maxIntents,proto3" json:"max_intents,omitempty"`
+	SessionSeconds int64     `protobuf:"varint,14,opt,name=session_seconds,json=sessionSeconds,proto3" json:"session_seconds,omitempty"`
+	MaxIntents     int64     `protobuf:"varint,15,opt,name=max_intents,json=maxIntents,proto3" json:"max_intents,omitempty"`
+	Capacity       *Capacity `protobuf:"bytes,16,opt,name=capacity,proto3" json:"capacity,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1769,6 +1770,149 @@ func (x *GetStatusResponse) GetMaxIntents() int64 {
 	return 0
 }
 
+func (x *GetStatusResponse) GetCapacity() *Capacity {
+	if x != nil {
+		return x.Capacity
+	}
+	return nil
+}
+
+type Capacity struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Clients            *CapUsage              `protobuf:"bytes,1,opt,name=clients,proto3" json:"clients,omitempty"`
+	Spawned            *CapUsage              `protobuf:"bytes,2,opt,name=spawned,proto3" json:"spawned,omitempty"`
+	ClientsHoldingCoin int64                  `protobuf:"varint,3,opt,name=clients_holding_coin,json=clientsHoldingCoin,proto3" json:"clients_holding_coin,omitempty"`
+	ClientsNeverFunded int64                  `protobuf:"varint,4,opt,name=clients_never_funded,json=clientsNeverFunded,proto3" json:"clients_never_funded,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *Capacity) Reset() {
+	*x = Capacity{}
+	mi := &file_executor_v1_admin_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Capacity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Capacity) ProtoMessage() {}
+
+func (x *Capacity) ProtoReflect() protoreflect.Message {
+	mi := &file_executor_v1_admin_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Capacity.ProtoReflect.Descriptor instead.
+func (*Capacity) Descriptor() ([]byte, []int) {
+	return file_executor_v1_admin_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *Capacity) GetClients() *CapUsage {
+	if x != nil {
+		return x.Clients
+	}
+	return nil
+}
+
+func (x *Capacity) GetSpawned() *CapUsage {
+	if x != nil {
+		return x.Spawned
+	}
+	return nil
+}
+
+func (x *Capacity) GetClientsHoldingCoin() int64 {
+	if x != nil {
+		return x.ClientsHoldingCoin
+	}
+	return 0
+}
+
+func (x *Capacity) GetClientsNeverFunded() int64 {
+	if x != nil {
+		return x.ClientsNeverFunded
+	}
+	return 0
+}
+
+type CapUsage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Active        int64                  `protobuf:"varint,1,opt,name=active,proto3" json:"active,omitempty"`
+	Max           int64                  `protobuf:"varint,2,opt,name=max,proto3" json:"max,omitempty"`
+	Evicted       uint64                 `protobuf:"varint,3,opt,name=evicted,proto3" json:"evicted,omitempty"`
+	Refused       uint64                 `protobuf:"varint,4,opt,name=refused,proto3" json:"refused,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapUsage) Reset() {
+	*x = CapUsage{}
+	mi := &file_executor_v1_admin_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapUsage) ProtoMessage() {}
+
+func (x *CapUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_executor_v1_admin_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapUsage.ProtoReflect.Descriptor instead.
+func (*CapUsage) Descriptor() ([]byte, []int) {
+	return file_executor_v1_admin_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *CapUsage) GetActive() int64 {
+	if x != nil {
+		return x.Active
+	}
+	return 0
+}
+
+func (x *CapUsage) GetMax() int64 {
+	if x != nil {
+		return x.Max
+	}
+	return 0
+}
+
+func (x *CapUsage) GetEvicted() uint64 {
+	if x != nil {
+		return x.Evicted
+	}
+	return 0
+}
+
+func (x *CapUsage) GetRefused() uint64 {
+	if x != nil {
+		return x.Refused
+	}
+	return 0
+}
+
 // BatchForecast is what a coming batch is expected to carry of ours.
 type BatchForecast struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1785,7 +1929,7 @@ type BatchForecast struct {
 
 func (x *BatchForecast) Reset() {
 	*x = BatchForecast{}
-	mi := &file_executor_v1_admin_proto_msgTypes[32]
+	mi := &file_executor_v1_admin_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1797,7 +1941,7 @@ func (x *BatchForecast) String() string {
 func (*BatchForecast) ProtoMessage() {}
 
 func (x *BatchForecast) ProtoReflect() protoreflect.Message {
-	mi := &file_executor_v1_admin_proto_msgTypes[32]
+	mi := &file_executor_v1_admin_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1810,7 +1954,7 @@ func (x *BatchForecast) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchForecast.ProtoReflect.Descriptor instead.
 func (*BatchForecast) Descriptor() ([]byte, []int) {
-	return file_executor_v1_admin_proto_rawDescGZIP(), []int{32}
+	return file_executor_v1_admin_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *BatchForecast) GetAt() int64 {
@@ -1863,7 +2007,7 @@ type ForecastEntry struct {
 
 func (x *ForecastEntry) Reset() {
 	*x = ForecastEntry{}
-	mi := &file_executor_v1_admin_proto_msgTypes[33]
+	mi := &file_executor_v1_admin_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1875,7 +2019,7 @@ func (x *ForecastEntry) String() string {
 func (*ForecastEntry) ProtoMessage() {}
 
 func (x *ForecastEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_executor_v1_admin_proto_msgTypes[33]
+	mi := &file_executor_v1_admin_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1888,7 +2032,7 @@ func (x *ForecastEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForecastEntry.ProtoReflect.Descriptor instead.
 func (*ForecastEntry) Descriptor() ([]byte, []int) {
-	return file_executor_v1_admin_proto_rawDescGZIP(), []int{33}
+	return file_executor_v1_admin_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ForecastEntry) GetDelegationId() int64 {
@@ -2033,7 +2177,7 @@ const file_executor_v1_admin_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\ahealthy\x18\x02 \x01(\bR\ahealthy\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\"\x12\n" +
-	"\x10GetStatusRequest\"\xeb\x03\n" +
+	"\x10GetStatusRequest\"\x9e\x04\n" +
 	"\x11GetStatusResponse\x12\x16\n" +
 	"\x06active\x18\x01 \x01(\x03R\x06active\x12\x16\n" +
 	"\x06queued\x18\x02 \x01(\x03R\x06queued\x12\x1e\n" +
@@ -2054,7 +2198,18 @@ const file_executor_v1_admin_proto_rawDesc = "" +
 	"\x0freserve_seconds\x18\r \x01(\x03R\x0ereserveSeconds\x12'\n" +
 	"\x0fsession_seconds\x18\x0e \x01(\x03R\x0esessionSeconds\x12\x1f\n" +
 	"\vmax_intents\x18\x0f \x01(\x03R\n" +
-	"maxIntents\"\x9d\x01\n" +
+	"maxIntents\x121\n" +
+	"\bcapacity\x18\x10 \x01(\v2\x15.executor.v1.CapacityR\bcapacity\"\xd0\x01\n" +
+	"\bCapacity\x12/\n" +
+	"\aclients\x18\x01 \x01(\v2\x15.executor.v1.CapUsageR\aclients\x12/\n" +
+	"\aspawned\x18\x02 \x01(\v2\x15.executor.v1.CapUsageR\aspawned\x120\n" +
+	"\x14clients_holding_coin\x18\x03 \x01(\x03R\x12clientsHoldingCoin\x120\n" +
+	"\x14clients_never_funded\x18\x04 \x01(\x03R\x12clientsNeverFunded\"h\n" +
+	"\bCapUsage\x12\x16\n" +
+	"\x06active\x18\x01 \x01(\x03R\x06active\x12\x10\n" +
+	"\x03max\x18\x02 \x01(\x03R\x03max\x12\x18\n" +
+	"\aevicted\x18\x03 \x01(\x04R\aevicted\x12\x18\n" +
+	"\arefused\x18\x04 \x01(\x04R\arefused\"\x9d\x01\n" +
 	"\rBatchForecast\x12\x0e\n" +
 	"\x02at\x18\x01 \x01(\x03R\x02at\x12\x18\n" +
 	"\aintents\x18\x02 \x01(\x03R\aintents\x12\x14\n" +
@@ -2097,7 +2252,7 @@ func file_executor_v1_admin_proto_rawDescGZIP() []byte {
 	return file_executor_v1_admin_proto_rawDescData
 }
 
-var file_executor_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_executor_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_executor_v1_admin_proto_goTypes = []any{
 	(*UpdateTemplateRequest)(nil),       // 0: executor.v1.UpdateTemplateRequest
 	(*UpdateTemplateResponse)(nil),      // 1: executor.v1.UpdateTemplateResponse
@@ -2131,61 +2286,66 @@ var file_executor_v1_admin_proto_goTypes = []any{
 	(*HealthEntry)(nil),                 // 29: executor.v1.HealthEntry
 	(*GetStatusRequest)(nil),            // 30: executor.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),           // 31: executor.v1.GetStatusResponse
-	(*BatchForecast)(nil),               // 32: executor.v1.BatchForecast
-	(*ForecastEntry)(nil),               // 33: executor.v1.ForecastEntry
-	nil,                                 // 34: executor.v1.RegisterStreamRequest.VariablesEntry
-	nil,                                 // 35: executor.v1.Stream.VariablesEntry
-	(*Artifact)(nil),                    // 36: executor.v1.Artifact
-	(*Delegation)(nil),                  // 37: executor.v1.Delegation
-	(*Coin)(nil),                        // 38: executor.v1.Coin
+	(*Capacity)(nil),                    // 32: executor.v1.Capacity
+	(*CapUsage)(nil),                    // 33: executor.v1.CapUsage
+	(*BatchForecast)(nil),               // 34: executor.v1.BatchForecast
+	(*ForecastEntry)(nil),               // 35: executor.v1.ForecastEntry
+	nil,                                 // 36: executor.v1.RegisterStreamRequest.VariablesEntry
+	nil,                                 // 37: executor.v1.Stream.VariablesEntry
+	(*Artifact)(nil),                    // 38: executor.v1.Artifact
+	(*Delegation)(nil),                  // 39: executor.v1.Delegation
+	(*Coin)(nil),                        // 40: executor.v1.Coin
 }
 var file_executor_v1_admin_proto_depIdxs = []int32{
-	36, // 0: executor.v1.ListArtifactsResponse.artifacts:type_name -> executor.v1.Artifact
+	38, // 0: executor.v1.ListArtifactsResponse.artifacts:type_name -> executor.v1.Artifact
 	10, // 1: executor.v1.ListDelegationsResponse.delegations:type_name -> executor.v1.DelegationSummary
-	37, // 2: executor.v1.DelegationSummary.delegation:type_name -> executor.v1.Delegation
-	37, // 3: executor.v1.GetDelegationDetailResponse.delegation:type_name -> executor.v1.Delegation
-	38, // 4: executor.v1.GetDelegationDetailResponse.coins:type_name -> executor.v1.Coin
+	39, // 2: executor.v1.DelegationSummary.delegation:type_name -> executor.v1.Delegation
+	39, // 3: executor.v1.GetDelegationDetailResponse.delegation:type_name -> executor.v1.Delegation
+	40, // 4: executor.v1.GetDelegationDetailResponse.coins:type_name -> executor.v1.Coin
 	19, // 5: executor.v1.ListAttemptsResponse.attempts:type_name -> executor.v1.Attempt
-	34, // 6: executor.v1.RegisterStreamRequest.variables:type_name -> executor.v1.RegisterStreamRequest.VariablesEntry
+	36, // 6: executor.v1.RegisterStreamRequest.variables:type_name -> executor.v1.RegisterStreamRequest.VariablesEntry
 	26, // 7: executor.v1.RegisterStreamResponse.stream:type_name -> executor.v1.Stream
 	26, // 8: executor.v1.ListStreamsResponse.streams:type_name -> executor.v1.Stream
-	35, // 9: executor.v1.Stream.variables:type_name -> executor.v1.Stream.VariablesEntry
+	37, // 9: executor.v1.Stream.variables:type_name -> executor.v1.Stream.VariablesEntry
 	29, // 10: executor.v1.GetHealthResponse.entries:type_name -> executor.v1.HealthEntry
-	32, // 11: executor.v1.GetStatusResponse.batches:type_name -> executor.v1.BatchForecast
-	33, // 12: executor.v1.BatchForecast.entries:type_name -> executor.v1.ForecastEntry
-	0,  // 13: executor.v1.AdminService.UpdateTemplate:input_type -> executor.v1.UpdateTemplateRequest
-	2,  // 14: executor.v1.AdminService.DeleteTemplate:input_type -> executor.v1.DeleteTemplateRequest
-	4,  // 15: executor.v1.AdminService.ListArtifacts:input_type -> executor.v1.ListArtifactsRequest
-	6,  // 16: executor.v1.AdminService.DeleteArtifact:input_type -> executor.v1.DeleteArtifactRequest
-	8,  // 17: executor.v1.AdminService.ListDelegations:input_type -> executor.v1.ListDelegationsRequest
-	11, // 18: executor.v1.AdminService.GetDelegationDetail:input_type -> executor.v1.GetDelegationDetailRequest
-	13, // 19: executor.v1.AdminService.CancelDelegation:input_type -> executor.v1.CancelDelegationRequest
-	15, // 20: executor.v1.AdminService.ResumeDelegation:input_type -> executor.v1.ResumeDelegationRequest
-	17, // 21: executor.v1.AdminService.ListAttempts:input_type -> executor.v1.ListAttemptsRequest
-	20, // 22: executor.v1.AdminService.RegisterStream:input_type -> executor.v1.RegisterStreamRequest
-	22, // 23: executor.v1.AdminService.ListStreams:input_type -> executor.v1.ListStreamsRequest
-	24, // 24: executor.v1.AdminService.CancelStream:input_type -> executor.v1.CancelStreamRequest
-	27, // 25: executor.v1.AdminService.GetHealth:input_type -> executor.v1.GetHealthRequest
-	30, // 26: executor.v1.AdminService.GetStatus:input_type -> executor.v1.GetStatusRequest
-	1,  // 27: executor.v1.AdminService.UpdateTemplate:output_type -> executor.v1.UpdateTemplateResponse
-	3,  // 28: executor.v1.AdminService.DeleteTemplate:output_type -> executor.v1.DeleteTemplateResponse
-	5,  // 29: executor.v1.AdminService.ListArtifacts:output_type -> executor.v1.ListArtifactsResponse
-	7,  // 30: executor.v1.AdminService.DeleteArtifact:output_type -> executor.v1.DeleteArtifactResponse
-	9,  // 31: executor.v1.AdminService.ListDelegations:output_type -> executor.v1.ListDelegationsResponse
-	12, // 32: executor.v1.AdminService.GetDelegationDetail:output_type -> executor.v1.GetDelegationDetailResponse
-	14, // 33: executor.v1.AdminService.CancelDelegation:output_type -> executor.v1.CancelDelegationResponse
-	16, // 34: executor.v1.AdminService.ResumeDelegation:output_type -> executor.v1.ResumeDelegationResponse
-	18, // 35: executor.v1.AdminService.ListAttempts:output_type -> executor.v1.ListAttemptsResponse
-	21, // 36: executor.v1.AdminService.RegisterStream:output_type -> executor.v1.RegisterStreamResponse
-	23, // 37: executor.v1.AdminService.ListStreams:output_type -> executor.v1.ListStreamsResponse
-	25, // 38: executor.v1.AdminService.CancelStream:output_type -> executor.v1.CancelStreamResponse
-	28, // 39: executor.v1.AdminService.GetHealth:output_type -> executor.v1.GetHealthResponse
-	31, // 40: executor.v1.AdminService.GetStatus:output_type -> executor.v1.GetStatusResponse
-	27, // [27:41] is the sub-list for method output_type
-	13, // [13:27] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	34, // 11: executor.v1.GetStatusResponse.batches:type_name -> executor.v1.BatchForecast
+	32, // 12: executor.v1.GetStatusResponse.capacity:type_name -> executor.v1.Capacity
+	33, // 13: executor.v1.Capacity.clients:type_name -> executor.v1.CapUsage
+	33, // 14: executor.v1.Capacity.spawned:type_name -> executor.v1.CapUsage
+	35, // 15: executor.v1.BatchForecast.entries:type_name -> executor.v1.ForecastEntry
+	0,  // 16: executor.v1.AdminService.UpdateTemplate:input_type -> executor.v1.UpdateTemplateRequest
+	2,  // 17: executor.v1.AdminService.DeleteTemplate:input_type -> executor.v1.DeleteTemplateRequest
+	4,  // 18: executor.v1.AdminService.ListArtifacts:input_type -> executor.v1.ListArtifactsRequest
+	6,  // 19: executor.v1.AdminService.DeleteArtifact:input_type -> executor.v1.DeleteArtifactRequest
+	8,  // 20: executor.v1.AdminService.ListDelegations:input_type -> executor.v1.ListDelegationsRequest
+	11, // 21: executor.v1.AdminService.GetDelegationDetail:input_type -> executor.v1.GetDelegationDetailRequest
+	13, // 22: executor.v1.AdminService.CancelDelegation:input_type -> executor.v1.CancelDelegationRequest
+	15, // 23: executor.v1.AdminService.ResumeDelegation:input_type -> executor.v1.ResumeDelegationRequest
+	17, // 24: executor.v1.AdminService.ListAttempts:input_type -> executor.v1.ListAttemptsRequest
+	20, // 25: executor.v1.AdminService.RegisterStream:input_type -> executor.v1.RegisterStreamRequest
+	22, // 26: executor.v1.AdminService.ListStreams:input_type -> executor.v1.ListStreamsRequest
+	24, // 27: executor.v1.AdminService.CancelStream:input_type -> executor.v1.CancelStreamRequest
+	27, // 28: executor.v1.AdminService.GetHealth:input_type -> executor.v1.GetHealthRequest
+	30, // 29: executor.v1.AdminService.GetStatus:input_type -> executor.v1.GetStatusRequest
+	1,  // 30: executor.v1.AdminService.UpdateTemplate:output_type -> executor.v1.UpdateTemplateResponse
+	3,  // 31: executor.v1.AdminService.DeleteTemplate:output_type -> executor.v1.DeleteTemplateResponse
+	5,  // 32: executor.v1.AdminService.ListArtifacts:output_type -> executor.v1.ListArtifactsResponse
+	7,  // 33: executor.v1.AdminService.DeleteArtifact:output_type -> executor.v1.DeleteArtifactResponse
+	9,  // 34: executor.v1.AdminService.ListDelegations:output_type -> executor.v1.ListDelegationsResponse
+	12, // 35: executor.v1.AdminService.GetDelegationDetail:output_type -> executor.v1.GetDelegationDetailResponse
+	14, // 36: executor.v1.AdminService.CancelDelegation:output_type -> executor.v1.CancelDelegationResponse
+	16, // 37: executor.v1.AdminService.ResumeDelegation:output_type -> executor.v1.ResumeDelegationResponse
+	18, // 38: executor.v1.AdminService.ListAttempts:output_type -> executor.v1.ListAttemptsResponse
+	21, // 39: executor.v1.AdminService.RegisterStream:output_type -> executor.v1.RegisterStreamResponse
+	23, // 40: executor.v1.AdminService.ListStreams:output_type -> executor.v1.ListStreamsResponse
+	25, // 41: executor.v1.AdminService.CancelStream:output_type -> executor.v1.CancelStreamResponse
+	28, // 42: executor.v1.AdminService.GetHealth:output_type -> executor.v1.GetHealthResponse
+	31, // 43: executor.v1.AdminService.GetStatus:output_type -> executor.v1.GetStatusResponse
+	30, // [30:44] is the sub-list for method output_type
+	16, // [16:30] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_executor_v1_admin_proto_init() }
@@ -2200,7 +2360,7 @@ func file_executor_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_executor_v1_admin_proto_rawDesc), len(file_executor_v1_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   36,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

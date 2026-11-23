@@ -59,6 +59,11 @@ type ListFilter struct {
 	Limit  int
 }
 
+type Usage struct {
+	Clients, Spawned                       int64
+	ClientsHoldingCoin, ClientsNeverFunded int64
+}
+
 type DelegationRepository interface {
 	// AddOrUpdate inserts d when its id is zero, filling the id and times in, else persists its
 	// status; ErrDelegationNotFound when no row has its id.
@@ -86,6 +91,7 @@ type DelegationRepository interface {
 	List(ctx context.Context, f ListFilter) ([]Delegation, error)
 	// CountActive counts the active delegations clients registered and those streams spawned.
 	CountActive(ctx context.Context) (clients, spawned int64, err error)
+	Usage(ctx context.Context) (Usage, error)
 	// Prune deletes the delegations a stream spawned that expired before the time, unless a
 	// successor names one as its parent.
 	Prune(ctx context.Context, before time.Time) (int64, error)

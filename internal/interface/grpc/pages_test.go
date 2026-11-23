@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	delegationapp "github.com/arkade-os/executor/internal/core/application/delegation"
 	executionapp "github.com/arkade-os/executor/internal/core/application/execution"
 	"github.com/arkade-os/executor/internal/core/application/health"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
@@ -37,6 +38,10 @@ func TestMetricsExposeTheStatusAndTheHealth(t *testing.T) {
 			Succeeded:        5,
 			Failed:           2,
 			TemplateFailures: 1,
+			Capacity: delegationapp.Capacity{
+				Clients: delegationapp.Cap{Active: 3, Max: 10, Evicted: 7, Refused: 2},
+				Spawned: delegationapp.Cap{Active: 1},
+			},
 		},
 	}
 	checks := &healthStub{
@@ -49,9 +54,16 @@ func TestMetricsExposeTheStatusAndTheHealth(t *testing.T) {
 		"executor_coins_watched 6", "executor_sats_watched 60000", "executor_chain_tip_height 812",
 		`executor_attempts_total{status="succeeded"} 5`, `executor_attempts_total{status="failed"} 2`,
 		"executor_template_failures_total 1", `executor_dependency_up{name="db"} 1`, `executor_dependency_up{name="arkd"} 0`,
+		`executor_delegations_cap_active{origin="client"} 3`,
+		`executor_delegations_cap_max{origin="client"} 10`,
+		`executor_delegations_cap_evicted_total{origin="client"} 7`,
+		`executor_delegations_cap_refused_total{origin="client"} 2`,
+		`executor_delegations_cap_active{origin="spawned"} 1`,
+		`executor_delegations_cap_refused_total{origin="spawned"} 0`,
 	} {
 		require.Contains(t, body, line+"\n")
 	}
+	require.NotContains(t, body, `executor_delegations_cap_max{origin="spawned"}`, "it has no cap")
 }
 
 func TestIndexIsServedAtTheRoot(t *testing.T) {

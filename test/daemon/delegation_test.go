@@ -137,10 +137,10 @@ func TestRegisterDelegationMakesRoomAtTheCap(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	registerDelegationWith(t, d, templateID, renewalVariables(t))
-	code, body := get(t, d.RestURL+"/v1/delegation?id="+funded.ID)
+	code, body := get(t, d.AdminURL+"/v1/admin/delegation/"+funded.ID)
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.Equal(t, "active", decodeDelegation(t, body).Status)
-	code, body = get(t, d.RestURL+"/v1/delegation?id="+idle.ID)
+	code, body = get(t, d.AdminURL+"/v1/admin/delegation/"+idle.ID)
 	require.Equal(t, http.StatusNotFound, code, "deleted to make room: %s", string(body))
 
 	code, body = post(

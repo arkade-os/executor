@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	delegationapp "github.com/arkade-os/executor/internal/core/application/delegation"
 	executionapp "github.com/arkade-os/executor/internal/core/application/execution"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
 	"github.com/arkade-os/executor/internal/interface/grpc/handlers"
@@ -25,6 +26,24 @@ type collector struct {
 var (
 	descActive = prometheus.NewDesc(
 		"executor_delegations_active", "Active delegations.", nil, nil,
+	)
+	descCapActive = prometheus.NewDesc(
+		"executor_delegations_cap_active",
+		"Active delegations counted toward the cap of their origin.", []string{"origin"}, nil,
+	)
+	descCapMax = prometheus.NewDesc(
+		"executor_delegations_cap_max",
+		"The cap on active delegations of the origin, absent without one.", []string{"origin"}, nil,
+	)
+	descCapEvicted = prometheus.NewDesc(
+		"executor_delegations_cap_evicted_total",
+		"Delegations holding no coin removed to make room at a full cap since the process started.",
+		[]string{"origin"}, nil,
+	)
+	descCapRefused = prometheus.NewDesc(
+		"executor_delegations_cap_refused_total",
+		"Registrations refused at a full cap since the process started. Alert on this.",
+		[]string{"origin"}, nil,
 	)
 	descQueued = prometheus.NewDesc(
 		"executor_entries_queued", "Entries waiting to be registered at arkd.", nil, nil,
@@ -70,6 +89,16 @@ func (c collector) Collect(ch chan<- prometheus.Metric) {
 	}
 	if st, err := c.status.Status(ctx, false); err == nil {
 		metric(descActive, prometheus.GaugeValue, float64(st.Active))
+		for origin, c := range map[string]delegationapp.Cap{
+			"client": st.Capacity.Clients, "spawned": st.Capacity.Spawned,
+		} {
+			metric(descCapActive, prometheus.GaugeValue, float64(c.Active), origin)
+			if c.Max > 0 {
+				metric(descCapMax, prometheus.GaugeValue, float64(c.Max), origin)
+			}
+			metric(descCapEvicted, prometheus.CounterValue, float64(c.Evicted), origin)
+			metric(descCapRefused, prometheus.CounterValue, float64(c.Refused), origin)
+		}
 		metric(descQueued, prometheus.GaugeValue, float64(st.Queued))
 		metric(descRegistered, prometheus.GaugeValue, float64(st.Registered))
 		metric(descLate, prometheus.GaugeValue, float64(st.Late))

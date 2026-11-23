@@ -2,6 +2,7 @@ package delegation
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -140,6 +141,68 @@ func TestMakeRoom(t *testing.T) {
 	})
 }
 
+func TestCapacity(t *testing.T) {
+	limits := Limits{
+		MaxDelegations: 1, MaxStreamChildren: 1, EvictIdleAfter: time.Hour,
+		ExpiryInterval: time.Minute,
+	}
+	tests := []struct {
+		name             string
+		streamID         int64
+		coinless         bool
+		evicted, refused uint64
+	}{
+		{name: "a client refused at the cap", refused: 1},
+		{name: "a client that made room", coinless: true, evicted: 1},
+		{name: "a spawned one refused at the cap", streamID: 7, refused: 1},
+		{name: "a spawned one that made room", streamID: 7, coinless: true, evicted: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &rows{}
+			s := &Service{delegations: repo, limits: limits}
+			first, err := s.add(t.Context(), testDelegation("a", tt.streamID), 1)
+			require.NoError(t, err)
+			if tt.coinless {
+				repo.idle = []delegation.Delegation{*first}
+				repo.settled = repo.idle
+			}
+			_, err = s.add(t.Context(), testDelegation("b", tt.streamID), 1)
+			require.Equal(t, tt.refused == 1, errors.Is(err, delegation.ErrCapReached))
+
+			got, err := s.Capacity(t.Context(), false)
+			require.NoError(t, err)
+			met, other := got.Clients, got.Spawned
+			if tt.streamID != 0 {
+				met, other = other, met
+			}
+			require.Equal(t, int64(1), met.Max)
+			require.Equal(t, tt.evicted, met.Evicted)
+			require.Equal(t, tt.refused, met.Refused)
+			require.Equal(t, Cap{Max: 1}, other)
+		})
+	}
+
+	t.Run("the holdings are counted only when asked", func(t *testing.T) {
+		repo := &rows{usage: delegation.Usage{
+			Clients: 3, Spawned: 1, ClientsHoldingCoin: 1, ClientsNeverFunded: 2,
+		}}
+		s := &Service{delegations: repo}
+		_, err := s.add(t.Context(), testDelegation("a", 0), 0)
+		require.NoError(t, err)
+
+		got, err := s.Capacity(t.Context(), false)
+		require.NoError(t, err)
+		require.Equal(t, Capacity{Clients: Cap{Active: 1}}, got)
+		got, err = s.Capacity(t.Context(), true)
+		require.NoError(t, err)
+		require.Equal(t, Capacity{
+			Clients: Cap{Active: 3}, Spawned: Cap{Active: 1}, ClientsHoldingCoin: 1,
+			ClientsNeverFunded: 2,
+		}, got)
+	})
+}
+
 func TestExpireDelegations(t *testing.T) {
 	now := time.Now()
 	day := 24 * time.Hour
@@ -228,6 +291,7 @@ type rows struct {
 	settledSince    time.Time
 	pruneBefore     time.Time
 	pruneIdleBefore time.Time
+	usage           delegation.Usage
 }
 
 func (r *rows) AddOrUpdate(_ context.Context, d *delegation.Delegation) error {
@@ -260,6 +324,8 @@ func (r *rows) CountActive(context.Context) (clients, spawned int64, err error) 
 	}
 	return clients, spawned, nil
 }
+
+func (r *rows) Usage(context.Context) (delegation.Usage, error) { return r.usage, nil }
 
 func (r *rows) Expire(context.Context, time.Time) ([]delegation.Delegation, error) {
 	return r.expired, nil

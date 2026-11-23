@@ -70,6 +70,14 @@ SELECT * FROM delegations WHERE fingerprint = @fingerprint ORDER BY id DESC LIMI
 SELECT COUNT(*) FILTER (WHERE stream_id IS NULL) AS clients, COUNT(*) FILTER (WHERE stream_id IS NOT NULL) AS spawned
 FROM delegations WHERE status = 'active';
 
+-- name: CountDelegationUsage :one
+SELECT COUNT(*) FILTER (WHERE d.stream_id IS NULL) AS clients, COUNT(*) FILTER (WHERE d.stream_id IS NOT NULL) AS spawned,
+    COUNT(*) FILTER (WHERE d.stream_id IS NULL AND h.present) AS clients_holding_coin,
+    COUNT(*) FILTER (WHERE d.stream_id IS NULL AND h.delegation_id IS NULL) AS clients_never_funded
+FROM delegations d
+LEFT JOIN (SELECT delegation_id, bool_or(status = 'present') AS present FROM coins GROUP BY delegation_id) h ON h.delegation_id = d.id
+WHERE d.status = 'active';
+
 -- name: PruneDelegations :execrows
 DELETE FROM delegations
 WHERE stream_id IS NOT NULL AND status = 'expired' AND expires_at <= @before::timestamptz;

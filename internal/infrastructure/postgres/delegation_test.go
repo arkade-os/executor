@@ -107,6 +107,32 @@ func TestDelegationCountActiveByOrigin(t *testing.T) {
 	require.Equal(t, int64(1), spawned)
 }
 
+func TestDelegationUsage(t *testing.T) {
+	repo := testDelegations(t)
+	stream := testStream()
+	require.NoError(t, repo.db.Streams().AddOrUpdate(t.Context(), &stream))
+	ids := map[string]int64{}
+	for _, name := range []string{"never funded", "holding", "emptied", "cancelled"} {
+		created := testDelegation(name)
+		require.NoError(t, repo.AddOrUpdate(t.Context(), &created))
+		ids[name] = created.ID
+	}
+	spawned := testSpawned("spawned", stream.ID)
+	require.NoError(t, repo.AddOrUpdate(t.Context(), &spawned))
+	cancelled := delegation.Delegation{ID: ids["cancelled"], Status: delegation.StatusCancelled}
+	require.NoError(t, repo.AddOrUpdate(t.Context(), &cancelled))
+	insertCoin(t, repo, "aa:0", ids["holding"], delegation.Present)
+	insertCoin(t, repo, "aa:1", ids["holding"], delegation.Spent)
+	insertCoin(t, repo, "bb:0", ids["emptied"], delegation.Spent)
+	insertCoin(t, repo, "cc:0", spawned.ID, delegation.Present)
+
+	usage, err := repo.Usage(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, delegation.Usage{
+		Clients: 3, Spawned: 1, ClientsHoldingCoin: 1, ClientsNeverFunded: 1,
+	}, usage)
+}
+
 func TestDelegationPruneSpawnedExpired(t *testing.T) {
 	repo := testDelegations(t)
 	stream := testStream()

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -34,6 +35,16 @@ const (
 	evictionBatch   = 100
 )
 
+type Capacity struct {
+	Clients, Spawned                       Cap
+	ClientsHoldingCoin, ClientsNeverFunded int64
+}
+
+type Cap struct {
+	Active, Max      int64
+	Evicted, Refused uint64
+}
+
 type Info struct {
 	Network       string
 	CosignerKey   string
@@ -55,6 +66,7 @@ type Service struct {
 	onChange    func(delegation.Delegation)
 	addMu       sync.Mutex // one add at a time, so the fingerprint and cap checks hold
 	evictions   struct{ retryIdleAt, retrySettledAt time.Time }
+	tallies     struct{ clients, spawned tally }
 	changed     chan struct{}
 	stop        context.CancelFunc
 	wg          sync.WaitGroup
@@ -147,9 +159,22 @@ func (s *Service) Instance(ctx context.Context, id int64) (*Instance, error) {
 	}, nil
 }
 
-func (s *Service) CountActive(ctx context.Context) (int64, error) {
-	clients, spawned, err := s.delegations.CountActive(ctx)
-	return clients + spawned, err
+func (s *Service) Capacity(ctx context.Context, withHoldings bool) (Capacity, error) {
+	var u delegation.Usage
+	var err error
+	if withHoldings {
+		u, err = s.delegations.Usage(ctx)
+	} else {
+		u.Clients, u.Spawned, err = s.delegations.CountActive(ctx)
+	}
+	if err != nil {
+		return Capacity{}, err
+	}
+	return Capacity{
+		Clients:            s.tallies.clients.cap(u.Clients, s.limits.MaxDelegations),
+		Spawned:            s.tallies.spawned.cap(u.Spawned, s.limits.MaxStreamChildren),
+		ClientsHoldingCoin: u.ClientsHoldingCoin, ClientsNeverFunded: u.ClientsNeverFunded,
+	}, nil
 }
 
 func (s *Service) GetDelegation(ctx context.Context, id int64) (*delegation.Delegation, error) {
@@ -287,7 +312,16 @@ func (s *Service) add(
 	case err != nil && !errors.Is(err, delegation.ErrDelegationNotFound):
 		return nil, err
 	}
-	if evicted, err = s.makeRoom(ctx, d.StreamID != 0, max, time.Now()); err != nil {
+	t := &s.tallies.clients
+	if d.StreamID != 0 {
+		t = &s.tallies.spawned
+	}
+	evicted, err = s.makeRoom(ctx, d.StreamID != 0, max, time.Now())
+	t.evicted.Add(uint64(len(evicted)))
+	if errors.Is(err, delegation.ErrCapReached) {
+		t.refused.Add(1)
+	}
+	if err != nil {
 		return nil, err
 	}
 	if err := s.delegations.AddOrUpdate(ctx, d); err != nil {
@@ -373,6 +407,14 @@ func (s *Service) transition(
 func (s *Service) notify(d delegation.Delegation) {
 	if s.onChange != nil {
 		s.onChange(d)
+	}
+}
+
+type tally struct{ evicted, refused atomic.Uint64 }
+
+func (t *tally) cap(active int64, max int) Cap {
+	return Cap{
+		Active: active, Max: int64(max), Evicted: t.evicted.Load(), Refused: t.refused.Load(),
 	}
 }
 

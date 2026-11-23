@@ -263,6 +263,19 @@ message GetStatusResponse {
   // session_seconds is how often arkd runs a batch, max_intents how many of ours one batch takes.
   int64 session_seconds = 14;
   int64 max_intents = 15;
+  Capacity capacity = 16;
+}
+message Capacity {
+  CapUsage clients = 1;
+  CapUsage spawned = 2;
+  int64 clients_holding_coin = 3;
+  int64 clients_never_funded = 4;
+}
+message CapUsage {
+  int64 active = 1;
+  int64 max = 2;
+  uint64 evicted = 3;
+  uint64 refused = 4;
 }
 // BatchForecast is what a coming batch is expected to carry of ours.
 message BatchForecast {

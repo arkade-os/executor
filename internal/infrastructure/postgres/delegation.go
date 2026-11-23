@@ -167,6 +167,14 @@ func (r *DelegationRepository) CountActive(
 	return row.Clients, row.Spawned, err
 }
 
+func (r *DelegationRepository) Usage(ctx context.Context) (delegation.Usage, error) {
+	row, err := r.db.querier.CountDelegationUsage(ctx)
+	return delegation.Usage{
+		Clients: row.Clients, Spawned: row.Spawned, ClientsHoldingCoin: row.ClientsHoldingCoin,
+		ClientsNeverFunded: row.ClientsNeverFunded,
+	}, err
+}
+
 func (r *DelegationRepository) one(
 	row queries.Delegation, err error,
 ) (*delegation.Delegation, error) {

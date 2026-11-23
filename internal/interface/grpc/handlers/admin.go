@@ -319,7 +319,12 @@ func (h *Admin) GetStatus(
 		),
 		SessionSeconds: int64(st.Session.Duration / time.Second),
 		MaxIntents:     int64(st.Session.MaxIntents),
-		Batches:        make([]*executorv1.BatchForecast, 0, len(st.Batches)),
+		Capacity: &executorv1.Capacity{
+			Clients: toCapUsage(st.Capacity.Clients), Spawned: toCapUsage(st.Capacity.Spawned),
+			ClientsHoldingCoin: st.Capacity.ClientsHoldingCoin,
+			ClientsNeverFunded: st.Capacity.ClientsNeverFunded,
+		},
+		Batches: make([]*executorv1.BatchForecast, 0, len(st.Batches)),
 	}
 	if !st.NextDue.IsZero() {
 		resp.NextDue = st.NextDue.Unix()
@@ -371,6 +376,12 @@ func toAttempt(a delegation.Attempt, kind template.Type) *executorv1.Attempt {
 		Error:     a.Error,
 		CreatedAt: a.CreatedAt.Unix(),
 		UpdatedAt: a.UpdatedAt.Unix(),
+	}
+}
+
+func toCapUsage(c delegationapp.Cap) *executorv1.CapUsage {
+	return &executorv1.CapUsage{
+		Active: c.Active, Max: c.Max, Evicted: c.Evicted, Refused: c.Refused,
 	}
 }
 

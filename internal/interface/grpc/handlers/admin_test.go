@@ -397,6 +397,11 @@ func TestGetStatus(t *testing.T) {
 		TemplateFailures: 2,
 		Reserve:          15 * time.Minute,
 		Session:          execution.Session{Duration: time.Minute, MaxIntents: 64},
+		Capacity: delegationapp.Capacity{
+			Clients:            delegationapp.Cap{Active: 4, Max: 10, Evicted: 6, Refused: 1},
+			Spawned:            delegationapp.Cap{Active: 1, Max: 2},
+			ClientsHoldingCoin: 2, ClientsNeverFunded: 1,
+		},
 		Batches: []executionapp.BatchForecast{
 			{
 				At:      soon,
@@ -430,6 +435,14 @@ func TestGetStatus(t *testing.T) {
 	require.Equal(t, int64(900), resp.GetReserveSeconds())
 	require.Equal(t, int64(60), resp.GetSessionSeconds())
 	require.Equal(t, int64(64), resp.GetMaxIntents())
+	require.Equal(t, int64(4), resp.GetCapacity().GetClients().GetActive())
+	require.Equal(t, int64(10), resp.GetCapacity().GetClients().GetMax())
+	require.Equal(t, uint64(6), resp.GetCapacity().GetClients().GetEvicted())
+	require.Equal(t, uint64(1), resp.GetCapacity().GetClients().GetRefused())
+	require.Equal(t, int64(1), resp.GetCapacity().GetSpawned().GetActive())
+	require.Equal(t, int64(2), resp.GetCapacity().GetSpawned().GetMax())
+	require.Equal(t, int64(2), resp.GetCapacity().GetClientsHoldingCoin())
+	require.Equal(t, int64(1), resp.GetCapacity().GetClientsNeverFunded())
 	require.Len(t, resp.GetBatches(), 2)
 	require.Equal(t, soon.Unix(), resp.GetBatches()[0].GetAt())
 	require.Equal(t, int64(2), resp.GetBatches()[0].GetIntents())

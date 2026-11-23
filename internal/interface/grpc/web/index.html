@@ -126,6 +126,11 @@ pre.doc { margin: .5rem 0 0; padding: .75rem; max-height: 32rem; overflow: auto;
 .life .win, .legend .win { background: var(--ok); opacity: .55; }
 .life .res, .legend .res { background: var(--bad); opacity: .55; }
 .life .b, .legend .b { width: 3px; background: var(--accent); }
+.life .held, .legend .held { background: var(--ok); }
+.life .emptied, .legend .emptied { background: var(--accent); }
+.life .never, .legend .never { background: var(--warn); }
+.cap { margin-top: .9rem; }
+.cap .life { height: .7rem; }
 
 .stream { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .6rem 1rem; }
 .stream > :first-child { flex: 1 1 24rem; min-width: 0; }
@@ -385,6 +390,30 @@ function forecastTable(batches) {
   ], batches);
 }
 
+const CAPS = {
+  clients: { label: 'Registered by clients', env: 'EXECUTOR_MAX_DELEGATIONS', full: 'a registration has to evict delegations that never held a coin, and is refused when none is old enough', refused: ['registration refused', 'registrations refused'] },
+  spawned: { label: 'Spawned by streams', env: 'EXECUTOR_MAX_STREAM_CHILDREN', full: 'a stream match is dropped unless a spawned delegation whose coins are spent can expire', refused: ['stream match dropped', 'stream matches dropped'] },
+};
+const fill = (c) => (num(c?.max) ? num(c.active) / num(c.max) : 0);
+const fillKind = (c) => (fill(c) >= 1 ? 'bad' : fill(c) >= 0.8 ? 'warn' : '');
+const percent = (c) => `${Math.floor(fill(c) * 100)}%`;
+function capNote(key, c) {
+  const kind = fillKind(c), { label, env, full, refused } = CAPS[key];
+  if (!kind) return '';
+  return `<div class="note ${kind === 'bad' ? 'bad' : ''}"><b>${label}: ${percent(c)} of the cap</b> of ${num(c.max).toLocaleString()} active delegations (<span class="mono">${env}</span>).${kind === 'bad' ? ` At the cap, ${full}.` : ''}${num(c.refused) ? ` ${esc(count(c.refused, ...refused))} since start.` : ''}</div>`;
+}
+function capMeter(key, c, parts) {
+  const { label, env } = CAPS[key], max = num(c?.max);
+  let left = 0;
+  const bar = parts.map(([kind, n]) => { const width = (num(n) / max) * 100, part = `<i class="${kind}" style="left:${left}%;width:${width}%"></i>`; left += width; return part; }).join('');
+  return `<div class="cap">
+    <div class="ph"><b>${label}</b><span class="n">${num(c?.active).toLocaleString()}${max ? ` of ${max.toLocaleString()}` : ', no cap'}</span>${max ? tag(percent(c), fillKind(c)) : ''}<span class="aside mono">${env}</span></div>
+    ${max ? `<div class="life">${bar}</div>` : ''}
+    <div class="legend">${parts.map(([kind, n, text]) => `<span><i class="${kind}"></i>${num(n).toLocaleString()} ${text}</span>`).join('')}
+      <span>${num(c?.evicted).toLocaleString()} evicted to make room, <span class="${num(c?.refused) ? 'bad-text' : ''}">${num(c?.refused).toLocaleString()} refused</span> since start</span></div>
+  </div>`;
+}
+
 const views = {
   async overview() {
     const [{ delegations: rows = [] }] = await Promise.all([
@@ -397,10 +426,12 @@ const views = {
     const forecastAmount = batches.reduce((a, b) => a + num(b.amount), 0), forecastCoins = batches.reduce((a, b) => a + num(b.coins), 0);
     const activeStreams = state.streams.filter((x) => x.status === 'active');
     const disabled = state.templates.filter((t) => t.status !== 'active');
+    const cap = s.capacity || {}, held = num(cap.clientsHoldingCoin), never = num(cap.clientsNeverFunded);
 
     view.innerHTML = `
       ${down.length ? `<div class="note bad">Down: ${down.map((e) => `<b>${esc(checkName(e.name))}</b> ${esc(e.error)}`).join('; ')}</div>` : ''}
       ${num(s.late) ? `<div class="note bad"><b>${esc(count(s.late, 'coin'))}</b> forecast to miss their deadline: they enter a batch after expiry minus the reserve.</div>` : ''}
+      ${capNote('clients', cap.clients)}${capNote('spawned', cap.spawned)}
       <div class="stats">
         ${stat('Under watch', `${num(s.amount).toLocaleString()}<small>sats</small>`, count(s.coins, 'coin'))}
         ${stat('Active delegations', num(s.active).toLocaleString(), `${count(activeStreams.length, 'stream')} spawning`, false, 'delegations')}
@@ -437,6 +468,13 @@ const views = {
           ], comingDue)}
         </section>
       </div>
+
+      <section class="panel"><div class="ph"><h3>Capacity</h3><span class="aside">active delegations against their caps</span></div>
+        <p class="explain">Registering is free, so the active delegations of each origin are capped. A full cap makes room among those serving no coin,
+          a hundred at a time, and refuses the registration when none qualifies. A delegation holding an unspent coin is never removed.</p>
+        ${capMeter('clients', cap.clients, [['held', held, 'hold a coin'], ['emptied', num(cap.clients?.active) - held - never, 'held coins, all spent'], ['never', never, 'never held a coin']])}
+        ${capMeter('spawned', cap.spawned, [['emptied', cap.spawned?.active, 'active']])}
+      </section>
 
       <section class="panel"><div class="ph"><h3>Daemon</h3><span class="aside">${esc(state.info?.network)} · ${esc(state.info?.version)} · tip ${num(s.tipHeight).toLocaleString()}</span></div>
         <div class="cols">

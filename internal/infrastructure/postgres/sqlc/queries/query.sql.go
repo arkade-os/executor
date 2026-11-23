@@ -42,6 +42,34 @@ func (q *Queries) CountArtifacts(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countDelegationUsage = `-- name: CountDelegationUsage :one
+SELECT COUNT(*) FILTER (WHERE d.stream_id IS NULL) AS clients, COUNT(*) FILTER (WHERE d.stream_id IS NOT NULL) AS spawned,
+    COUNT(*) FILTER (WHERE d.stream_id IS NULL AND h.present) AS clients_holding_coin,
+    COUNT(*) FILTER (WHERE d.stream_id IS NULL AND h.delegation_id IS NULL) AS clients_never_funded
+FROM delegations d
+LEFT JOIN (SELECT delegation_id, bool_or(status = 'present') AS present FROM coins GROUP BY delegation_id) h ON h.delegation_id = d.id
+WHERE d.status = 'active'
+`
+
+type CountDelegationUsageRow struct {
+	Clients            int64
+	Spawned            int64
+	ClientsHoldingCoin int64
+	ClientsNeverFunded int64
+}
+
+func (q *Queries) CountDelegationUsage(ctx context.Context) (CountDelegationUsageRow, error) {
+	row := q.db.QueryRowContext(ctx, countDelegationUsage)
+	var i CountDelegationUsageRow
+	err := row.Scan(
+		&i.Clients,
+		&i.Spawned,
+		&i.ClientsHoldingCoin,
+		&i.ClientsNeverFunded,
+	)
+	return i, err
+}
+
 const countTemplates = `-- name: CountTemplates :one
 SELECT COUNT(*) FROM templates
 `

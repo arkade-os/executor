@@ -282,6 +282,11 @@ func (r *delegations) CountActive(_ context.Context) (clients, spawned int64, er
 	return clients, spawned, nil
 }
 
+func (r *delegations) Usage(ctx context.Context) (delegation.Usage, error) {
+	clients, spawned, err := r.CountActive(ctx)
+	return delegation.Usage{Clients: clients, Spawned: spawned}, err
+}
+
 func (r *delegations) Prune(_ context.Context, before time.Time) (int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
