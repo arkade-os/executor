@@ -1016,7 +1016,7 @@ func (q *Queries) ListPendingAttempts(ctx context.Context) ([]Attempt, error) {
 
 const listReadyCoins = `-- name: ListReadyCoins :many
 WITH params AS (
-    SELECT $1::timestamptz AS now, $2::bigint AS median_time, $3::bigint AS tip
+    SELECT $2::timestamptz AS now, $3::bigint AS median_time, $4::bigint AS tip
 ), eligible AS (
     SELECT coins.outpoint, coins.delegation_id, coins.input, coins.created_at
     FROM coins
@@ -1042,18 +1042,24 @@ WITH params AS (
 )
 SELECT coins.outpoint, coins.delegation_id, coins.input, coins.script, coins.amount, coins.expiry, coins.created_at, coins.due, coins.status, coins.spent_by, coins.onchain, coins.height, coins.confirmations, coins.held, coins.retry_at, coins.ready_at, coins.updated_at, coins.confirmed_mtp FROM coins
 JOIN ranked ON ranked.outpoint = coins.outpoint
-WHERE ranked.n <= 4 AND coins.delegation_id IN (SELECT delegation_id FROM complete)
+WHERE ranked.n <= $1::int AND coins.delegation_id IN (SELECT delegation_id FROM complete)
 ORDER BY coins.delegation_id, coins.input, ranked.n
 `
 
 type ListReadyCoinsParams struct {
+	PerInput   int32
 	Now        time.Time
 	MedianTime int64
 	Height     int64
 }
 
 func (q *Queries) ListReadyCoins(ctx context.Context, arg ListReadyCoinsParams) ([]Coin, error) {
-	rows, err := q.db.QueryContext(ctx, listReadyCoins, arg.Now, arg.MedianTime, arg.Height)
+	rows, err := q.db.QueryContext(ctx, listReadyCoins,
+		arg.PerInput,
+		arg.Now,
+		arg.MedianTime,
+		arg.Height,
+	)
 	if err != nil {
 		return nil, err
 	}

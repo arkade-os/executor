@@ -603,7 +603,11 @@ async function delegationDetail(key) {
 
   let story;
   if (d.status !== 'active') story = `It is ${esc(d.status)}: the daemon runs nothing for it.`;
-  else if (mine.length) story = `${esc(count(mine.reduce((a, e) => a + num(e.coins), 0), 'coin'))} (${esc(sats(mine.reduce((a, e) => a + num(e.amount), 0)))}) join the batch ${at(mine[0].at)}${num(mine[0].batch.intents) > 1 ? `, with ${esc(count(num(mine[0].batch.intents) - 1, 'other delegation'))}` : ''}.`;
+  else if (mine.length) {
+    const first = mine.filter((e) => num(e.at) === num(mine[0].at)), others = num(mine[0].batch.intents) - first.length;
+    const coinsOf = (list) => list.reduce((a, e) => a + num(e.coins), 0), later = coinsOf(mine) - coinsOf(first);
+    story = `${esc(count(coinsOf(first), 'coin'))} (${esc(sats(first.reduce((a, e) => a + num(e.amount), 0)))}) join the batch ${at(mine[0].at)}${others > 0 ? `, with ${esc(count(others, 'other delegation'))}` : ''}${later ? `; ${esc(count(later, 'more coin'))} follow in later batches` : ''}.`;
+  }
   else if (present.length) story = `${esc(count(present.length, 'coin'))} watched; the next becomes due ${at(Math.min(...present.map((c) => num(c.due))))}, beyond the 7-day forecast.`;
   else story = 'No coin is watched at its inputs yet.';
 

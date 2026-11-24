@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -126,7 +128,8 @@ func (r *CoinRepository) Ready(
 	ctx context.Context, now time.Time, tip delegation.Tip, limit int,
 ) ([][]delegation.Coin, error) {
 	rows, err := r.db.querier.ListReadyCoins(ctx, queries.ListReadyCoinsParams{
-		Now: now, MedianTime: tip.MedianTime.Unix(), Height: tip.Height,
+		PerInput: candidatesPerInput, Now: now, MedianTime: tip.MedianTime.Unix(),
+		Height: tip.Height,
 	})
 	if err != nil {
 		return nil, err
@@ -136,6 +139,22 @@ func (r *CoinRepository) Ready(
 		return nil, err
 	}
 	return pickTuples(toCoins(rows), blocked, limit), nil
+}
+
+func (r *CoinRepository) Upcoming(
+	ctx context.Context, until time.Time, tip delegation.Tip, limit int,
+) ([][]delegation.Coin, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := r.db.querier.ListReadyCoins(ctx, queries.ListReadyCoinsParams{
+		PerInput: int32(min(limit, math.MaxInt32)), Now: until,
+		MedianTime: tip.MedianTime.Unix(), Height: tip.Height,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return everyTuple(toCoins(rows), limit), nil
 }
 
 func (r *CoinRepository) activeBackoffs(
@@ -301,29 +320,8 @@ func pickTuples(coins []delegation.Coin, blocked map[string]bool, limit int) [][
 	if limit <= 0 || len(coins) == 0 {
 		return nil
 	}
-	type group struct {
-		id    int64
-		slots [][]delegation.Coin
-	}
-	var groups []group
-	index := map[int64]int{}
-	for _, c := range coins {
-		i, ok := index[c.DelegationID]
-		if !ok {
-			i = len(groups)
-			index[c.DelegationID] = i
-			groups = append(groups, group{id: c.DelegationID})
-		}
-		g := &groups[i]
-		for len(g.slots) <= c.Input {
-			g.slots = append(g.slots, nil)
-		}
-		if len(g.slots[c.Input]) < candidatesPerInput {
-			g.slots[c.Input] = append(g.slots[c.Input], c)
-		}
-	}
 	var out [][]delegation.Coin
-	for _, g := range groups {
+	for _, g := range groupByInput(coins, candidatesPerInput) {
 		tuple := firstTuple(g.id, g.slots, blocked)
 		if tuple == nil {
 			continue
@@ -334,6 +332,59 @@ func pickTuples(coins []delegation.Coin, blocked map[string]bool, limit int) [][
 		}
 	}
 	return out
+}
+
+func everyTuple(coins []delegation.Coin, limit int) [][]delegation.Coin {
+	var out [][]delegation.Coin
+	for _, g := range groupByInput(coins, limit) {
+		tuples := len(g.slots[0])
+		for _, slot := range g.slots {
+			slices.SortStableFunc(
+				slot, func(a, b delegation.Coin) int { return a.Due.Compare(b.Due) },
+			)
+			tuples = min(tuples, len(slot))
+		}
+		for n := range tuples {
+			tuple := make([]delegation.Coin, len(g.slots))
+			for i, slot := range g.slots {
+				tuple[i] = slot[n]
+			}
+			if !feasibleTuple(tuple) {
+				continue
+			}
+			out = append(out, tuple)
+			if len(out) == limit {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+type inputSlots struct {
+	id    int64
+	slots [][]delegation.Coin
+}
+
+func groupByInput(coins []delegation.Coin, perInput int) []inputSlots {
+	var groups []inputSlots
+	index := map[int64]int{}
+	for _, c := range coins {
+		i, ok := index[c.DelegationID]
+		if !ok {
+			i = len(groups)
+			index[c.DelegationID] = i
+			groups = append(groups, inputSlots{id: c.DelegationID})
+		}
+		g := &groups[i]
+		for len(g.slots) <= c.Input {
+			g.slots = append(g.slots, nil)
+		}
+		if len(g.slots[c.Input]) < perInput {
+			g.slots[c.Input] = append(g.slots[c.Input], c)
+		}
+	}
+	return groups
 }
 
 func firstTuple(id int64, slots [][]delegation.Coin, blocked map[string]bool) []delegation.Coin {

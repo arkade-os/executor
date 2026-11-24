@@ -382,6 +382,84 @@ func TestUpsertRefusesAnOutpointOnTheOtherChain(t *testing.T) {
 	require.Equal(t, uint64(2), got[0].Amount)
 }
 
+func TestUpcoming(t *testing.T) {
+	repo, single := testCoins(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	tip := delegation.Tip{Height: 100, MedianTime: now}
+	add := func(fingerprint string, scripts ...string) int64 {
+		d := testDelegation(fingerprint)
+		d.Inputs[0].Script = scripts[0]
+		for _, script := range scripts[1:] {
+			d.Inputs = append(d.Inputs, delegation.Input{
+				Name: script, Script: script, Sequence: 0xffffffff,
+			})
+		}
+		require.NoError(t, repo.db.Delegations().AddOrUpdate(ctx, &d))
+		return d.ID
+	}
+	day := 24 * time.Hour
+	pair := add("pair", "5120b0", "5120b1")
+	held := add("held", "5120c0")
+	cancelled := add("cancelled", "5120d0")
+	coin := func(
+		outpoint string, owner int64, input int, script string, created, due time.Duration,
+	) delegation.Coin {
+		c := testCoin(outpoint, owner, now.Add(created))
+		c.Input, c.Script, c.Due = input, script, now.Add(due)
+		c.ExpiresAt = c.Due.Add(30 * day)
+		return c
+	}
+	expiring := coin("b:2", pair, 0, "5120b0", -time.Hour, 5*day)
+	expiring.ExpiresAt = now.Add(5*day + time.Hour)
+	require.NoError(t, repo.Upsert(ctx,
+		coin("a:0", single, 0, "5120aa", -2*time.Hour, 29*day),
+		coin("a:1", single, 0, "5120aa", -time.Hour, 24*day),
+		coin("b:0", pair, 0, "5120b0", -3*time.Hour, 7*day),
+		coin("b:1", pair, 0, "5120b0", -2*time.Hour, 3*day),
+		expiring,
+		coin("b:3", pair, 0, "5120b0", -4*time.Hour, 9*day),
+		coin("b:4", pair, 1, "5120b1", -3*time.Hour, 6*day),
+		coin("b:5", pair, 1, "5120b1", -2*time.Hour, 2*day),
+		coin("b:6", pair, 1, "5120b1", -time.Hour, 10*day),
+		coin("c:0", held, 0, "5120c0", -2*time.Hour, day),
+		coin("c:1", held, 0, "5120c0", -time.Hour, 2*day),
+		coin("d:0", cancelled, 0, "5120d0", -time.Hour, day),
+	))
+	require.NoError(t, repo.Hold(ctx, []string{"c:0"}))
+	d, err := repo.db.Delegations().Get(ctx, cancelled)
+	require.NoError(t, err)
+	require.NoError(t, d.Cancel())
+	require.NoError(t, repo.db.Delegations().AddOrUpdate(ctx, d))
+
+	tests := []struct {
+		name     string
+		until    time.Duration
+		limit    int
+		expected [][]string
+	}{
+		{
+			name: "every coin of a delegation, the earliest due first", until: 100 * day, limit: 10,
+			expected: [][]string{{"a:1"}, {"a:0"}, {"b:1", "b:5"}, {"b:0", "b:6"}},
+		},
+		{
+			name: "only the coins ready by then", until: 4 * day, limit: 10,
+			expected: [][]string{{"b:1", "b:5"}},
+		},
+		{
+			name: "limit counts tuples", until: 100 * day, limit: 3,
+			expected: [][]string{{"a:1"}, {"a:0"}, {"b:1", "b:5"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upcoming, err := repo.Upcoming(ctx, now.Add(tt.until), tip, tt.limit)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, readyOutpoints(upcoming))
+		})
+	}
+}
+
 func TestReadySkipsInfeasibleAndBackedOffTuples(t *testing.T) {
 	repo, _ := testCoins(t)
 	ctx := t.Context()

@@ -275,7 +275,7 @@ WITH params AS (
 )
 SELECT coins.* FROM coins
 JOIN ranked ON ranked.outpoint = coins.outpoint
-WHERE ranked.n <= 4 AND coins.delegation_id IN (SELECT delegation_id FROM complete)
+WHERE ranked.n <= @per_input::int AND coins.delegation_id IN (SELECT delegation_id FROM complete)
 ORDER BY coins.delegation_id, coins.input, ranked.n;
 
 -- name: NextReadyAt :one

@@ -110,6 +110,9 @@ func (s *subscription) forward(events <-chan clientlib.ScriptEvent) {
 				log.WithError(ev.Err).Warn("script subscription")
 			case ev.Connection != nil && ev.Connection.State == clientlib.StreamConnectionStateReconnected:
 				s.signalReconnect()
+			case ev.Connection != nil &&
+				ev.Connection.State == clientlib.StreamConnectionStateDisconnected:
+				log.WithError(ev.Connection.Err).Warn("script subscription disconnected")
 			case ev.Data != nil:
 				select {
 				case s.events <- toScriptEvent(ev.Data):
