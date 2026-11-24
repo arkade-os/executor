@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -106,6 +108,19 @@ func TestDecodeRejects(t *testing.T) {
 		"null amount":       func(m map[string]any) { out(m)["value"].(map[string]any)["amount"] = nil },
 		"array amount":      func(m map[string]any) { out(m)["value"].(map[string]any)["amount"] = []any{} },
 		"object amount":     func(m map[string]any) { out(m)["value"].(map[string]any)["amount"] = map[string]any{"x": 1} },
+		"too many outputs": func(m map[string]any) {
+			m["outputs"] = slices.Repeat(m["outputs"].([]any), math.MaxUint16+1)
+		},
+		"lead overflowing a duration": func(m map[string]any) {
+			m["delegation"] = schedule(map[string]any{"before_expiry_seconds": math.MaxUint32 + 1})
+		},
+		"trigger lifetime overflowing a duration": func(m map[string]any) {
+			m["delegation"] = map[string]any{"trigger": map[string]any{"funds": map[string]any{
+				"packet": 2, "decode": "raw", "require": map[string]any{"raw": "0x00"},
+				"capture":               map[string]any{"x": "raw"},
+				"expires_after_seconds": math.MaxUint32 + 1,
+			}}}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Decode(edited(t, doc, edit))

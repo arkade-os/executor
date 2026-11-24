@@ -17,7 +17,6 @@ import (
 	grpcserver "github.com/arkade-os/executor/internal/interface/grpc"
 	"github.com/arkade-os/executor/internal/interface/grpc/handlers"
 	"github.com/arkade-os/executor/templates"
-	log "github.com/sirupsen/logrus"
 )
 
 // Daemon is the composition root: the services wired to postgres, arkd, electrum and the emulator
@@ -99,22 +98,18 @@ func NewDaemon(ctx context.Context, cfg Config) (_ *Daemon, err error) {
 			RetryDelay: cfg.RetryDelay, IntentsPerBatch: cfg.IntentsPerBatch,
 			IntentTimeout: cfg.IntentTimeout, Reserve: cfg.Reserve, BanDuration: cfg.BanDuration,
 			LandingWindow: cfg.LandingWindow, TemplateMaxFailures: cfg.TemplateMaxFailures,
-			LoopStall: cfg.LoopStall,
+			LoopStall: cfg.LoopStall, MinBatchExpiry: cfg.MinBatchExpiry,
 		},
 	)
 	if err := execution.Start(context.Background()); err != nil {
 		return nil, fmt.Errorf("start execution: %w", err)
-	}
-	if len(cfg.AdminUsers) == 0 {
-		log.Warn("admin port serves without authentication")
 	}
 	checker := health.NewChecker(db, ark, emu, execution)
 	server, err := grpcserver.Listen(
 		ctx,
 		grpcserver.Options{
 			PublicPort: cfg.Port, AdminPort: cfg.AdminPort, PublicRateLimit: cfg.PublicRateLimit,
-			PublicRegistry: cfg.PublicRegistry, Users: cfg.AdminUsers, Status: execution,
-			Health: checker,
+			PublicRegistry: cfg.PublicRegistry, Status: execution, Health: checker,
 		},
 		handlers.NewExecutor(
 			reg, delegations, execution, cfg.Version,

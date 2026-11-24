@@ -2,8 +2,8 @@
 
 ## Sub-features
 
-Health/status, admin authentication, delegation summaries, template management, cancellation
-controls, graceful shutdown and browser UI.
+Health/status, delegation summaries, template management, cancellation controls, graceful
+shutdown and browser UI.
 
 ## How to get to it (user POV)
 
@@ -16,13 +16,13 @@ delegation is found by `?address=` only, because ids are sequential.
 
 ```bash
 skills/verify-executor/scripts/verify.sh daemon \
-  '^(TestStatusAnswersWhileArkdIsUnreachable|TestHealthzFollowsArkd|TestListDelegationsByNextDueWithItsDetail|TestUIIsServedBehindAuth|TestAdminAuthentication)$'
+  '^(TestStatusAnswersWhileArkdIsUnreachable|TestHealthzFollowsArkd|TestListDelegationsByNextDueWithItsDetail|TestUIIsServedOnTheAdminPortOnly)$'
 ```
 
 Read `test/daemon/operator_test.go` and `admin_test.go`. Require correct health transitions,
-accessible status during an arkd outage, delegation ordering/detail and authentication behavior.
-The external services here are stand-ins. `TestUIIsServedBehindAuth` verifies HTTP serving and
-auth; it does not execute the UI's JavaScript.
+accessible status during an arkd outage and delegation ordering/detail. The external services
+here are stand-ins. `TestUIIsServedOnTheAdminPortOnly` verifies HTTP serving; it does not execute
+the UI's JavaScript.
 
 For template management and startup defaults:
 
@@ -75,8 +75,8 @@ UI. If no browser harness is available, report browser behavior as unverified.
 
 ## Gotchas
 
-Keep the admin listener private. The Compose profile publishes 7081 on loopback and disables
-admin authentication for local regtest. Authentication tests use their own configured users.
+Keep the admin listener private: it has no authentication of its own, so a proxy must
+authenticate its clients. The Compose profile publishes 7081 on loopback for local regtest.
 `make run` only supplies the database and log level; from a clean environment it still needs the
-required connection, cosigner and admin-auth variables listed in `internal/config/config.go`.
+required connection and cosigner variables listed in `internal/config/config.go`.
 Do not infer standalone launch readiness from the abbreviated README command alone.

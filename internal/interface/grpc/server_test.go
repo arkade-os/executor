@@ -78,6 +78,38 @@ func TestListen(t *testing.T) {
 	}
 }
 
+func TestIsRest(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		method      string
+		contentType string
+		expected    bool
+	}{
+		{name: "get", method: http.MethodGet, expected: true},
+		{name: "delete", method: http.MethodDelete, expected: true},
+		{name: "json", method: http.MethodPost, contentType: "application/json", expected: true},
+		{
+			name: "json with a charset", method: http.MethodPost,
+			contentType: "application/json; charset=utf-8", expected: true,
+		},
+		{name: "no content type", method: http.MethodPost},
+		{name: "form", method: http.MethodPost, contentType: "text/plain"},
+		{
+			name: "json named in a parameter of a form type", method: http.MethodPost,
+			contentType: "text/plain;x=application/json",
+		},
+		{name: "grpc", method: http.MethodPost, contentType: "application/grpc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(tc.method, "/v1/admin/delegation/1/cancel", nil)
+			if tc.contentType != "" {
+				r.Header.Set("Content-Type", tc.contentType)
+			}
+			require.Equal(t, tc.expected, isRest(r))
+		})
+	}
+}
+
 func TestOnlyThePublicPortIsRateLimited(t *testing.T) {
 	s, err := Listen(
 		t.Context(), Options{PublicRateLimit: 1, Status: statusStub{}, Health: &healthStub{}},

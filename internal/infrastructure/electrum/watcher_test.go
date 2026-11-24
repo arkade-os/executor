@@ -263,6 +263,72 @@ func TestSilentServerDropsTheConnection(t *testing.T) {
 	)
 }
 
+func TestRouteDeliversAReplyOnce(t *testing.T) {
+	id := uint64(1)
+	wait := make(chan message, 1)
+	s := &session{pending: map[uint64]chan message{id: wait}}
+	routed := make(chan struct{})
+	go func() {
+		defer close(routed)
+		for range 3 {
+			s.route(&client{}, message{ID: &id})
+		}
+	}()
+	select {
+	case <-routed:
+	case <-time.After(2 * time.Second):
+		require.FailNow(t, "a repeated reply strands the reader")
+	}
+	require.Len(t, wait, 1)
+}
+
+func TestReceive(t *testing.T) {
+	first, second := make(chan message, 1), make(chan message, 1)
+	s := &session{pending: map[uint64]chan message{1: first, 2: second}}
+	err := s.receive(&client{}, []byte(`[{"id":1,"result":"a"},{"id":2,"result":"b"},oops]`))
+	require.Error(t, err, "the batch ends on a malformed reply")
+	require.Equal(t, json.RawMessage(`"a"`), (<-first).Result)
+	require.Equal(t, json.RawMessage(`"b"`), (<-second).Result)
+}
+
+func TestNotificationsPush(t *testing.T) {
+	q := notifications{wake: make(chan struct{}, 1)}
+	n := notification{method: "m", params: make(json.RawMessage, 1<<20)}
+	for range maxQueuedBytes / n.size() {
+		require.True(t, q.push(n))
+	}
+	require.False(t, q.push(n), "one more does not fit")
+	require.Empty(t, q.items)
+	require.Zero(t, q.bytes)
+
+	require.True(t, q.push(n), "the emptied queue takes notifications again")
+	_, ok := q.pop(t.Context())
+	require.True(t, ok)
+	require.Zero(t, q.bytes)
+}
+
+func TestOversizedFrameDropsTheConnection(t *testing.T) {
+	srv := newChain(t, 100)
+	newTestWatcher(t, srv)
+	srv.write(bytes.Repeat([]byte{'a'}, maxFrame+1))
+	require.Eventually(
+		t, func() bool { return srv.connections() >= 2 }, time.Minute, 10*time.Millisecond,
+	)
+}
+
+func TestNotificationOverflowDropsTheConnection(t *testing.T) {
+	srv := newChain(t, 100)
+	w := newTestWatcher(t, srv)
+	srv.push("blockchain.unknown", strings.Repeat("a", maxQueuedBytes))
+	require.Eventually(
+		t, func() bool { return srv.connections() >= 2 }, time.Minute, 10*time.Millisecond,
+	)
+	w.c.notes.mu.Lock()
+	t.Cleanup(w.c.notes.mu.Unlock)
+	require.Empty(t, w.c.notes.items)
+	require.Zero(t, w.c.notes.bytes)
+}
+
 func TestRequestTimesOut(t *testing.T) {
 	srv := newChain(t, 100)
 	srv.silent = "blockchain.transaction.get"
@@ -319,6 +385,7 @@ func TestTransaction(t *testing.T) {
 	tx := wire.NewMsgTx(2)
 	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Hash: [32]byte{1}}})
 	tx.AddTxOut(wire.NewTxOut(1000, []byte{0x51}))
+	tx.AddTxOut(wire.NewTxOut(0, make([]byte, 2*bufio.MaxScanTokenSize)))
 	var buf bytes.Buffer
 	require.NoError(t, tx.Serialize(&buf))
 	srv := newServer(t, func(method string, params []any) (any, *rpcError) {
@@ -332,6 +399,9 @@ func TestTransaction(t *testing.T) {
 	got, err := w.Transaction(t.Context(), tx.TxHash().String())
 	require.NoError(t, err)
 	require.Equal(t, tx.TxHash(), got.TxHash())
+
+	_, err = w.Transaction(t.Context(), wire.NewMsgTx(2).TxHash().String())
+	require.Error(t, err, "the server answers with another transaction")
 }
 
 func TestTransactionRefusesGarbage(t *testing.T) {
@@ -575,10 +645,14 @@ func (s *server) answer(req request) map[string]any {
 
 func (s *server) push(method string, params ...any) {
 	raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params})
+	s.write(append(raw, '\n'))
+}
+
+func (s *server) write(raw []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, c := range s.conns {
-		_, _ = c.Write(append(raw, '\n'))
+		_, _ = c.Write(raw)
 	}
 }
 

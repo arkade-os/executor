@@ -225,19 +225,10 @@ func TestMetricsCountASucceededAttempt(t *testing.T) {
 	require.Contains(t, string(body), `"lastAttempt":"succeeded"`)
 }
 
-func TestUIIsServedBehindAuth(t *testing.T) {
-	d := Start(t, WithAdminUser(t, "alice", "secret"))
-	for _, path := range []string{"/", "/metrics", "/healthz"} {
-		resp := send(t, d.AdminURL+path, "", "")
-		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, path)
-		require.Contains(t, resp.Header.Get("WWW-Authenticate"), "Basic")
-		resp = send(t, d.AdminURL+path, "alice", "wrong")
-		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, path)
-	}
-
+func TestUIIsServedOnTheAdminPortOnly(t *testing.T) {
+	d := Start(t)
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, d.AdminURL+"/", nil)
 	require.NoError(t, err)
-	req.SetBasicAuth("alice", "secret")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
@@ -246,8 +237,10 @@ func TestUIIsServedBehindAuth(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Content-Type"), "text/html")
 	require.Contains(t, string(page), "<title>executord operator</title>")
+	code, _ := get(t, d.AdminURL+"/metrics")
+	require.Equal(t, http.StatusOK, code)
 
-	code, _ := get(t, d.RestURL+"/")
+	code, _ = get(t, d.RestURL+"/")
 	require.Equal(t, http.StatusNotFound, code, "the public port has no UI")
 	code, _ = get(t, d.RestURL+"/metrics")
 	require.NotEqual(t, http.StatusOK, code, "nor metrics")
@@ -288,11 +281,10 @@ func TestPublicRateLimitRefusesAClientOverItsRate(t *testing.T) {
 func TestPublicRateLimitSparesLoopbackAndTheAdminPort(t *testing.T) {
 	d := Start(t, WithPublicRateLimit(1))
 	for range 60 {
-		require.Equal(
-			t, http.StatusOK, send(t, d.RestURL+"/v1/info", "", "").StatusCode,
-			"the gateway's own calls come from loopback",
-		)
-		require.Equal(t, http.StatusOK, send(t, d.AdminURL+"/v1/admin/status", "", "").StatusCode)
+		code, _ := get(t, d.RestURL+"/v1/info")
+		require.Equal(t, http.StatusOK, code, "the gateway's own calls come from loopback")
+		code, _ = get(t, d.AdminURL+"/v1/admin/status")
+		require.Equal(t, http.StatusOK, code)
 	}
 }
 

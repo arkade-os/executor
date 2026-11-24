@@ -266,9 +266,17 @@ WITH params AS (
         OR ((claims.sequence & 4194304) <> 0 AND coins.confirmed_mtp IS NOT NULL AND params.median_time >= EXTRACT(EPOCH FROM coins.confirmed_mtp)::bigint + (claims.sequence & 65535) * 512)
       )
       AND NOT EXISTS (SELECT 1 FROM coins h WHERE h.delegation_id = coins.delegation_id AND h.status = 'present' AND h.held)
+), backed_off AS (
+    SELECT DISTINCT tuple_backoff.delegation_id, unnest(tuple_backoff.coins) AS outpoint
+    FROM tuple_backoff CROSS JOIN params
+    WHERE tuple_backoff.retry_at > params.now
 ), ranked AS (
-    SELECT eligible.*, row_number() OVER (PARTITION BY delegation_id, input ORDER BY created_at, outpoint) AS n
+    SELECT eligible.*, row_number() OVER (
+        PARTITION BY eligible.delegation_id, eligible.input
+        ORDER BY backed_off.outpoint IS NOT NULL, eligible.created_at, eligible.outpoint
+    ) AS n
     FROM eligible
+    LEFT JOIN backed_off ON backed_off.delegation_id = eligible.delegation_id AND backed_off.outpoint = eligible.outpoint
 ), complete AS (
     SELECT delegation_id FROM ranked WHERE n = 1 GROUP BY delegation_id
     HAVING count(*) = (SELECT count(*) FROM claims WHERE claims.delegation_id = ranked.delegation_id)

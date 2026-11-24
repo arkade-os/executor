@@ -33,6 +33,7 @@ func TestAllocate(t *testing.T) {
 		{name: "fixed draw not covered", amount: 20_000, err: failure.ErrIneligible},
 		{name: "dust remainder", amount: 25_100, err: failure.ErrIneligible, unaffordable: true},
 		{name: "dust remainder after the fee", amount: 25_600, fee: 300, err: failure.ErrIneligible, unaffordable: true},
+		{name: "fee above the remainder", amount: 25_200, fee: 300, err: failure.ErrIneligible, unaffordable: true},
 		{name: "source above 21e14", amount: 21e14 + 1, err: failure.ErrIneligible},
 		{name: "assets follow the catch-all", amount: 100_000, assets: []model.Asset{{ID: assetID(1), Amount: 7}}, wantChange: 75_000, wantChangeAsset: 7},
 		{name: "asset entries combine", amount: 100_000, assets: []model.Asset{{ID: assetID(1), Amount: 7}, {ID: assetID(1), Amount: 3}}, wantChange: 75_000, wantChangeAsset: 10},

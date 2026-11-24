@@ -10,7 +10,7 @@ skill's Launch and Doctor steps. The helper supplies a disposable database and r
 | [Automatic VHTLC claims via streaming templates](auto-claim-vhtlc.md) | Funding triggers a child delegation and receiver payment | Streams, sealing, covenant enforcement |
 | [Intent batching near expiry](batching.md) | Eligible renewals wait near the earliest deadline and share a batch | Scheduling, reserve, session timing, intent capacity |
 | [Multi-input delegation](multi-input-delegation.md) | Every input of one template spends in one transaction | Registration, tuple selection, maturity, completion |
-| [Operator](operator.md) | Health/auth/API checks, separate browser journey | Admin API/UI, configuration, packaging |
+| [Operator](operator.md) | Health/API checks, separate browser journey | Admin API/UI, configuration, packaging |
 
 Registration, fee limits, cancellation and recovery are supporting checks in these six features.
 The boarding and renewal entries share `TestBoardingThenRenewal`; run it once when covering both

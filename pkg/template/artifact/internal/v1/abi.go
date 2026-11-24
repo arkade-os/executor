@@ -66,7 +66,8 @@ type Artifact struct {
 const (
 	maxArray = 1024
 	// bounds the flattened constructor and the walk that builds it
-	maxConstructor = 1024
+	maxConstructor      = 1024
+	maxConstructorBytes = 1 << 20
 )
 
 var (
@@ -149,14 +150,16 @@ func ParseDefinition(v any) (*Definition, error) {
 	if !ok || len(list) == 0 {
 		return nil, invalid("functions must be a non-empty array")
 	}
+	functions := map[string]bool{}
 	for _, e := range list {
 		f, err := parseFunction(e)
 		if err != nil {
 			return nil, err
 		}
-		if slices.ContainsFunc(d.Functions, func(o Function) bool { return o.Name == f.Name }) {
+		if functions[f.Name] {
 			return nil, invalid("duplicate function %q", f.Name)
 		}
+		functions[f.Name] = true
 		d.Functions = append(d.Functions, *f)
 	}
 	for _, f := range d.Functions {
@@ -233,25 +236,33 @@ func (d *Definition) FlatConstructor() ([]Field, error) { return d.Flatten(d.Con
 // Flatten lists the scalars of fields in place: arrays by index, structs in field order.
 func (d *Definition) Flatten(fields []Field) ([]Field, error) {
 	var out []Field
-	steps := 0
+	steps, size := 0, 0
 	var walk func(name, typ string) error
 	walk = func(name, typ string) error {
 		if steps++; steps > maxConstructor || len(out) >= maxConstructor {
 			return invalid("constructor flattens to more than %d fields", maxConstructor)
 		}
+		elements := 1
+		m := ArrayType.FindStringSubmatch(typ)
+		if m != nil {
+			elements, _ = strconv.Atoi(m[2])
+			if elements > maxArray || !slices.Contains(asm.ScalarTypes, m[1]) {
+				return invalid("unsupported type %q", typ)
+			}
+		}
+		if len(name) > (maxConstructorBytes-size)/elements {
+			return invalid("constructor names flatten to more than %d bytes", maxConstructorBytes)
+		}
+		size += elements * len(name)
 		if slices.Contains(asm.ScalarTypes, typ) {
 			out = append(out, Field{name, typ})
 			return nil
 		}
-		if m := ArrayType.FindStringSubmatch(typ); m != nil {
-			n, _ := strconv.Atoi(m[2])
-			if n > maxArray || !slices.Contains(asm.ScalarTypes, m[1]) {
-				return invalid("unsupported type %q", typ)
-			}
-			if len(out)+n > maxConstructor {
+		if m != nil {
+			if len(out)+elements > maxConstructor {
 				return invalid("constructor flattens to more than %d fields", maxConstructor)
 			}
-			for i := range n {
+			for i := range elements {
 				out = append(out, Field{name + "." + strconv.Itoa(i), m[1]})
 			}
 			return nil
@@ -421,14 +432,16 @@ func parseFunction(v any) (*Function, error) {
 	if !ok || len(list) == 0 {
 		return nil, invalid("function %q needs leaves", f.Name)
 	}
+	leaves := map[string]bool{}
 	for _, e := range list {
 		l, err := parseLeaf(e)
 		if err != nil {
 			return nil, err
 		}
-		if slices.ContainsFunc(f.Leaves, func(o Leaf) bool { return o.Name == l.Name }) {
+		if leaves[l.Name] {
 			return nil, invalid("duplicate leaf %q", l.Name)
 		}
+		leaves[l.Name] = true
 		f.Leaves = append(f.Leaves, *l)
 	}
 	return f, nil
@@ -450,6 +463,7 @@ func parseLeaf(v any) (*Leaf, error) {
 	if !ok {
 		return nil, invalid("witness is not an array")
 	}
+	items := map[string]bool{}
 	for _, w := range ws {
 		wm, err := object(
 			failure.ErrInvalidArtifact,
@@ -477,9 +491,10 @@ func parseLeaf(v any) (*Leaf, error) {
 				return nil, invalid("injected is not a boolean")
 			}
 		}
-		if slices.ContainsFunc(l.Witness, func(o WitnessItem) bool { return o.Name == it.Name }) {
+		if items[it.Name] {
 			return nil, invalid("duplicate witness item %q", it.Name)
 		}
+		items[it.Name] = true
 		l.Witness = append(l.Witness, it)
 	}
 	return l, nil
@@ -548,6 +563,7 @@ func parseFields(v any, what string) ([]Field, error) {
 		return nil, invalid("%ss is not an array", what)
 	}
 	out := make([]Field, 0, len(list))
+	names := map[string]bool{}
 	for _, e := range list {
 		m, err := object(failure.ErrInvalidArtifact, e, what, []string{"name", "type"})
 		if err != nil {
@@ -561,9 +577,10 @@ func parseFields(v any, what string) ([]Field, error) {
 		if err != nil {
 			return nil, err
 		}
-		if slices.ContainsFunc(out, func(f Field) bool { return f.Name == n }) {
+		if names[n] {
 			return nil, invalid("duplicate %s %q", what, n)
 		}
+		names[n] = true
 		out = append(out, Field{n, t})
 	}
 	return out, nil

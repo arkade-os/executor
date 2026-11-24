@@ -4,6 +4,7 @@ package electrum
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -23,6 +24,9 @@ const (
 	protocolVersion = "1.4"
 	clientName      = "executord"
 	maxBackoff      = 30 * time.Second
+	maxFrame        = 64 << 20
+	maxQueuedBytes  = 32 << 20
+	queuedOverhead  = 64
 )
 
 // timings are the client's clocks; tests shorten them.
@@ -88,15 +92,18 @@ type notification struct {
 	params json.RawMessage
 }
 
-// notifications is an unbounded queue: the reader never waits on a consumer that waits on the
-// reader.
 type notifications struct {
 	mu    sync.Mutex
 	items []notification
+	bytes int
 	wake  chan struct{}
 }
 
 func (e *rpcError) Error() string { return fmt.Sprintf("electrum: %s (code %d)", e.Message, e.Code) }
+
+func (n notification) size() int {
+	return queuedOverhead + len(n.method) + len(n.params)
+}
 
 func (c *client) start() {
 	c.wg.Add(2)
@@ -307,37 +314,52 @@ func (s *session) write(v any) error {
 func (s *session) read(c *client) {
 	defer c.wg.Done()
 	defer s.close()
-	r := bufio.NewReader(s.conn)
-	for {
-		line, err := r.ReadBytes('\n')
-		if err != nil {
-			return
-		}
-		var msgs []message
-		if line[0] == '[' {
-			err = json.Unmarshal(line, &msgs)
-		} else {
-			var m message
-			err = json.Unmarshal(line, &m)
-			msgs = []message{m}
-		}
-		if err != nil {
+	frames := bufio.NewScanner(s.conn)
+	frames.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), maxFrame)
+	for frames.Scan() {
+		if err := s.receive(c, frames.Bytes()); err != nil {
 			log.WithError(err).Warn("electrum message")
-			continue
-		}
-		for _, m := range msgs {
-			s.route(c, m)
 		}
 	}
+	if errors.Is(frames.Err(), bufio.ErrTooLong) {
+		log.Warnf("electrum frame exceeds %d bytes", maxFrame)
+	}
+}
+
+func (s *session) receive(c *client, frame []byte) error {
+	if len(frame) == 0 || frame[0] != '[' {
+		var m message
+		if err := json.Unmarshal(frame, &m); err != nil {
+			return err
+		}
+		s.route(c, m)
+		return nil
+	}
+	batch := json.NewDecoder(bytes.NewReader(frame))
+	if _, err := batch.Token(); err != nil {
+		return err
+	}
+	for batch.More() {
+		var m message
+		if err := batch.Decode(&m); err != nil {
+			return err
+		}
+		s.route(c, m)
+	}
+	return nil
 }
 
 func (s *session) route(c *client, m message) {
 	if m.ID == nil {
-		c.notes.push(notification{method: m.Method, params: m.Params})
+		if !c.notes.push(notification{method: m.Method, params: m.Params}) {
+			log.Warnf("electrum notifications exceed %d bytes", maxQueuedBytes)
+			s.close()
+		}
 		return
 	}
 	s.mu.Lock()
 	wait := s.pending[*m.ID]
+	delete(s.pending, *m.ID)
 	s.mu.Unlock()
 	if wait != nil {
 		wait <- m
@@ -362,14 +384,21 @@ func (s *session) keepAlive(c *client) {
 	}
 }
 
-func (q *notifications) push(n notification) {
+func (q *notifications) push(n notification) bool {
 	q.mu.Lock()
+	if q.bytes+n.size() > maxQueuedBytes {
+		q.items, q.bytes = nil, 0
+		q.mu.Unlock()
+		return false
+	}
 	q.items = append(q.items, n)
+	q.bytes += n.size()
 	q.mu.Unlock()
 	select {
 	case q.wake <- struct{}{}:
 	default:
 	}
+	return true
 }
 
 func (q *notifications) pop(ctx context.Context) (notification, bool) {
@@ -378,6 +407,7 @@ func (q *notifications) pop(ctx context.Context) (notification, bool) {
 		if len(q.items) > 0 {
 			n := q.items[0]
 			q.items = q.items[1:]
+			q.bytes -= n.size()
 			q.mu.Unlock()
 			return n, true
 		}

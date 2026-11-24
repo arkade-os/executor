@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net"
 	"net/http"
-	"strings"
+	"slices"
 	"time"
 
 	executorv1 "github.com/arkade-os/executor/api-spec/protobuf/gen/executor/v1"
@@ -44,7 +45,6 @@ type Options struct {
 	PublicPort, AdminPort int
 	PublicRateLimit       int
 	PublicRegistry        bool // the public port registers artifacts and templates too
-	Users                 []AdminUser
 	Status                StatusSource
 	Health                handlers.Health
 }
@@ -60,13 +60,6 @@ func Listen(
 		publicServices(s, mux, conn)
 		executorv1.RegisterAdminServiceServer(s, admin)
 		executorv1.RegisterAdminServiceHandler(ctx, mux, conn)
-	}
-	interceptors := []grpc.UnaryServerInterceptor{logUnary}
-	pages := adminPages(opts.Status, opts.Health)
-	if len(opts.Users) > 0 {
-		auth := newBasicAuth(opts.Users)
-		interceptors = append(interceptors, auth.unary)
-		pages = auth.pages(pages)
 	}
 	publicInterceptors := []grpc.UnaryServerInterceptor{logUnary}
 	if !opts.PublicRegistry {
@@ -84,7 +77,9 @@ func Listen(
 			opts.PublicRateLimit,
 		).middleware(publicSrv.http.Handler)
 	}
-	adminSrv, err := listen(opts.AdminPort, adminServices, pages, interceptors...)
+	adminSrv, err := listen(
+		opts.AdminPort, adminServices, adminPages(opts.Status, opts.Health), logUnary,
+	)
 	if err != nil {
 		publicSrv.close()
 		return nil, err
@@ -219,6 +214,17 @@ func adminPages(status StatusSource, checks handlers.Health) http.Handler {
 	return mux
 }
 
+func adminOnly(methods ...string) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
+	) (any, error) {
+		if slices.Contains(methods, info.FullMethod) {
+			return nil, status.Error(codes.PermissionDenied, "served on the admin port only")
+		}
+		return handler(ctx, req)
+	}
+}
+
 func cors(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
@@ -230,8 +236,11 @@ func servesPage(r *http.Request) bool {
 }
 
 func isRest(r *http.Request) bool {
-	return r.Method == http.MethodGet || r.Method == http.MethodDelete ||
-		strings.Contains(r.Header.Get("Content-Type"), "application/json")
+	if r.Method == http.MethodGet || r.Method == http.MethodDelete {
+		return true
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mediaType == "application/json"
 }
 
 // restError answers FailedPrecondition with 412 where the gateway would send 400.

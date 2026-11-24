@@ -277,6 +277,9 @@ func TestFlatConstructorCap(t *testing.T) {
 	for name, doc := range map[string][]byte{
 		"arrays multiplied by structs": nested(10, `{"name":"a","type":"bytes[1024]"},{"name":"b","type":"bytes[1024]"}`),
 		"empty structs multiplied":     nested(40, ``),
+		"a long name multiplied by an array": nested(
+			0, `{"name":"`+strings.Repeat("a", 1100)+`","type":"bytes[1024]"}`,
+		),
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.Less(t, len(doc), 4096)

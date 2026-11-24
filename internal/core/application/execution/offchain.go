@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	delegationapp "github.com/arkade-os/executor/internal/core/application/delegation"
@@ -51,7 +52,7 @@ func (s *Service) spendOffchain(coins []delegation.Coin) {
 		return
 	}
 	switch {
-	case inst.Disabled:
+	case inst.Disabled, early(inst.Template, coins, time.Now()):
 		s.send(skipped{coins: outpoints})
 		return
 	case inst.Type == template.Proof:
@@ -196,6 +197,12 @@ func refusal(ctx context.Context, err error) error {
 		return refused{err}
 	}
 	return err
+}
+
+func early(inst *template.Instance, coins []delegation.Coin, now time.Time) bool {
+	return slices.ContainsFunc(coins, func(c delegation.Coin) bool {
+		return c.Onchain && dueAt(inst, c, now).After(now)
+	})
 }
 
 func rotates(err error) bool {

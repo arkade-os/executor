@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -22,7 +21,6 @@ import (
 	"github.com/btcsuite/btcd/txscript/v2"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -144,18 +142,6 @@ func WithIdleEviction(after time.Duration) func(*config.Config) {
 // WithPublicRateLimit caps the requests per second one client address may send to the public port.
 func WithPublicRateLimit(perSecond int) func(*config.Config) {
 	return func(c *config.Config) { c.PublicRateLimit = perSecond }
-}
-
-// WithAdminUser protects the admin port with one user, through a users file as in production.
-func WithAdminUser(t *testing.T, name, password string) func(*config.Config) {
-	t.Helper()
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	require.NoError(t, err)
-	path := filepath.Join(t.TempDir(), "users")
-	require.NoError(t, os.WriteFile(path, []byte(name+":"+string(hash)+"\n"), 0o600))
-	users, err := config.LoadAdminUsers(path)
-	require.NoError(t, err)
-	return func(c *config.Config) { c.AdminUsers = users }
 }
 
 func Dial(t *testing.T, addr string) *grpc.ClientConn {

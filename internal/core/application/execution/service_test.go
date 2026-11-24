@@ -111,8 +111,10 @@ func TestDueAtOnchainWaitsForConfirmations(t *testing.T) {
 		Onchain: true,
 	}
 	require.Equal(t, now.Add(time.Hour), dueAt(inst, c, now), "unconfirmed")
+	require.True(t, early(inst, []delegation.Coin{c}, now), "its hour over, it still waits")
 	c.Confirmations = 1
 	require.Equal(t, c.CreatedAt, dueAt(inst, c, now))
+	require.False(t, early(inst, []delegation.Coin{c}, now))
 }
 
 // instance instantiates doc with variables, hex-encoded, under fresh keys.
@@ -203,14 +205,17 @@ func TestSettleAdoptsOneObservedSpender(t *testing.T) {
 		spent: map[string]string{first: "commitment", second: "commitment"},
 	}
 	saved := &storeAttempts{}
+	var released []string
 	s := &Service{
 		ctx: t.Context(), pending: map[int64]*pending{p.attempt.ID: p},
-		attempts: saved, coins: releaseCoins{}, delegations: delegationService(t),
+		attempts: saved, coins: releasedCoins{outpoints: &released},
+		delegations: delegationService(t),
 	}
 	s.settle(p, now)
 	require.NotContains(t, s.pending, p.attempt.ID)
 	require.Equal(t, delegation.Succeeded, saved.attempt.Status)
 	require.Equal(t, []string{"commitment"}, saved.attempt.Spenders())
+	require.Equal(t, []string{first, second}, released, "a succeeded attempt holds no coin")
 
 	other := &pending{
 		attempt: delegation.Attempt{
@@ -396,6 +401,11 @@ func (missingDelegation) Get(context.Context, int64) (*delegation.Delegation, er
 
 type releaseCoins struct{ delegation.CoinRepository }
 
+type releasedCoins struct {
+	delegation.CoinRepository
+	outpoints *[]string
+}
+
 type listedCoins struct {
 	releaseCoins
 	coins []delegation.Coin
@@ -415,3 +425,8 @@ func (c spenderChain) Spender(context.Context, string, string) (string, error) {
 }
 
 func (releaseCoins) Release(context.Context, []string, time.Time) error { return nil }
+
+func (r releasedCoins) Release(_ context.Context, outpoints []string, _ time.Time) error {
+	*r.outpoints = append(*r.outpoints, outpoints...)
+	return nil
+}
