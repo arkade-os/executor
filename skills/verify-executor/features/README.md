@@ -17,7 +17,8 @@ The boarding and renewal entries share `TestBoardingThenRenewal`; run it once wh
 and report the boarding and renewal outcomes separately.
 
 Coverage is per journey and surface. Passing one registration route does not verify boarding,
-gRPC parity, or the browser; passing daemon stand-ins does not verify external integration.
+gRPC parity, or the browser; passing daemon stand-ins does not verify external integration; the
+`standalone` smoke in the operator entry does not verify a delegation journey.
 The templates registered at startup are `renew`, `board` and `claim`. An onchain template
 registered by its document is watched and signed the same way; the daemon onchain tests use
 stand-ins for arkd, Electrum and the emulator.

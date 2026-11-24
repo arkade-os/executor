@@ -18,6 +18,9 @@ supporting checks within the relevant feature journeys.
 - `test/e2e`: the daemon runs **in-process**, with real regtest dependencies and wallet clients.
   This proves API and transaction behavior; it does not exercise `cmd/executord`, environment
   loading, Docker packaging, or browser interactions.
+- `standalone`: the Docker image built from this checkout, run as the Compose `executor` service
+  against the real regtest dependencies. This proves packaging, environment loading, startup and
+  the public/admin port split. It registers no delegation, so it proves no transaction behavior.
 
 Use the helper below for focused daemon/e2e runs. It assigns a unique disposable database,
 captures evidence, and cleans up that database even after a test failure. Do not pass a user's
@@ -88,8 +91,19 @@ Use the exact selectors in the feature map for other journeys. Each helper call 
 with `-count=1`, `-json` and a bounded timeout. `e2e '.*'` runs the full e2e suite;
 `daemon '.*'` runs the full daemon suite. A selection matching no tests is a failure.
 
-For standalone startup or UI changes, additionally read [operator verification](features/operator.md).
-Report that separate surface as unverified if it was not exercised.
+For a change to configuration, startup, the Dockerfile, the Compose file or what either port
+serves, also run the packaged daemon:
+
+```bash
+skills/verify-executor/scripts/verify.sh standalone
+```
+
+The helper refuses to start when a container named `executor` exists or when port 7080 or 7081 is
+taken. It builds the image, starts the container on its own disposable database, requires the
+responses listed in [operator verification](features/operator.md), then removes the container.
+
+For UI changes, additionally read the browser journey in that entry. Report either surface as
+unverified if it was not exercised.
 
 ## Evidence
 
@@ -97,6 +111,8 @@ The helper prints a fresh `/tmp/executor-verification.XXXXXX` directory. Retain:
 
 - `revision.txt`, `status.txt`, `diff.patch`, and `command.txt` to identify the code and action;
 - `doctor.log`, `tests.jsonl`, `stderr.log`, and timestamp-bounded container logs;
+- for `standalone`, `build.log`, `compose.override.yml`, `responses.txt` and `executor.log` in
+  place of `tests.jsonl` and `stderr.log`;
 - `database.sql` with resulting delegation, coin and attempt rows, before dropping the database;
 - `exit-code.txt` and `cleanup.log` with the outcome and teardown result.
 
@@ -113,8 +129,10 @@ observed end state, and uncovered surfaces. A skipped, blocked or unmatched test
 ## Cleanup
 
 The helper relies on Go's test cleanup to stop its in-process daemon and closes its own database
-with `dropdb --force` after taking a dump. It never stops containers. Inspect `cleanup.log` and
-confirm that `tests.jsonl` and `database.sql` still exist. If interrupted before a dump succeeds,
+with `dropdb --force` after taking a dump. A `standalone` run also removes the `executor`
+container it created and keeps the built image. The helper never stops a container it did not
+create. Inspect `cleanup.log` and confirm that `tests.jsonl` (`responses.txt` for `standalone`)
+and `database.sql` still exist. If interrupted before a dump succeeds,
 retain the logs and report the missing evidence; do not report full success.
 
 Leave a pre-existing shared stack running unless the user authorized stopping it. If this run

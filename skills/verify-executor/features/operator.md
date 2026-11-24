@@ -61,12 +61,25 @@ re-registration, and resumption must preserve the delegation ID and restart rene
 must wait for the in-flight batch to land. See [automatic renewal](auto-renewal.md) for the
 transaction outcomes and recovery checks; these commands exercise the API and in-process daemon.
 
-For standalone configuration or packaging, use the `executor` Compose profile only after
-checking port ownership. Assign that container its own disposable database via a temporary
-Compose override; the default `executor` database may belong to an existing daemon. The
-`make regtest-run` target builds and launches this profile and runs stack initialization. Check
-`/healthz` and `/v1/admin/status` on localhost:7081, plus `/v1/info` on localhost:7080, and capture
-responses and container logs. This is a separate proof from the in-process tests.
+For standalone configuration or packaging:
+
+```bash
+skills/verify-executor/scripts/verify.sh standalone
+```
+
+The helper builds the image from this checkout and starts the Compose `executor` service on a
+disposable database, so the default `executor` database of an existing daemon is untouched. On
+localhost:7081 it requires a healthy `/healthz` and `/v1/admin/health`, plus `/v1/admin/status`,
+`/v1/admin/delegations`, `/metrics` and the UI page. On localhost:7080 it requires `/v1/info` and
+the three default templates. The public port must answer 404 to the admin routes, the UI,
+`/healthz` and `/metrics`, and 403 to `POST /v1/template` and `POST /v1/artifact`, which the admin
+port must route to the registry (400 for an empty document). The container must not restart or
+log a fatal error. Read `responses.txt` and `executor.log` in the evidence directory.
+
+This is a separate proof from the in-process tests, and it registers no delegation: the e2e
+harness starts its own daemon and cannot drive this container, so boarding, renewal and claims
+through the packaged daemon stay unverified. `make regtest-run` launches the same profile on the
+default database for manual exploration.
 
 For a browser change, inspect the current `internal/interface/grpc/web/` controls and use an
 available browser harness to exercise the actual changed interaction. Capture the action and
