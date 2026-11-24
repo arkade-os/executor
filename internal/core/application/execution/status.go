@@ -111,7 +111,7 @@ func (s *Service) ChainConnected() error {
 func (s *Service) forecast(ctx context.Context, st *Status) error {
 	now := time.Now()
 	entries := slices.Clone(st.entries)
-	upcoming, err := s.coins.Ready(ctx, now.Add(forecastSpan), st.Tip, forecastLimit)
+	upcoming, err := s.coins.Upcoming(ctx, now.Add(forecastSpan), st.Tip, forecastLimit)
 	if err != nil {
 		return err
 	}

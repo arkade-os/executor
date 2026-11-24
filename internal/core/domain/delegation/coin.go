@@ -58,6 +58,9 @@ type CoinRepository interface {
 	// ResetHolds holds exactly the coins of the pending attempts.
 	ResetHolds(ctx context.Context) error
 	Ready(ctx context.Context, now time.Time, tip Tip, limit int) ([][]Coin, error)
+	// Upcoming is every tuple the coins ready by until make, a delegation's in due order, backed
+	// off or not.
+	Upcoming(ctx context.Context, until time.Time, tip Tip, limit int) ([][]Coin, error)
 	// NextReady is the earliest time after now a coin becomes ready, zero when none will.
 	NextReady(ctx context.Context, now time.Time, tip Tip) (time.Time, error)
 	Backoff(ctx context.Context, delegationID int64, coins []string, until time.Time) error
