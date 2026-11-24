@@ -29,6 +29,9 @@ type Instance struct {
 }
 
 func (t *Template) Instantiate(c model.Context) (*Instance, error) {
+	if err := t.checkKeys(c.Keys); err != nil {
+		return nil, err
+	}
 	vars, err := t.open(c.Variables, c.Decrypt)
 	if err != nil {
 		return nil, err

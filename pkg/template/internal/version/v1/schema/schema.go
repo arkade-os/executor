@@ -187,6 +187,9 @@ func (t *Template) check() error {
 	if len(t.Inputs) == 0 || len(t.Outputs) == 0 {
 		return bad("a template has at least one input and one output")
 	}
+	if max(len(t.Inputs), len(t.Outputs)) > math.MaxUint16 {
+		return bad("a template has at most %d inputs or outputs", math.MaxUint16)
+	}
 	if err := allOrNone("input", t.Inputs, func(in Input) *int64 { return in.Index }); err != nil {
 		return err
 	}
@@ -315,7 +318,7 @@ func (s *Schedule) check() error {
 	case s.Immediate != nil && !*s.Immediate:
 		return bad("immediate must be true")
 	case s.BeforeExpiry != nil:
-		return s.BeforeExpiry.check("before_expiry_seconds", 1, math.MaxInt64)
+		return s.BeforeExpiry.check("before_expiry_seconds", 1, math.MaxUint32)
 	case s.MinConfirmations != nil:
 		return integer(*s.MinConfirmations, "min_confirmations", 1, math.MaxInt64)
 	}
@@ -415,7 +418,7 @@ func (tr *Trigger) check() error {
 	if tr.Decode != "" && !slices.Contains(decodes, tr.Decode) {
 		return bad("trigger decode must be tlv, records or raw")
 	}
-	if err := integer(tr.ExpiresAfter, "expires_after_seconds", 1, math.MaxInt64); err != nil {
+	if err := integer(tr.ExpiresAfter, "expires_after_seconds", 1, math.MaxUint32); err != nil {
 		return err
 	}
 	if err := integer(tr.MinValue, "trigger min_value", 0, math.MaxInt64); err != nil {

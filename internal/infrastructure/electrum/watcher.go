@@ -167,6 +167,9 @@ func (w *Watcher) Transaction(ctx context.Context, txid string) (*wire.MsgTx, er
 	if err := tx.Deserialize(bytes.NewReader(b)); err != nil {
 		return nil, err
 	}
+	if got := tx.TxHash().String(); got != txid {
+		return nil, fmt.Errorf("electrum transaction %s: server sent %s", txid, got)
+	}
 	return tx, nil
 }
 

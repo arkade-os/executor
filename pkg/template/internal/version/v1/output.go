@@ -374,8 +374,9 @@ func (i *Instance) routeSats(
 	if !copies && t.fee != nil && t.fee.from == slot {
 		if a.fee > left {
 			return 0, fmt.Errorf(
-				"%w: input %q cannot pay fee %d",
+				"%w: %w: input %q cannot pay fee %d",
 				failure.ErrIneligible,
+				failure.ErrUnaffordable,
 				t.inputs[t.fee.from].name,
 				a.fee,
 			)

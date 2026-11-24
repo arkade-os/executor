@@ -11,14 +11,17 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	delegationapp "github.com/arkade-os/executor/internal/core/application/delegation"
 	"github.com/arkade-os/executor/internal/core/domain/delegation"
 	"github.com/arkade-os/executor/internal/core/domain/execution"
 	"github.com/arkade-os/executor/internal/core/ports"
 	"github.com/arkade-os/executor/pkg/template"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -26,10 +29,17 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const blockInterval = 10 * time.Minute
+
 type registration struct {
 	attempt delegation.Attempt
 	intent  *execution.Intent
 	dead    atomic.Bool
+}
+
+type delivery struct {
+	out    *wire.TxOut
+	assets map[string]uint64
 }
 
 type current struct {
@@ -287,6 +297,14 @@ func (b *batchWorker) started(ev ports.BatchStarted) {
 	if len(ours) == 0 {
 		return
 	}
+	if expiry, floor := lifetimeOf(ev.BatchExpiry), b.s.limits.MinBatchExpiry; expiry < floor {
+		err := fmt.Errorf("batch expiry %s is below the minimum %s", expiry, floor)
+		log.WithError(err).WithField("batch", ev.ID).Warn("batch refused")
+		for _, h := range ours {
+			b.s.send(attemptFailed{attempt: h.attempt, err: err, retryIn: b.s.session.Duration})
+		}
+		return
+	}
 	topics := topicsOf(b.s.cosigner, ours)
 	if err := b.s.ark.UpdateTopics(b.s.ctx, topics, nil); err != nil {
 		log.WithError(err).Warn("follow the trees of a batch")
@@ -402,16 +420,30 @@ func (b *batchWorker) checkTree(
 	); err != nil {
 		return fmt.Errorf("vtxo tree: %w", err)
 	}
-	var wanted []*wire.TxOut
+	var wanted, onchain []delivery
 	for _, h := range r.intents {
-		wanted = append(wanted, h.intent.Outputs...)
+		outputs, err := deliveriesOf(h.intent.Tx.UnsignedTx)
+		if err != nil {
+			return fmt.Errorf("intent %s: %w", h.proofTxid(), err)
+		}
+		wanted = append(wanted, outputs[:len(h.intent.Outputs)]...)
+		for _, out := range h.intent.Onchain {
+			onchain = append(onchain, delivery{out: out})
+		}
 	}
-	var delivered []*wire.TxOut
-	for _, leaf := range vtxoTree.Leaves() {
-		delivered = append(delivered, leaf.UnsignedTx.TxOut...)
+	delivered, err := cosignedLeaves(vtxoTree, schnorr.SerializePubKey(b.s.cosignerKey.PubKey()))
+	if err != nil {
+		return fmt.Errorf("vtxo tree: %w", err)
 	}
 	if !delivers(delivered, wanted) {
-		return errors.New("vtxo tree does not deliver the registered outputs")
+		return errors.New("vtxo tree does not deliver the outputs under the cosigner key")
+	}
+	paid := make([]delivery, len(commitment.UnsignedTx.TxOut))
+	for i, out := range commitment.UnsignedTx.TxOut {
+		paid[i] = delivery{out: out}
+	}
+	if !delivers(paid, onchain) {
+		return errors.New("commitment tx does not pay the registered onchain outputs")
 	}
 	return nil
 }
@@ -619,11 +651,28 @@ func topicsOf(cosigner string, intents []*registration) []string {
 	return slices.Compact(topics)
 }
 
-func delivers(delivered, wanted []*wire.TxOut) bool {
+func lifetimeOf(expiry arklib.RelativeLocktime) time.Duration {
+	if expiry.Type == arklib.LocktimeTypeBlock {
+		return time.Duration(expiry.Value) * blockInterval
+	}
+	return time.Duration(expiry.Value) * time.Second
+}
+
+func delivers(delivered, wanted []delivery) bool {
 	left := slices.Clone(delivered)
+	wanted = slices.Clone(wanted)
+	slices.SortStableFunc(wanted, func(a, b delivery) int { return len(b.assets) - len(a.assets) })
 	for _, w := range wanted {
-		i := slices.IndexFunc(left, func(o *wire.TxOut) bool {
-			return o.Value == w.Value && bytes.Equal(o.PkScript, w.PkScript)
+		i := slices.IndexFunc(left, func(d delivery) bool {
+			if d.out.Value != w.out.Value || !bytes.Equal(d.out.PkScript, w.out.PkScript) {
+				return false
+			}
+			for id, amount := range w.assets {
+				if d.assets[id] != amount {
+					return false
+				}
+			}
+			return true
 		})
 		if i < 0 {
 			return false
@@ -631,6 +680,59 @@ func delivers(delivered, wanted []*wire.TxOut) bool {
 		left = slices.Delete(left, i, i+1)
 	}
 	return true
+}
+
+func deliveriesOf(tx *wire.MsgTx) ([]delivery, error) {
+	out := make([]delivery, len(tx.TxOut))
+	for i, txOut := range tx.TxOut {
+		out[i] = delivery{out: txOut}
+	}
+	ext, err := extension.NewExtensionFromTx(tx)
+	if errors.Is(err, extension.ErrExtensionNotFound) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("extension of %s: %w", tx.TxHash(), err)
+	}
+	for _, group := range ext.GetAssetPacket() {
+		if group.IsIssuance() {
+			continue
+		}
+		for _, o := range group.Outputs {
+			if int(o.Vout) >= len(out) {
+				continue
+			}
+			if out[o.Vout].assets == nil {
+				out[o.Vout].assets = map[string]uint64{}
+			}
+			out[o.Vout].assets[group.AssetId.String()] += o.Amount
+		}
+	}
+	return out, nil
+}
+
+func cosignedLeaves(node *tree.TxTree, key []byte) ([]delivery, error) {
+	cosigners, err := txutils.ParseCosignerKeysFromArkPsbt(node.Root, 0)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(cosigners, func(k *btcec.PublicKey) bool {
+		return bytes.Equal(schnorr.SerializePubKey(k), key)
+	}) {
+		return nil, nil
+	}
+	if len(node.Children) == 0 {
+		return deliveriesOf(node.Root.UnsignedTx)
+	}
+	var out []delivery
+	for _, child := range node.Children {
+		leaves, err := cosignedLeaves(child, key)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, leaves...)
+	}
+	return out, nil
 }
 
 func sameProofTx(local, remote string) error {

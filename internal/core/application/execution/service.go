@@ -43,6 +43,7 @@ type Limits struct {
 	RetryDelay          time.Duration // before the coins of a failed attempt are ready again
 	IntentsPerBatch     int           // intents arkd takes per batch
 	IntentTimeout       time.Duration // an intent not selected by then is forgotten and queued again
+	MinBatchExpiry      time.Duration
 	Reserve             time.Duration // before expiry, the latest a coin enters a batch
 	BanDuration         time.Duration // the coins of an intent a batch failed on keep out of the queue
 	LandingWindow       time.Duration // after a restart or the loss of the batch events, how long a batched attempt waits to see its coins spent
@@ -472,6 +473,7 @@ func (s *Service) succeed(p *pending) {
 	delete(s.pending, a.ID)
 	s.attemptsSucceeded++
 	s.record(a.DelegationID, nil)
+	s.release(a.Coins, time.Time{})
 	log.WithFields(fields).Info("attempt succeeded")
 }
 

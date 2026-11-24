@@ -2,10 +2,8 @@ package daemon
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"maps"
 	"net/http"
@@ -19,7 +17,6 @@ import (
 	"github.com/arkade-os/executor/templates"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -127,41 +124,6 @@ func TestDefaultTemplates(t *testing.T) {
 	require.Equal(t, len(templates.Templates), tableRows(t, d, "templates"))
 }
 
-func TestAdminAuthentication(t *testing.T) {
-	d := Start(t, WithAdminUser(t, "alice", "secret"))
-
-	_, err := d.Admin.ListArtifacts(t.Context(), &executorv1.ListArtifactsRequest{})
-	require.Equal(t, codes.Unauthenticated, status.Code(err))
-	ctx := metadata.AppendToOutgoingContext(
-		t.Context(), "authorization", "Basic "+basic("alice", "secret"),
-	)
-	_, err = d.Admin.ListArtifacts(ctx, &executorv1.ListArtifactsRequest{})
-	require.NoError(t, err)
-	wrong := metadata.AppendToOutgoingContext(
-		t.Context(), "authorization", "Basic "+basic("alice", "nope"),
-	)
-	_, err = d.Admin.ListArtifacts(wrong, &executorv1.ListArtifactsRequest{})
-	require.Equal(t, codes.Unauthenticated, status.Code(err))
-
-	resp := send(t, d.AdminURL+"/v1/admin/artifacts", "", "")
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("WWW-Authenticate"), "Basic")
-	resp = send(t, d.AdminURL+"/v1/admin/artifacts", "alice", "secret")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	resp = send(t, d.AdminURL+"/v1/templates", "alice", "secret")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	resp = send(t, d.AdminURL+"/v1/templates", "", "")
-	require.Equal(
-		t, http.StatusUnauthorized, resp.StatusCode,
-		"the public service needs credentials on the admin port too",
-	)
-
-	resp = send(t, d.RestURL+"/v1/templates", "", "")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	_, err = d.Client.ListTemplates(t.Context(), &executorv1.ListTemplatesRequest{})
-	require.NoError(t, err)
-}
-
 func registerRenewal(t *testing.T, d *Daemon) (artifactID, templateID string) {
 	t.Helper()
 	return registerShipped(t, d, "renew.json")
@@ -212,22 +174,4 @@ func failures(t *testing.T, d *Daemon, id string) int {
 			Scan(&n),
 	)
 	return n
-}
-
-func basic(user, pass string) string {
-	return base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
-}
-
-func send(t *testing.T, url, user, pass string) *http.Response {
-	t.Helper()
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
-	require.NoError(t, err)
-	if user != "" {
-		req.SetBasicAuth(user, pass)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	return resp
 }

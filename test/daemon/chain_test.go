@@ -183,6 +183,28 @@ func TestBoardingInputIsRegisteredAtOnce(t *testing.T) {
 	require.Empty(t, d.Arkd.RegisteredCoins(), "the vtxo is not registered with it")
 }
 
+func TestUnconfirmedBoardingInputIsNotRegistered(t *testing.T) {
+	d := Start(t, WithSessions(500*time.Millisecond, 128), WithRetryDelay(100*time.Millisecond))
+	d.Arkd.PauseBatches(true)
+	_, templateID := registerShipped(t, d, "board.json")
+	w := boardingDelegation(t, d, templateID)
+	d.Chain.Fund(w.Inputs[0].Script, 20_000)
+	waitCoins(t, d, w.ID, 1)
+
+	_, err := d.DB.ExecContext(t.Context(), "UPDATE coins SET due = now() - interval '1 minute'")
+	require.NoError(t, err)
+	boardingDelegation(t, d, templateID)
+	require.Never(
+		t, func() bool { return tableRows(t, d, "attempts") > 0 }, 2*time.Second,
+		50*time.Millisecond, "its hour over, the deposit still waits for its confirmation",
+	)
+
+	d.Chain.Mine(1)
+	require.Eventually(
+		t, func() bool { return d.Arkd.Registered() == 1 }, 5*time.Second, 20*time.Millisecond,
+	)
+}
+
 func boardingDelegation(t *testing.T, d *Daemon, templateID string) delegation {
 	t.Helper()
 	return registerDelegationWith(t, d, templateID, boardingVariables(t))

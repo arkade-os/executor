@@ -49,6 +49,25 @@ func TestInstantiateCosignerKey(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestInstantiateMissingKey(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		drop func(*model.Keys)
+	}{
+		{name: "server", drop: func(k *model.Keys) { k.Server = nil }},
+		{name: "emulator", drop: func(k *model.Keys) { k.Emulator = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			keys := testKeys(t)
+			tc.drop(&keys)
+			_, err := parseDoc(t, mixedPaymentDoc(t, false)).Instantiate(
+				model.Context{Keys: keys},
+			)
+			require.ErrorIs(t, err, failure.ErrUnsupported)
+		})
+	}
+}
+
 func TestInstantiateVariables(t *testing.T) {
 	tmpl := parseDoc(t, edited(t, delegateArgument(t), func(m map[string]any) {
 		m["variables"] = map[string]any{"delegate": "pubkey"}

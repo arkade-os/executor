@@ -9,9 +9,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/executor/internal/core/ports"
-	grpcserver "github.com/arkade-os/executor/internal/interface/grpc"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const envPrefix = "EXECUTOR_"
@@ -40,6 +38,7 @@ type Config struct {
 	RetryDelay          time.Duration // before the coins of a failed attempt are tried again
 	IntentsPerBatch     int
 	IntentTimeout       time.Duration // an intent not selected by then is forgotten and queued again
+	MinBatchExpiry      time.Duration
 	Reserve             time.Duration // before expiry, the latest a coin enters a batch
 	BanDuration         time.Duration // the coins of an intent a batch failed on keep out of the queue
 	LandingWindow       time.Duration // after a restart, how long a batched attempt waits to see its coins spent
@@ -50,8 +49,7 @@ type Config struct {
 	LogLevel            int
 	DefaultTemplates    bool
 	CosignerKey         *btcec.PrivateKey
-	EncryptionKey       *btcec.PrivateKey      // nil refuses templates with secrets
-	AdminUsers          []grpcserver.AdminUser // empty serves the admin port without credentials
+	EncryptionKey       *btcec.PrivateKey // nil refuses templates with secrets
 
 	// Ark, Indexer, Chain and Emulator replace the clients dialled from the URLs; tests set them.
 	Ark      ports.Signer
@@ -71,6 +69,7 @@ func Default() Config {
 		Reserve: 15 * time.Minute, BanDuration: 5 * time.Minute, LandingWindow: 5 * time.Minute,
 		TemplateMaxFailures: 10, LoopStall: 2 * time.Minute, PublicRateLimit: 5, LogLevel: 4,
 		DefaultTemplates: true, IdleExpiry: 7 * 24 * time.Hour, EvictIdleAfter: time.Hour,
+		MinBatchExpiry: 512 * time.Second,
 	}
 }
 
@@ -127,6 +126,7 @@ func Load() (Config, error) {
 		{"ATTEMPT_TIMEOUT", &cfg.AttemptTimeout},
 		{"RETRY_DELAY", &cfg.RetryDelay},
 		{"INTENT_TIMEOUT", &cfg.IntentTimeout},
+		{"MIN_BATCH_EXPIRY", &cfg.MinBatchExpiry},
 		{"RESERVE", &cfg.Reserve},
 		{"BAN_DURATION", &cfg.BanDuration},
 		{"LANDING_WINDOW", &cfg.LandingWindow},
@@ -168,63 +168,7 @@ func Load() (Config, error) {
 			return Config{}, err
 		}
 	}
-	usersFile := os.Getenv(envPrefix + "ADMIN_USERS_FILE")
-	switch os.Getenv(envPrefix + "ADMIN_AUTH") {
-	case "file":
-		if usersFile == "" {
-			return Config{}, fmt.Errorf(
-				"%sADMIN_USERS_FILE is required when %sADMIN_AUTH=file", envPrefix, envPrefix,
-			)
-		}
-		if cfg.AdminUsers, err = LoadAdminUsers(usersFile); err != nil {
-			return Config{}, err
-		}
-	case "disabled":
-		if usersFile != "" {
-			return Config{}, fmt.Errorf(
-				"%sADMIN_USERS_FILE cannot be set when %sADMIN_AUTH=disabled", envPrefix, envPrefix,
-			)
-		}
-	default:
-		return Config{}, fmt.Errorf("%sADMIN_AUTH must be file or disabled", envPrefix)
-	}
 	return cfg, nil
-}
-
-// LoadAdminUsers reads user:bcrypt-hash lines; blank lines and # comments are skipped.
-func LoadAdminUsers(path string) ([]grpcserver.AdminUser, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("%sADMIN_USERS_FILE: %w", envPrefix, err)
-	}
-	var users []grpcserver.AdminUser
-	seen := map[string]bool{}
-	for i, line := range strings.Split(string(content), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		name, hash, ok := strings.Cut(line, ":")
-		if !ok || name == "" || hash == "" {
-			return nil, fmt.Errorf(
-				"%sADMIN_USERS_FILE line %d must be user:bcrypt-hash", envPrefix, i+1,
-			)
-		}
-		if cost, err := bcrypt.Cost([]byte(hash)); err != nil || cost < bcrypt.DefaultCost {
-			return nil, fmt.Errorf(
-				"%sADMIN_USERS_FILE line %d has an invalid bcrypt hash", envPrefix, i+1,
-			)
-		}
-		if seen[name] {
-			return nil, fmt.Errorf("%sADMIN_USERS_FILE repeats user %q", envPrefix, name)
-		}
-		seen[name] = true
-		users = append(users, grpcserver.AdminUser{Name: name, PasswordHash: hash})
-	}
-	if len(users) == 0 {
-		return nil, fmt.Errorf("%sADMIN_USERS_FILE holds no user", envPrefix)
-	}
-	return users, nil
 }
 
 func parseKey(env, value string) (*btcec.PrivateKey, error) {

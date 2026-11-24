@@ -504,6 +504,28 @@ func TestReadySkipsInfeasibleAndBackedOffTuples(t *testing.T) {
 	require.Equal(t, [][]string{{"b:0", "z:0"}}, readyOutpoints(ready))
 }
 
+func TestReadyReachesPastBackedOffCoins(t *testing.T) {
+	repo, _ := testCoins(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	tip := delegation.Tip{Height: 100, MedianTime: now}
+	d := testDelegation("jammed")
+	require.NoError(t, repo.db.Delegations().AddOrUpdate(ctx, &d))
+	outpoints := []string{"a:0", "b:0", "c:0", "d:0", "e:0"}
+	for i, outpoint := range outpoints {
+		c := testCoin(outpoint, d.ID, now.Add(-time.Hour))
+		c.CreatedAt = c.CreatedAt.Add(time.Duration(i) * time.Second)
+		require.NoError(t, repo.Upsert(ctx, c))
+	}
+	for _, outpoint := range outpoints[:4] {
+		require.NoError(t, repo.Backoff(ctx, d.ID, []string{outpoint}, now.Add(time.Hour)))
+	}
+
+	ready, err := repo.Ready(ctx, now, tip, 10)
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"e:0"}}, readyOutpoints(ready))
+}
+
 func TestReadyWaitsForSequenceAndTxLocktime(t *testing.T) {
 	repo, _ := testCoins(t)
 	ctx := t.Context()
