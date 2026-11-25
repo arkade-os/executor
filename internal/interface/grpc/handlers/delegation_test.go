@@ -184,8 +184,11 @@ func TestGetInfo(t *testing.T) {
 	require.Equal(t, "test", info.GetVersion())
 	require.Equal(t, "regtest", info.GetNetwork())
 	require.Equal(
-		t, hex.EncodeToString(cosigner.PubKey().SerializeCompressed()), info.GetCosignerPubkey(),
+		t,
+		hex.EncodeToString(cosigner.PubKey().SerializeCompressed()),
+		info.GetBatchCosignerPubkey(),
 	)
+	require.Equal(t, info.GetBatchCosignerPubkey(), info.GetCosignerPubkey()) //nolint:staticcheck
 	require.Equal(
 		t, hex.EncodeToString(server.PubKey().SerializeCompressed()), info.GetServerPubkey(),
 	)

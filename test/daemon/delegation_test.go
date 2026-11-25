@@ -169,17 +169,21 @@ func TestGetInfoOverREST(t *testing.T) {
 	code, body := get(t, d.RestURL+"/v1/info")
 	require.Equal(t, http.StatusOK, code, string(body))
 	var info struct {
-		Version          string `json:"version"`
-		Network          string `json:"network"`
-		CosignerPubkey   string `json:"cosignerPubkey"`
-		ServerPubkey     string `json:"serverPubkey"`
-		EmulatorPubkey   string `json:"emulatorPubkey"`
-		EncryptionPubkey string `json:"encryptionPubkey"`
+		Version             string `json:"version"`
+		Network             string `json:"network"`
+		BatchCosignerPubkey string `json:"batchCosignerPubkey"`
+		CosignerPubkey      string `json:"cosignerPubkey"`
+		ServerPubkey        string `json:"serverPubkey"`
+		EmulatorPubkey      string `json:"emulatorPubkey"`
+		EncryptionPubkey    string `json:"encryptionPubkey"`
 	}
 	require.NoError(t, json.Unmarshal(body, &info))
 	require.Equal(t, "test", info.Version)
 	require.Equal(t, "regtest", info.Network)
-	require.Equal(t, hex.EncodeToString(d.Cosigner.SerializeCompressed()), info.CosignerPubkey)
+	require.Equal(
+		t, hex.EncodeToString(d.Cosigner.SerializeCompressed()), info.BatchCosignerPubkey,
+	)
+	require.Equal(t, info.BatchCosignerPubkey, info.CosignerPubkey)
 	require.Equal(t, hex.EncodeToString(d.Server.SerializeCompressed()), info.ServerPubkey)
 	require.Equal(t, hex.EncodeToString(d.Emulator.SerializeCompressed()), info.EmulatorPubkey)
 	require.Empty(t, info.EncryptionPubkey)

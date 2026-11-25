@@ -330,7 +330,7 @@ func keysOf(t *testing.T, d executor) template.Keys {
 	require.NoError(t, err)
 	return template.Keys{
 		Server: parseKey(t, info.ServerPubkey), Emulator: parseKey(t, info.EmulatorPubkey),
-		Cosigner: parseKey(t, info.CosignerPubkey),
+		Cosigner: parseKey(t, info.BatchCosignerPubkey),
 	}
 }
 

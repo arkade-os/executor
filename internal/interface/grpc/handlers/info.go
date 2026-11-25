@@ -11,8 +11,9 @@ func (h *Executor) GetInfo(
 ) (*executorv1.GetInfoResponse, error) {
 	info := h.delegations.Info()
 	return &executorv1.GetInfoResponse{
-		Version: h.version, Network: info.Network, CosignerPubkey: info.CosignerKey,
+		Version: h.version, Network: info.Network, BatchCosignerPubkey: info.CosignerKey,
 		ServerPubkey: info.ServerKey, EmulatorPubkey: info.EmulatorKey,
 		EncryptionPubkey: info.EncryptionKey,
+		CosignerPubkey:   info.CosignerKey, //nolint:staticcheck
 	}, nil
 }

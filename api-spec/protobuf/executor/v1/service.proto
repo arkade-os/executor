@@ -62,13 +62,15 @@ message GetInfoRequest {}
 message GetInfoResponse {
   string version = 1;
   string network = 2;
-  // cosigner_pubkey is the compressed key that cosigns arkd's vtxo trees.
-  string cosigner_pubkey = 3;
+  // cosigner_pubkey equals batch_cosigner_pubkey, which replaces it.
+  string cosigner_pubkey = 3 [deprecated = true];
   string server_pubkey = 4;
   // encryption_pubkey seals template secrets for this daemon; empty without an encryption key.
   string encryption_pubkey = 5;
   // emulator_pubkey merges into server_pubkey once arkd's signer runs the arkade covenants.
   string emulator_pubkey = 6;
+  // batch_cosigner_pubkey is the daemon's own compressed key, which cosigns arkd's batch trees.
+  string batch_cosigner_pubkey = 7;
 }
 
 message RegisterDelegationRequest {

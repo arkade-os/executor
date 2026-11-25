@@ -495,9 +495,14 @@
         "title": "GetInfoResponse",
         "type": "object",
         "properties": {
+          "batchCosignerPubkey": {
+            "type": "string",
+            "description": "batch_cosigner_pubkey is the daemon's own compressed key, which cosigns arkd's batch trees."
+          },
           "cosignerPubkey": {
             "type": "string",
-            "description": "cosigner_pubkey is the compressed key that cosigns arkd's vtxo trees."
+            "description": "cosigner_pubkey equals batch_cosigner_pubkey, which replaces it.",
+            "deprecated": true
           },
           "emulatorPubkey": {
             "type": "string",
