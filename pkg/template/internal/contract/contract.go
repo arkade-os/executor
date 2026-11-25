@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -121,22 +120,18 @@ func Build(
 	); err != nil {
 		return nil, err
 	}
-	paths := inclusionPaths(tree.RootNode)
 	for i, l := range leaves {
 		if names[i] == ([2]string{}) {
 			continue
 		}
-		h := l.TapHash()
-		proof := txscript.TapscriptProof{
-			TapLeaf: l, RootNode: tree.RootNode, InclusionProof: paths[string(h[:])],
-		}
+		proof := tree.LeafMerkleProofs[tree.LeafProofIndex[l.TapHash()]]
 		control := proof.ToControlBlock(internal)
 		cb, err := control.ToBytes()
 		if err != nil {
 			return nil, err
 		}
 		c.Proofs[names[i]] = &psbt.TaprootTapLeafScript{
-			ControlBlock: cb, Script: l.Script, LeafVersion: txscript.BaseLeafVersion,
+			ControlBlock: cb, Script: proof.Script, LeafVersion: txscript.BaseLeafVersion,
 		}
 	}
 	return c, nil
@@ -216,6 +211,13 @@ func decodeTaptree(raw []byte) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBadTree, err)
 	}
+	seen := make(map[string]bool, len(scripts))
+	for _, s := range scripts {
+		if seen[s] {
+			return nil, fmt.Errorf("%w: leaf %s is repeated", ErrBadTree, s)
+		}
+		seen[s] = true
+	}
 	return scripts, nil
 }
 
@@ -251,35 +253,4 @@ func fromTree(
 		treeNames[j] = names[i]
 	}
 	return tapLeaves(scripts), treeNames, scripts, nil
-}
-
-// inclusionPaths is the sibling path of every distinct leaf of tree, leaf first. btcd's
-// IndexedTapScriptTree keys its own proofs by leaf hash, so a tree that repeats a leaf collects the
-// siblings of all its occurrences in one path and leaves the others short.
-func inclusionPaths(tree txscript.TapNode) map[string][]byte {
-	paths := map[string][]byte{}
-	var walk func(n txscript.TapNode, down [][]byte)
-	walk = func(n txscript.TapNode, down [][]byte) {
-		left, right := n.Left(), n.Right()
-		if left == nil {
-			h := n.TapHash()
-			if _, seen := paths[string(h[:])]; !seen {
-				paths[string(h[:])] = leafFirst(down)
-			}
-			return
-		}
-		lh, rh := left.TapHash(), right.TapHash()
-		walk(left, append(slices.Clone(down), rh[:]))
-		walk(right, append(slices.Clone(down), lh[:]))
-	}
-	walk(tree, nil)
-	return paths
-}
-
-func leafFirst(down [][]byte) []byte {
-	var out []byte
-	for i := len(down) - 1; i >= 0; i-- {
-		out = append(out, down[i]...)
-	}
-	return out
 }
