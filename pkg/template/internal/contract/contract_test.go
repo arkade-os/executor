@@ -12,6 +12,7 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -111,6 +112,19 @@ func TestBuildRejects(t *testing.T) {
 	)
 	_, err = Build(def, nil, keys, nil)
 	require.ErrorIs(t, err, ErrBadLeaf, "missing constructor value")
+
+	def, _ = nLeaves(t, 2)
+	c, err := Build(def, nil, keys, nil)
+	require.NoError(t, err)
+	a, b := c.Tapscripts[0], c.Tapscripts[1]
+	for _, leaves := range [][]string{{a, a, b}, {a, b, a}, {a, a, b, b}} {
+		raw, err := txutils.TapTree(leaves).Encode()
+		require.NoError(t, err)
+		_, err = Build(def, nil, keys, raw)
+		require.ErrorIs(t, err, ErrBadTree, "a taptree that repeats a leaf")
+		_, err = TaptreeScript(raw)
+		require.ErrorIs(t, err, ErrBadTree, "a taptree that repeats a leaf")
+	}
 }
 
 func TestBuildProofPerLeaf(t *testing.T) {

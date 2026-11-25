@@ -211,6 +211,13 @@ func decodeTaptree(raw []byte) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBadTree, err)
 	}
+	seen := make(map[string]bool, len(scripts))
+	for _, s := range scripts {
+		if seen[s] {
+			return nil, fmt.Errorf("%w: leaf %s is repeated", ErrBadTree, s)
+		}
+		seen[s] = true
+	}
 	return scripts, nil
 }
 

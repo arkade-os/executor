@@ -40,9 +40,8 @@ func TestTaptreeContract(t *testing.T) {
 	_, err = instantiateRaw(t, []byte{})
 	require.ErrorIs(t, err, failure.ErrIneligible, "an empty tree holds no leaf")
 
-	dup, err := instantiateTree(t, []string{serverLeaf(t), serverLeaf(t)})
-	require.NoError(t, err, "a duplicated leaf is still in the tree")
-	spendProof(t, dup)
+	_, err = instantiateTree(t, []string{serverLeaf(t), serverLeaf(t)})
+	require.ErrorIs(t, err, failure.ErrIneligible, "a tree that repeats a leaf")
 
 	big := []string{serverLeaf(t)}
 	for i := 10; i < 22; i++ {
