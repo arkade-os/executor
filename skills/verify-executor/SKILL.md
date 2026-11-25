@@ -49,15 +49,14 @@ make regtest-up
 ```
 
 This starts Nigiri and the Compose dependencies, then initializes, unlocks and funds arkd.
-`scripts/regtest-init.sh` can also restart emulator; it is not a read-only readiness probe.
-Record which resources existed before launch and which this run created. If startup fails,
-collect logs and clean up owned resources before retrying. Do not silently repair unrelated
-code or replace another checkout's containers.
 
-For daemon-only checks, `make pg` starts Postgres if the external `nigiri` network already exists.
-If that network is absent, use `make regtest-up` above first. The helper requires the local
-`executor-pg` container exposing Postgres on localhost:5432; it deliberately ignores any ambient
-`EXECUTOR_DATABASE_URL` for its test subprocess.
+The daemon always runs with the stack's standalone emulator, which signs the templates in
+`templates/emulator/` and the fixtures naming `<EMULATOR_KEY:fn>`. With `ARKD_EMULATES=true` in the
+environment (`ARKD_EMULATES=true skills/verify-executor/scripts/verify.sh e2e ...`) the renewal and
+boarding scenarios use the templates in `templates/`, whose leaves arkd emulates, while the claim
+and onchain scenarios stay on the standalone emulator: this needs arkd images whose signer
+emulates, selected with `ARKD_IMAGE`, `ARKD_WALLET_IMAGE` and `ARKD_SIGNER_IMAGE` before
+`make regtest-up`. A change to signing, forfeits or the emulator port is verified both ways.
 
 ## Doctor
 

@@ -123,16 +123,79 @@ func TestFixtureShapes(t *testing.T) {
 }
 
 func TestRenewalAddress(t *testing.T) {
-	for _, p := range []renewalParams{
-		defaultParams(t),
-		{owner: testKey(t, 5), exit: arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144}, window: 86_400, maxFee: 0},
-		{owner: testKey(t, 6), exit: arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1024}, window: 1, maxFee: 1_000_000},
-	} {
-		inst, err := parseFixture(
-			t, "renew.json",
-		).Instantiate(model.Context{Keys: testKeys(t), Variables: p.vars(t)})
-		require.NoError(t, err)
-		require.Equal(t, masterPkScript(t, testKeys(t), p), inst.PkScript(0))
+	keys := testKeys(t)
+	fixtures := []struct {
+		name     string
+		template *Template
+		renewKey *btcec.PublicKey
+		params   renewalParams
+	}{
+		{
+			name: "standalone emulator", template: parseFixture(t, "renew.json"),
+			renewKey: keys.Emulator, params: defaultParams(t),
+		},
+		{
+			name: "standalone emulator, exit in blocks", template: parseFixture(t, "renew.json"),
+			renewKey: keys.Emulator,
+			params: renewalParams{
+				owner:  testKey(t, 5),
+				exit:   arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144},
+				window: 86_400,
+			},
+		},
+		{
+			name: "standalone emulator, widest fee", template: parseFixture(t, "renew.json"),
+			renewKey: keys.Emulator,
+			params: renewalParams{
+				owner:  testKey(t, 6),
+				exit:   arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1024},
+				window: 1, maxFee: 1_000_000,
+			},
+		},
+		{
+			name: "arkd's tweaked key alone", template: arkdRenewal(t), renewKey: keys.Server,
+			params: defaultParams(t),
+		},
+	}
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			inst, err := f.template.Instantiate(
+				model.Context{Keys: keys, Variables: f.params.vars(t)},
+			)
+			require.NoError(t, err)
+			cov := masterCovenant(t, f.params.window, f.params.maxFee)
+			tweaked := arkade.ComputeArkadeScriptPublicKey(
+				f.renewKey, arkade.ArkadeScriptHash(cov),
+			)
+			renew := []*btcec.PublicKey{keys.Server, tweaked}
+			if f.renewKey.IsEqual(keys.Server) {
+				renew = []*btcec.PublicKey{tweaked}
+			}
+			require.Equal(t, renewalPkScript(t, keys, f.params, renew), inst.PkScript(0))
+		})
+	}
+}
+
+func TestOfflineSpend(t *testing.T) {
+	withoutEmulator := testKeys(t)
+	withoutEmulator.Emulator = nil
+	fixtures := []struct {
+		name     string
+		template *Template
+		keys     model.Keys
+	}{
+		{name: "standalone emulator", template: parseFixture(t, "renew.json"), keys: testKeys(t)},
+		{name: "arkd next to a standalone emulator", template: arkdRenewal(t), keys: testKeys(t)},
+		{name: "arkd alone", template: arkdRenewal(t), keys: withoutEmulator},
+	}
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			inst, err := f.template.Instantiate(
+				model.Context{Keys: f.keys, Variables: defaultParams(t).vars(t)},
+			)
+			require.NoError(t, err)
+			require.NoError(t, inst.OfflineSpend(false))
+		})
 	}
 }
 
@@ -620,13 +683,20 @@ func masterPkScript(t *testing.T, keys model.Keys, p renewalParams) []byte {
 	t.Helper()
 	cov := masterCovenant(t, p.window, p.maxFee)
 	tweaked := arkade.ComputeArkadeScriptPublicKey(keys.Emulator, arkade.ArkadeScriptHash(cov))
+	return renewalPkScript(t, keys, p, []*btcec.PublicKey{keys.Server, tweaked})
+}
+
+func renewalPkScript(
+	t *testing.T, keys model.Keys, p renewalParams, renew []*btcec.PublicKey,
+) []byte {
+	t.Helper()
 	vtxo := script.TapscriptsVtxoScript{Closures: []script.Closure{
 		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{p.owner, keys.Server}},
 		&script.CSVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{p.owner}},
 			Locktime:        p.exit,
 		},
-		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{keys.Server, tweaked}},
+		&script.MultisigClosure{PubKeys: renew},
 	}}
 	tapKey, _, err := vtxo.TapTree()
 	require.NoError(t, err)
@@ -635,15 +705,29 @@ func masterPkScript(t *testing.T, keys model.Keys, p renewalParams) []byte {
 	return pk
 }
 
+func arkdRenewal(t *testing.T) *Template {
+	t.Helper()
+	doc, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "templates", "renew.json"))
+	require.NoError(t, err)
+	tmpl, err := Parse(doc, artifacts(t))
+	require.NoError(t, err)
+	return tmpl
+}
+
 func artifacts(t testing.TB) map[string][]byte {
 	t.Helper()
 	paths, err := filepath.Glob(filepath.Join("..", "..", "..", "testdata", "artifacts", "*.json"))
 	require.NoError(t, err)
 	defaults, err := filepath.Glob(
-		filepath.Join("..", "..", "..", "..", "..", "templates", "artifacts", "*.json"),
+		filepath.Join("..", "..", "..", "..", "..", "templates", "emulator", "artifacts", "*.json"),
 	)
 	require.NoError(t, err)
 	paths = append(paths, defaults...)
+	arkd, err := filepath.Glob(
+		filepath.Join("..", "..", "..", "..", "..", "templates", "artifacts", "*.json"),
+	)
+	require.NoError(t, err)
+	paths = append(paths, arkd...)
 	docs := map[string][]byte{}
 	for _, p := range paths {
 		doc, err := os.ReadFile(p)

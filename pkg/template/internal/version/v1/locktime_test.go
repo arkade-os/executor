@@ -2,6 +2,7 @@ package v1
 
 import (
 	"maps"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,62 @@ func TestLocktimeOnlyOffchain(t *testing.T) {
 	)
 	require.ErrorIs(t, err, failure.ErrUnsupported)
 	require.ErrorContains(t, err, "absolute locktime")
+}
+
+func TestOfflineSigners(t *testing.T) {
+	const (
+		emulated = "<SERVER_KEY> OP_CHECKSIGVERIFY <EMULATOR_KEY:renew> OP_CHECKSIG"
+		signed   = "<SIGNER_KEY:renew> OP_CHECKSIG"
+	)
+	fixtures := []struct {
+		name             string
+		leaf             string
+		directOnchain    bool
+		signer, emulator bool
+		refused          string
+	}{
+		{name: "a standalone emulator next to arkd", leaf: emulated, emulator: true},
+		{name: "arkd's tweaked key alone", leaf: signed, signer: true},
+		{
+			name: "arkd's key next to its tweaked key", signer: true,
+			leaf: "<SERVER_KEY> OP_CHECKSIGVERIFY <SIGNER_KEY:renew> OP_CHECKSIG",
+		},
+		{
+			name: "arkd settles no leaf of a standalone emulator alone",
+			leaf: "<EMULATOR_KEY:renew> OP_CHECKSIG", refused: "arkd signs no key of the leaf",
+		},
+		{
+			name: "a standalone emulator signs a bitcoin tx alone", directOnchain: true,
+			leaf: "<EMULATOR_KEY:renew> OP_CHECKSIG", emulator: true,
+		},
+		{
+			name: "arkd cosigns a bitcoin tx it emulates", leaf: signed, directOnchain: true,
+			signer: true,
+		},
+		{
+			name: "arkd's plain key signs no bitcoin tx", leaf: emulated, directOnchain: true,
+			refused: "signer <SERVER_KEY> is not available offline",
+		},
+		{
+			name:    "an owner never signs offline",
+			leaf:    "<owner> OP_CHECKSIGVERIFY <SERVER_KEY> OP_CHECKSIG",
+			refused: "signer <owner> is not available offline",
+		},
+		{name: "a checksig needs a key", leaf: "OP_CHECKSIG", refused: "checksig has no key"},
+	}
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			signer, emulator, err := offlineSigners(strings.Fields(f.leaf), f.directOnchain)
+			if f.refused == "" {
+				require.NoError(t, err)
+				require.Equal(t, f.signer, signer)
+				require.Equal(t, f.emulator, emulator)
+				return
+			}
+			require.ErrorIs(t, err, failure.ErrUnsupported)
+			require.ErrorContains(t, err, f.refused)
+		})
+	}
 }
 
 func TestLocktimeFromLeaf(t *testing.T) {

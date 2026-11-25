@@ -25,7 +25,8 @@ test:
 test-daemon: pg
 	go test -count=1 -timeout 15m ./test/daemon/...
 
-## end-to-end against the regtest stack (make regtest-up first)
+## end-to-end against the regtest stack (make regtest-up first); `ARKD_EMULATES=true make test-e2e`
+## renews and boards through the leaves arkd emulates, which needs an arkd that does
 test-e2e:
 	go test -tags e2e -v -count=1 -timeout 40m ./test/e2e/...
 

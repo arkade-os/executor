@@ -13,7 +13,7 @@
       "name": "deposit",
       "type": "onchain",
       "contract": {
-        "definition": {"artifact": "e3c0fa053fbb529a252a1025e3453a41f01949f4e49d50de7dfe5d3510470ed3"},
+        "definition": {"artifact": "c20262e49d27e250ebff465a1020ba7fe8f00d8fd4e187d7960cdbd984b59b31"},
         "arguments": {
           "owner": "<owner>",
           "boardingExitDelay": "<boarding_exit_delay>",
@@ -30,7 +30,7 @@
       "value": {"from": "deposit"},
       "locking": {
         "contract": {
-          "definition": {"artifact": "faa3249b8a28e999963994e4020e832285351eb7ce3b4821bcb3b4498f5b8ef3"},
+          "definition": {"artifact": "073079204c7a0765df7bc83a06e68a0064835217936888f281c52831f97e7b20"},
           "arguments": {
             "owner": "<owner>",
             "exitDelay": "<exit_delay>",

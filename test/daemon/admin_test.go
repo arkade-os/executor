@@ -103,10 +103,12 @@ func TestDeleteTemplateRefusedWhileReferenced(t *testing.T) {
 func TestDefaultTemplates(t *testing.T) {
 	d := Start(t)
 	d = d.Restart(t, func(c *config.Config) { c.DefaultTemplates = true })
-	require.Equal(t, len(templates.Artifacts), tableRows(t, d, "artifacts"))
+	artifacts := len(templates.Artifacts) + len(templates.EmulatorArtifacts)
+	shipped := len(templates.Templates) + len(templates.EmulatorTemplates)
+	require.Equal(t, artifacts, tableRows(t, d, "artifacts"))
 	all, err := d.Client.ListTemplates(t.Context(), &executorv1.ListTemplatesRequest{})
 	require.NoError(t, err)
-	require.Len(t, all.GetTemplates(), len(templates.Templates))
+	require.Len(t, all.GetTemplates(), shipped)
 	var id string
 	for _, tpl := range all.GetTemplates() {
 		require.Equal(t, "active", tpl.GetStatus(), tpl.GetId())
@@ -121,7 +123,7 @@ func TestDefaultTemplates(t *testing.T) {
 	got, err := d.Client.GetTemplate(t.Context(), &executorv1.GetTemplateRequest{Id: id})
 	require.NoError(t, err)
 	require.Equal(t, "disabled", got.GetTemplate().GetStatus())
-	require.Equal(t, len(templates.Templates), tableRows(t, d, "templates"))
+	require.Equal(t, shipped, tableRows(t, d, "templates"))
 }
 
 func registerRenewal(t *testing.T, d *Daemon) (artifactID, templateID string) {
@@ -133,18 +135,18 @@ func registerShipped(t *testing.T, d *Daemon, name string) (artifactID, template
 	t.Helper()
 	doc, err := os.ReadFile("../../pkg/template/testdata/" + name)
 	if errors.Is(err, fs.ErrNotExist) {
-		doc, err = os.ReadFile("../../templates/" + name)
+		doc, err = os.ReadFile("../../templates/emulator/" + name)
 	}
 	require.NoError(t, err)
-	for _, file := range slices.Sorted(maps.Keys(templates.Artifacts)) {
-		a, err := artifact.Parse(templates.Artifacts[file])
+	for _, file := range slices.Sorted(maps.Keys(templates.EmulatorArtifacts)) {
+		a, err := artifact.Parse(templates.EmulatorArtifacts[file])
 		require.NoError(t, err)
 		if !bytes.Contains(doc, []byte(a.ID())) {
 			continue
 		}
 		code, body := post(
 			t, d.AdminURL+"/v1/artifact",
-			map[string]string{"document": string(templates.Artifacts[file])},
+			map[string]string{"document": string(templates.EmulatorArtifacts[file])},
 		)
 		require.Equal(t, http.StatusOK, code, string(body))
 		if file == "delegated_vtxo.json" {

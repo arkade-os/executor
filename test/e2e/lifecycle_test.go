@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func TestCancelStopsRenewals(t *testing.T) {
 func TestStopWaitsForTheBatch(t *testing.T) {
 	d := start(t)
 	w, renewal := boardingDelegations(t, d, newOwner(t, d))
-	signing := batchSigning(t)
+	signing := batchSigning(t, d)
 	faucet(t, w.Inputs[0].Address, 20_000)
 
 	select {
@@ -75,12 +76,13 @@ func TestRestart(t *testing.T) {
 
 // batchSigning is closed once a batch asks its cosigners to sign, when every intent it carries is
 // confirmed.
-func batchSigning(t *testing.T) <-chan struct{} {
+func batchSigning(t *testing.T, d executor) <-chan struct{} {
 	t.Helper()
 	ark, err := client.NewClient(arkURL, "e2e")
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
-	events, stop, err := ark.GetEventStream(ctx, nil)
+	cosigner := hex.EncodeToString(d.cfg.CosignerKey.PubKey().SerializeCompressed())
+	events, stop, err := ark.GetEventStream(ctx, []string{cosigner})
 	require.NoError(t, err)
 	t.Cleanup(func() { stop(); cancel(); ark.Close() })
 	signing := make(chan struct{})

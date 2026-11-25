@@ -139,7 +139,7 @@ func testTemplate(t *testing.T, name string) []byte {
 	t.Helper()
 	doc, err := os.ReadFile("../../../../pkg/template/testdata/" + name)
 	if errors.Is(err, fs.ErrNotExist) {
-		doc, err = os.ReadFile("../../../../templates/" + name)
+		doc, err = os.ReadFile("../../../../templates/emulator/" + name)
 	}
 	require.NoError(t, err)
 	return doc

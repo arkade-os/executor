@@ -25,9 +25,20 @@ import (
 
 // nothing is due: only the subscription can wake the daemon
 func TestVHTLCClaimIsPrompt(t *testing.T) {
-	paid, took := swapClaim(t, start(t))
+	paid, took := swapClaim(t, start(t), fixture(t, "vhtlc_claim.json"))
 	require.EqualValues(t, 10_000, paid.Amount)
 	require.Less(t, took, 30*time.Second)
+}
+
+func TestVHTLCClaimThroughArkd(t *testing.T) {
+	if !arkdEmulates {
+		t.Skip("needs an arkd whose signer emulates")
+	}
+	doc := bytes.ReplaceAll(
+		fixture(t, "vhtlc_claim.json"), []byte("<EMULATOR_KEY:"), []byte("<SIGNER_KEY:"),
+	)
+	paid, _ := swapClaim(t, start(t), doc)
+	require.EqualValues(t, 10_000, paid.Amount)
 }
 
 func TestStreamClaim(t *testing.T) {
@@ -157,9 +168,9 @@ func (s swap) sealTerms(t *testing.T, d executor, templateID, program string, le
 	s.variables["preimage"] = seal(t, d, templateID, slices.Concat(s.preimage, terms))
 }
 
-func swapClaim(t *testing.T, d executor) (clientlib.Vtxo, time.Duration) {
+func swapClaim(t *testing.T, d executor, doc []byte) (clientlib.Vtxo, time.Duration) {
 	t.Helper()
-	claim := registerTemplate(t, d, "vhtlc_claim.json")
+	claim := registerDocument(t, d, doc)
 	swap := newSwap(t, d, claim)
 
 	w := registerDelegation(t, d, claim, swap.variables)

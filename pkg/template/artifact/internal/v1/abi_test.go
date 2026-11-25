@@ -184,6 +184,9 @@ func TestArtifactPlaceholders(t *testing.T) {
 		"<TWEAK:k:f>":      true,
 		"<TWEAK:k:g>":      false,
 		"<EMULATOR_KEY:f>": true,
+		"<SIGNER_KEY:f>":   true,
+		"<SIGNER_KEY:g>":   false,
+		"<SIGNER_KEY:>":    false,
 	} {
 		t.Run(tok, func(t *testing.T) {
 			doc := edited(

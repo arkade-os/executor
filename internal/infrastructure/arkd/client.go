@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
@@ -19,12 +20,17 @@ import (
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Client is arkd and its indexer, both served at one URL.
 type Client struct {
 	*Indexer
 	ark     clientlib.Client
+	conn    *grpc.ClientConn
+	onchain arkv1.ArkServiceClient // client-lib has no call for CosignOnchainTx
 	intents intents
 }
 
@@ -52,7 +58,16 @@ func NewClient(url string) (*Client, error) {
 		ark.Close()
 		return nil, fmt.Errorf("connect to the indexer: %w", err)
 	}
-	return &Client{Indexer: NewIndexer(idx, ark), ark: ark}, nil
+	conn, err := dial(url)
+	if err != nil {
+		idx.Close()
+		ark.Close()
+		return nil, fmt.Errorf("connect to arkd: %w", err)
+	}
+	return &Client{
+		Indexer: NewIndexer(idx, ark), ark: ark, conn: conn,
+		onchain: arkv1.NewArkServiceClient(conn),
+	}, nil
 }
 
 func (c *Client) Info(ctx context.Context) (ports.ArkInfo, error) {
@@ -137,6 +152,18 @@ func (c *Client) SubmitTx(
 	return c.ark.SubmitTx(ctx, signedArkTx, checkpoints)
 }
 
+func (c *Client) FinalizeTx(ctx context.Context, arkTxid string, checkpoints []string) error {
+	return c.ark.FinalizeTx(ctx, arkTxid, checkpoints)
+}
+
+func (c *Client) CosignOnchainTx(ctx context.Context, tx string) (string, error) {
+	resp, err := c.onchain.CosignOnchainTx(ctx, &arkv1.CosignOnchainTxRequest{Tx: tx})
+	if err != nil {
+		return "", err
+	}
+	return resp.GetTxid(), nil
+}
+
 func (w *Indexer) Vtxos(ctx context.Context, scripts []string) ([]ports.Output, error) {
 	var out []ports.Output
 	for start := 0; start < len(scripts); start += ports.MaxScripts {
@@ -213,6 +240,19 @@ func (w *Indexer) Transactions(ctx context.Context) (<-chan string, func(), erro
 func (c *Client) Close() {
 	c.indexer.Close()
 	c.ark.Close()
+	_ = c.conn.Close()
+}
+
+func dial(url string) (*grpc.ClientConn, error) {
+	creds, port := insecure.NewCredentials(), "80"
+	if strings.HasPrefix(url, "https://") {
+		creds, port = credentials.NewTLS(nil), "443"
+	}
+	target := strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
+	if !strings.Contains(target, ":") {
+		target += ":" + port
+	}
+	return grpc.NewClient(target, grpc.WithTransportCredentials(creds))
 }
 
 // toOutput reads a vtxo as an output: a swept or unrolled one is gone too, and what spent it is the

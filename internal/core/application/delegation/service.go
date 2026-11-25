@@ -101,8 +101,10 @@ func NewService(
 	}
 	s.info = Info{
 		Network: network.Name, CosignerKey: hex.EncodeToString(cosigner.SerializeCompressed()),
-		ServerKey:   hex.EncodeToString(server.SerializeCompressed()),
-		EmulatorKey: hex.EncodeToString(emulator.SerializeCompressed()),
+		ServerKey: hex.EncodeToString(server.SerializeCompressed()),
+	}
+	if emulator != nil {
+		s.info.EmulatorKey = hex.EncodeToString(emulator.SerializeCompressed())
 	}
 	if encryption != nil {
 		s.keys.Encryption = encryption.PubKey()

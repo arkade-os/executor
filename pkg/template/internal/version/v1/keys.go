@@ -36,7 +36,7 @@ func keysRequired(def *artifact.Definition) keyRequirements {
 	tokens := func(asm []string) {
 		for _, tok := range asm {
 			switch {
-			case tok == "<SERVER_KEY>":
+			case tok == "<SERVER_KEY>", strings.HasPrefix(tok, "<SIGNER_KEY:"):
 				required |= serverKey
 			case tok == "<COSIGNER_KEY>":
 				required |= cosignerKey

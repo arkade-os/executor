@@ -1,12 +1,16 @@
 # AGENTS.md
 
 executord renews Arkade VTXOs and boards bitcoin while their owner is offline. A wallet registers
-a delegation on the addresses of its template inputs; every spend is co-signed by the
-[emulator](https://github.com/arkade-os/emulator) only if it satisfies the template's covenant. The
-default templates in [`templates/`](templates) (`renew`, `board` for non-interactive boarding, and
-the VHTLC claim stream `claim`) are registered at startup. An onchain template is registered by
-its document like any other: the daemon watches its input addresses and the emulator signs the
-spend. Port
+a delegation on the addresses of its template inputs; every spend is co-signed only if it satisfies
+the template's covenant, by arkd's signer for a leaf naming `<SIGNER_KEY:fn>` or by a standalone
+[emulator](https://github.com/arkade-os/emulator) for a leaf naming `<EMULATOR_KEY:fn>`. Both run
+in one daemon behind `ports.Emulator`, a router choosing by the leaf a transaction spends: keep
+the application free of branches on which one signs. The default templates (`renew`, `board` for
+non-interactive boarding, and the VHTLC claim stream `claim`) are registered at startup, from
+[`templates/`](templates) for arkd and from [`templates/emulator/`](templates/emulator) when
+`EXECUTOR_EMULATOR_URL` is set.
+An onchain template is registered by its document like any other: the daemon watches
+its input addresses and the emulator signs the spend. Port
 7080 is the public API, 7081 the admin API and UI: keep it private. Treat signing, forfeit, sweep
 and fee code as code that moves money. When your Ark knowledge disagrees with the repo, trust the
 code but if you think the code is buggy and conflicts with repo intentions then ask a human. For
@@ -27,10 +31,11 @@ internal/core/application/   business logic (delegation, execution, registry, he
                              external deps
 internal/core/ports/         interfaces the application uses (chain, indexer, signer...)
 internal/infrastructure/     implementations of ports, one folder per dependency (arkd, emulator,
-                             electrum, postgres)
+                             electrum, postgres); arkd also implements the emulator port
 internal/interface/grpc/     gRPC handlers, also served as REST, plus the admin web UI in web/
 pkg/template/                the template engine (artifacts, covenants, ECIES sealing), own go.mod
-templates/                   the default templates, embedded and registered at startup
+templates/                   the default templates, embedded and registered at startup: arkd's,
+                             and a standalone emulator's in emulator/
 test/                        daemon, e2e and scale suites against the regtest stack
 scripts/                     regtest-init.sh
 ```
