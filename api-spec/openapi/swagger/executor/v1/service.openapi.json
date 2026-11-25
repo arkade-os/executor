@@ -499,24 +499,20 @@
             "type": "string",
             "description": "batch_cosigner_pubkey is the daemon's own compressed key, which cosigns arkd's batch trees."
           },
-          "cosignerPubkey": {
-            "type": "string",
-            "description": "cosigner_pubkey equals batch_cosigner_pubkey, which replaces it.",
-            "deprecated": true
-          },
           "emulatorPubkey": {
             "type": "string",
-            "description": "emulator_pubkey merges into server_pubkey once arkd's signer runs the arkade covenants."
-          },
-          "encryptionPubkey": {
-            "type": "string",
-            "description": "encryption_pubkey seals template secrets for this daemon; empty without an encryption key."
+            "description": "emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade covenants."
           },
           "network": {
             "type": "string"
           },
-          "serverPubkey": {
-            "type": "string"
+          "operatorPubkey": {
+            "type": "string",
+            "description": "operator_pubkey is the operator's signer key."
+          },
+          "sealingPubkey": {
+            "type": "string",
+            "description": "sealing_pubkey seals template secrets for this daemon; empty without an encryption key."
           },
           "version": {
             "type": "string"

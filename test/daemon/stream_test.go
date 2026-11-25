@@ -490,10 +490,10 @@ func encryptionKey(t *testing.T, d *Daemon) []byte {
 	t.Helper()
 	_, body := get(t, d.RestURL+"/v1/info")
 	var info struct {
-		EncryptionPubkey string `json:"encryptionPubkey"`
+		SealingPubkey string `json:"sealingPubkey"`
 	}
 	require.NoError(t, json.Unmarshal(body, &info))
-	return mustHex(t, info.EncryptionPubkey)
+	return mustHex(t, info.SealingPubkey)
 }
 
 func mustHex(t *testing.T, s string) []byte {

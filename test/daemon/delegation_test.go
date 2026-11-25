@@ -172,10 +172,9 @@ func TestGetInfoOverREST(t *testing.T) {
 		Version             string `json:"version"`
 		Network             string `json:"network"`
 		BatchCosignerPubkey string `json:"batchCosignerPubkey"`
-		CosignerPubkey      string `json:"cosignerPubkey"`
-		ServerPubkey        string `json:"serverPubkey"`
+		OperatorPubkey      string `json:"operatorPubkey"`
 		EmulatorPubkey      string `json:"emulatorPubkey"`
-		EncryptionPubkey    string `json:"encryptionPubkey"`
+		SealingPubkey       string `json:"sealingPubkey"`
 	}
 	require.NoError(t, json.Unmarshal(body, &info))
 	require.Equal(t, "test", info.Version)
@@ -183,10 +182,9 @@ func TestGetInfoOverREST(t *testing.T) {
 	require.Equal(
 		t, hex.EncodeToString(d.Cosigner.SerializeCompressed()), info.BatchCosignerPubkey,
 	)
-	require.Equal(t, info.BatchCosignerPubkey, info.CosignerPubkey)
-	require.Equal(t, hex.EncodeToString(d.Server.SerializeCompressed()), info.ServerPubkey)
+	require.Equal(t, hex.EncodeToString(d.Server.SerializeCompressed()), info.OperatorPubkey)
 	require.Equal(t, hex.EncodeToString(d.Emulator.SerializeCompressed()), info.EmulatorPubkey)
-	require.Empty(t, info.EncryptionPubkey)
+	require.Empty(t, info.SealingPubkey)
 
 	encryption := newKey(9)
 	d = d.Restart(t, func(c *config.Config) { c.EncryptionKey = encryption })
@@ -194,7 +192,7 @@ func TestGetInfoOverREST(t *testing.T) {
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.NoError(t, json.Unmarshal(body, &info))
 	require.Equal(
-		t, hex.EncodeToString(encryption.PubKey().SerializeCompressed()), info.EncryptionPubkey,
+		t, hex.EncodeToString(encryption.PubKey().SerializeCompressed()), info.SealingPubkey,
 	)
 }
 

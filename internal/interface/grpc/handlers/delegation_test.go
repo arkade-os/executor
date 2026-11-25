@@ -188,14 +188,13 @@ func TestGetInfo(t *testing.T) {
 		hex.EncodeToString(cosigner.PubKey().SerializeCompressed()),
 		info.GetBatchCosignerPubkey(),
 	)
-	require.Equal(t, info.GetBatchCosignerPubkey(), info.GetCosignerPubkey()) //nolint:staticcheck
 	require.Equal(
-		t, hex.EncodeToString(server.PubKey().SerializeCompressed()), info.GetServerPubkey(),
+		t, hex.EncodeToString(server.PubKey().SerializeCompressed()), info.GetOperatorPubkey(),
 	)
 	require.Equal(
 		t, hex.EncodeToString(emulator.PubKey().SerializeCompressed()), info.GetEmulatorPubkey(),
 	)
-	require.Empty(t, info.GetEncryptionPubkey())
+	require.Empty(t, info.GetSealingPubkey())
 }
 
 func registerDocument(t *testing.T, h *Executor, path string) string {

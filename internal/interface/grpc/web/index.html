@@ -282,7 +282,7 @@ const bip68 = (v) => (v & (1 << 22) ? span((v & 0xffff) * 512) : `${(v & 0xffff)
 // a 32-byte push is a key: named when it is one of the daemon's or a variable
 function keyName(x, variables) {
   const i = state.info || {};
-  const known = [['server', i.serverPubkey], ['emulator', i.emulatorPubkey], ['batch cosigner', i.batchCosignerPubkey], ...Object.entries(variables || {})];
+  const known = [['operator', i.operatorPubkey], ['emulator', i.emulatorPubkey], ['batch cosigner', i.batchCosignerPubkey], ...Object.entries(variables || {})];
   return known.find(([, k]) => k && (k.length === 64 || k.length === 66) && k.slice(-64) === x)?.[0] ?? `key·${x.slice(0, 6)}`;
 }
 function scriptWords(hex, variables) {
@@ -313,7 +313,7 @@ function variablesList(variables, templateId) {
   return entries.length ? `<dl class="kv">${entries.map(([k, v]) => `<dt class="mono">${esc(k)}</dt><dd>${variable(k, types[k], v)}</dd>`).join('')}</dl>` : '<p class="empty">No variable.</p>';
 }
 
-const DAEMON_KEYS = { ENCRYPTION_KEY: "this daemon's encryption key", SERVER_KEY: "arkd's server key", EMULATOR_KEY: "the emulator's key", COSIGNER_KEY: "this daemon's batch cosigner key" };
+const DAEMON_KEYS = { ENCRYPTION_KEY: "this daemon's sealing key", SERVER_KEY: "the operator's key", EMULATOR_KEY: "the emulator's key", COSIGNER_KEY: "this daemon's batch cosigner key" };
 function source(s) {
   if (s === 'output:taptree') return "the matched output's taptree";
   const m = /^tlv:(\d+)$/.exec(s);
@@ -482,9 +482,9 @@ const views = {
             <dt>Batch session</dt><dd>every ${esc(span(s.sessionSeconds))}, at most ${num(s.maxIntents).toLocaleString()} intents</dd>
             <dt>Expiry reserve</dt><dd>${esc(span(s.reserveSeconds))}</dd>
             <dt>Batch cosigner key</dt><dd>${copy(state.info?.batchCosignerPubkey)}</dd>
-            <dt>Server key</dt><dd>${copy(state.info?.serverPubkey)}</dd>
+            <dt>Operator key</dt><dd>${copy(state.info?.operatorPubkey)}</dd>
             <dt>Emulator key</dt><dd>${copy(state.info?.emulatorPubkey)}</dd>
-            <dt>Encryption key</dt><dd>${copy(state.info?.encryptionPubkey)}</dd>
+            <dt>Sealing key</dt><dd>${copy(state.info?.sealingPubkey)}</dd>
           </dl>
           ${table([
             { title: 'Dependency', cell: (e) => `${esc(checkName(e.name))}<div class="small muted">${esc(CHECKS[e.name]?.[1] || '')}</div>` },

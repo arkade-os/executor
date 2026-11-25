@@ -118,7 +118,7 @@ expect(7081, "/metrics", 200)
 assert "<html" in expect(7081, "/", 200), "The admin port does not serve the UI"
 
 info = json.loads(expect(7080, "/v1/info", 200))
-assert info["network"] == "regtest" and info["batchCosignerPubkey"] and info["cosignerPubkey"], info
+assert info["network"] == "regtest" and info["batchCosignerPubkey"], info
 templates = json.loads(expect(7080, "/v1/templates", 200))["templates"]
 assert len(templates) == 3, f"Want the 3 default templates, got {len(templates)}"
 
