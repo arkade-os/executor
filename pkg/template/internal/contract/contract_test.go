@@ -138,7 +138,12 @@ func TestBuildProofs(t *testing.T) {
 				require.NoError(t, err)
 				name := fmt.Sprintf("f%d", i)
 				require.Equal(
-					t, want, c.Proofs[[2]string{name, name}].ControlBlock, "%d leaves, leaf %d", n, i,
+					t,
+					want,
+					c.Proofs[[2]string{name, name}].ControlBlock,
+					"%d leaves, leaf %d",
+					n,
+					i,
 				)
 			}
 		})
