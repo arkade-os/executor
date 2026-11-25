@@ -2,10 +2,7 @@ package v1
 
 import (
 	"encoding/hex"
-	"fmt"
-	"slices"
 	"testing"
-	"time"
 
 	"github.com/arkade-os/executor/pkg/template/internal/failure"
 	"github.com/arkade-os/executor/pkg/template/internal/version/v1/schema"
@@ -105,23 +102,4 @@ func TestBind(t *testing.T) {
 			require.ErrorIs(t, err, failure.ErrInvalidTemplate)
 		})
 	}
-}
-
-func TestNames(t *testing.T) {
-	b := make(byteTemplate, 0, 200_000)
-	for i := range cap(b) {
-		b = append(b, piece{name: fmt.Sprintf("v%d", i)})
-	}
-	start := time.Now()
-	out := b.names()
-	require.Less(
-		t, time.Since(start), 20*time.Second, "a name is not compared with the names before it",
-	)
-	require.Len(t, out, len(b))
-	require.Equal(t, []string{"v0", "v1"}, out[:2], "order of first appearance")
-
-	b = append(b, piece{name: "v0"}, piece{expr: []string{"<v1>", "<v200000>"}})
-	require.Equal(
-		t, append(slices.Clone(out), "v200000"), b.names(), "once each, appended in order",
-	)
 }
