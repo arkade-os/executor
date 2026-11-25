@@ -9,7 +9,7 @@ on:
       - '*'
 
 env:
-  EMULATOR_VERSION: v0.0.10-rc.0
+  EMULATOR_VERSION: v0.0.10
 
 jobs:
   unit:
