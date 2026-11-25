@@ -280,6 +280,32 @@ func TestDecoderDiagnosticPath(t *testing.T) {
 	require.ErrorIs(t, err, template.ErrInvalidTemplate)
 }
 
+func TestDecodeManySealedNames(t *testing.T) {
+	v := loadVector(t, "onchain")
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(v.Template, &doc))
+	names := make([]any, 0, 115_000)
+	for i := range cap(names) {
+		names = append(names, fmt.Sprintf("v%d", i))
+	}
+	input := doc["inputs"].([]any)[0].(map[string]any)["name"].(string)
+	doc["delegation"] = map[string]any{
+		"schedule": map[string]any{input: map[string]any{"min_confirmations": 1}},
+		"sealed":   names,
+	}
+	raw, err := json.Marshal(doc)
+	require.NoError(t, err)
+	require.Less(t, len(raw), 1<<20, "a document the size cap admits")
+
+	start := time.Now()
+	_, err = template.Decode(raw)
+	require.NoError(t, err)
+	require.Less(
+		t, time.Since(start), 20*time.Second,
+		"a sealed name is not compared with the names before it",
+	)
+}
+
 func TestMissingKeysAndMalformedSourcesReturnErrors(t *testing.T) {
 	v := loadVector(t, "renew-fee")
 	_, compiled := compileVector(t, v)

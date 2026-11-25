@@ -270,13 +270,15 @@ func (d *Delegation) check(inputs []Input) error {
 			return err
 		}
 	}
-	for i, x := range d.Sealed {
+	sealed := make(map[string]bool, len(d.Sealed))
+	for _, x := range d.Sealed {
 		if !Name.MatchString(x.Name) {
 			return bad("bad sealed name %q", x.Name)
 		}
-		if slices.ContainsFunc(d.Sealed[:i], func(o Sealed) bool { return o.Name == x.Name }) {
+		if sealed[x.Name] {
 			return bad("%q is sealed twice", x.Name)
 		}
+		sealed[x.Name] = true
 	}
 	for _, n := range sortedKeys(d.Trigger) {
 		tr := d.Trigger[n]

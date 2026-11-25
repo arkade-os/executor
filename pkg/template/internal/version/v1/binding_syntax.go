@@ -24,8 +24,10 @@ type byteTemplate []piece
 // appearance.
 func (b byteTemplate) names() []string {
 	var out []string
+	seen := map[string]bool{}
 	add := func(n string) {
-		if !slices.Contains(out, n) {
+		if !seen[n] {
+			seen[n] = true
 			out = append(out, n)
 		}
 	}
