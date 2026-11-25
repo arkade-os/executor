@@ -179,7 +179,6 @@ func place(outs []*wire.TxOut, pos []int, ext int) []*wire.TxOut {
 func (i *Instance) spends(d *draft) ([]spending, error) {
 	out := make([]spending, len(i.tmpl.inputs))
 	for slot, in := range i.tmpl.inputs {
-		fn := in.selected
 		out[slot].leaf = in.selectedLeaf
 		out[slot].proof = i.contracts[slot].Proofs[[2]string{in.function, in.leaf}]
 		for _, w := range out[slot].leaf.Witness {
@@ -199,14 +198,14 @@ func (i *Instance) spends(d *draft) ([]spending, error) {
 			continue
 		}
 		e := &arkade.EmulatorEntry{Vin: uint16(slot), Script: bytes.Clone(cov)}
-		for k, f := range fn.Arkade.Inputs {
-			raw, err := i.decoded(in.arguments[k], f.Type, d, slot)
+		for _, a := range in.arguments {
+			raw, err := i.decoded(a.value, a.field.Type, d, slot)
 			if err != nil {
-				return nil, fmt.Errorf("input %q argument %q: %w", in.name, f.Name, err)
+				return nil, fmt.Errorf("input %q argument %q: %w", in.name, a.field.Name, err)
 			}
 			e.Witness = append(e.Witness, raw)
 		}
-		// the first declared input ends on top of the stack
+		// the first flattened input ends on top of the stack
 		slices.Reverse(e.Witness)
 		out[slot].entry = e
 	}

@@ -33,9 +33,14 @@ type input struct {
 	leadVariable   string // an int variable holding before_expiry_seconds
 	contract       construction
 	function, leaf string
-	arguments      []byteTemplate          // flattened covenant inputs, ABI order
+	arguments      []argument              // flattened covenant inputs, ABI order
 	witness        map[string]byteTemplate // non-signature witness items
 	sequence       *lockSpec               // stated nSequence, nil to derive it from the leaf
+}
+
+type argument struct {
+	field artifact.Field
+	value byteTemplate
 }
 
 // lockSpec is a literal or an int variable.
@@ -219,7 +224,7 @@ func (c *compiler) spend(in *input, s *schema.Spend) error {
 		if err != nil {
 			return err
 		}
-		in.arguments = append(in.arguments, b)
+		in.arguments = append(in.arguments, argument{field: want[i], value: b})
 	}
 	in.witness = map[string]byteTemplate{}
 	for _, w := range l.Witness {

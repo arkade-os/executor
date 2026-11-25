@@ -216,6 +216,44 @@ func TestBuildWitnessAndArguments(t *testing.T) {
 	)
 }
 
+func TestBuildArrayArgument(t *testing.T) {
+	doc := edited(t, hashLockWithCovenant(t), func(m map[string]any) {
+		vars := m["variables"].(map[string]any)
+		vars["s0"], vars["s1"] = "bytes32", "bytes32"
+		in := m["inputs"].([]any)[0].(map[string]any)
+		fns := in["contract"].(map[string]any)["definition"].(map[string]any)["functions"].([]any)
+		ark := fns[0].(map[string]any)["arkade"].(map[string]any)
+		ark["inputs"] = []any{
+			map[string]any{"name": "a", "type": "int"},
+			map[string]any{"name": "sigs", "type": "bytes32[2]"},
+		}
+		ark["asm"] = []any{"OP_2DROP", "OP_DROP", "OP_1"}
+		in["spend"].(map[string]any)["arguments"] = []any{7.0, "<s0>", "<s1>"}
+	})
+	tmpl := parseDoc(t, doc)
+
+	preimage, s0, s1 := bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{8}, 32), bytes.Repeat(
+		[]byte{9}, 32,
+	)
+	inst, err := tmpl.Instantiate(model.Context{
+		Keys:      testKeys(t),
+		Variables: map[string][]byte{"preimage": {1}, "s0": s0, "s1": s1},
+		Decrypt:   func([]byte) ([]byte, error) { return preimage, nil },
+	})
+	require.NoError(t, err)
+	src := sourceWith(t, 100_000)
+	lockTo(src, inst.PkScript(0))
+	act, err := inst.Build([]*model.Source{src}, model.Fee{Dust: 330})
+	require.NoError(t, err)
+
+	emu, err := arkade.FindEmulatorPacket(act.Tx.UnsignedTx)
+	require.NoError(t, err)
+	require.Equal(
+		t, wire.TxWitness{s1, s0, asm.ScriptNum(7)}, emu[0].Witness,
+		"the array flattens by index and the first element sits nearest the top",
+	)
+}
+
 func TestBuildConditionWitnessOrder(t *testing.T) {
 	inst, err := parseDoc(t, twoItemCondition(t)).Instantiate(model.Context{Keys: testKeys(t)})
 	require.NoError(t, err)
