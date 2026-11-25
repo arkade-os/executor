@@ -127,56 +127,60 @@ func TestBuildProofs(t *testing.T) {
 	keys := Keys{Server: testKey(t, 1), Emulator: testKey(t, 3)}
 
 	for n := 1; n <= 9; n++ {
-		def, _ := nLeaves(t, n)
-		c, err := Build(def, nil, keys, nil)
-		require.NoError(t, err)
-		tree := txscript.AssembleTaprootScriptTree(tapLeaves(c.Tapscripts)...)
-		for i := range c.Tapscripts {
-			control := tree.LeafMerkleProofs[i].ToControlBlock(script.UnspendableKey())
-			want, err := control.ToBytes()
+		t.Run(fmt.Sprintf("%d distinct leaves", n), func(t *testing.T) {
+			def, _ := nLeaves(t, n)
+			c, err := Build(def, nil, keys, nil)
 			require.NoError(t, err)
-			name := fmt.Sprintf("f%d", i)
-			require.Equal(
-				t, want, c.Proofs[[2]string{name, name}].ControlBlock, "%d leaves, leaf %d", n, i,
-			)
-		}
+			tree := txscript.AssembleTaprootScriptTree(tapLeaves(c.Tapscripts)...)
+			for i := range c.Tapscripts {
+				control := tree.LeafMerkleProofs[i].ToControlBlock(script.UnspendableKey())
+				want, err := control.ToBytes()
+				require.NoError(t, err)
+				name := fmt.Sprintf("f%d", i)
+				require.Equal(
+					t, want, c.Proofs[[2]string{name, name}].ControlBlock, "%d leaves, leaf %d", n, i,
+				)
+			}
+		})
 	}
 
 	for _, order := range [][]int{
 		{0, 0, 1, 1}, {0, 1, 0, 1}, {0, 1, 2, 0}, {0, 1, 2, 0, 1}, {0, 0, 1, 1, 2, 2, 3, 3},
 	} {
-		distinct := 0
-		for _, k := range order {
-			distinct = max(distinct, k+1)
-		}
-		def, closures := nLeaves(t, distinct)
-		base, err := Build(def, nil, keys, nil)
-		require.NoError(t, err)
-		given, repeated := make([]string, len(order)), make([]script.Closure, len(order))
-		for i, k := range order {
-			given[i], repeated[i] = base.Tapscripts[k], closures[k]
-		}
-		raw, err := txutils.TapTree(given).Encode()
-		require.NoError(t, err)
-		c, err := Build(def, nil, keys, raw)
-		require.NoError(t, err, "%v", order)
+		t.Run(fmt.Sprintf("repeated leaves %v", order), func(t *testing.T) {
+			distinct := 0
+			for _, k := range order {
+				distinct = max(distinct, k+1)
+			}
+			def, closures := nLeaves(t, distinct)
+			base, err := Build(def, nil, keys, nil)
+			require.NoError(t, err)
+			given, repeated := make([]string, len(order)), make([]script.Closure, len(order))
+			for i, k := range order {
+				given[i], repeated[i] = base.Tapscripts[k], closures[k]
+			}
+			raw, err := txutils.TapTree(given).Encode()
+			require.NoError(t, err)
+			c, err := Build(def, nil, keys, raw)
+			require.NoError(t, err, "%v", order)
 
-		key, _, err := (&script.TapscriptsVtxoScript{Closures: repeated}).TapTree()
-		require.NoError(t, err)
-		require.Equal(
-			t, schnorr.SerializePubKey(key), c.PkScript[2:],
-			"%v: a repeated leaf keeps the coin's key", order,
-		)
-
-		require.Len(t, c.Proofs, distinct)
-		for name, p := range c.Proofs {
-			control, err := txscript.ParseControlBlock(p.ControlBlock)
-			require.NoError(t, err, "%v %v", order, name)
-			require.NoError(
-				t, txscript.VerifyTaprootLeafCommitment(control, c.PkScript[2:], p.Script),
-				"%v %v: the control block opens the tree's key", order, name,
+			key, _, err := (&script.TapscriptsVtxoScript{Closures: repeated}).TapTree()
+			require.NoError(t, err)
+			require.Equal(
+				t, schnorr.SerializePubKey(key), c.PkScript[2:],
+				"%v: a repeated leaf keeps the coin's key", order,
 			)
-		}
+
+			require.Len(t, c.Proofs, distinct)
+			for name, p := range c.Proofs {
+				control, err := txscript.ParseControlBlock(p.ControlBlock)
+				require.NoError(t, err, "%v %v", order, name)
+				require.NoError(
+					t, txscript.VerifyTaprootLeafCommitment(control, c.PkScript[2:], p.Script),
+					"%v %v: the control block opens the tree's key", order, name,
+				)
+			}
+		})
 	}
 }
 
