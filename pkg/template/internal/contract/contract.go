@@ -68,6 +68,8 @@ func Build(
 			return asm.Value{Type: "bytes32", Raw: schnorr.SerializePubKey(pk)}, nil
 		case len(parts) == 2 && parts[0] == "EMULATOR_KEY":
 			return tweak(c, keys.Emulator, parts[1])
+		case len(parts) == 2 && parts[0] == "SIGNER_KEY":
+			return tweak(c, keys.Server, parts[1])
 		case len(parts) == 3 && parts[0] == "TWEAK":
 			v, err := field(args, parts[1])
 			if err != nil {

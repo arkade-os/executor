@@ -84,7 +84,7 @@ func TestRegisterArtifactCapUnderConcurrency(t *testing.T) {
 	const limit, workers = 5, 20
 	repo := &artifactRows{rows: map[string]registry.Artifact{}}
 	s := NewService(repo, nil, Limits{MaxArtifacts: limit})
-	doc := templates.Artifacts[slices.Sorted(maps.Keys(templates.Artifacts))[0]]
+	doc := templates.EmulatorArtifacts[slices.Sorted(maps.Keys(templates.EmulatorArtifacts))[0]]
 	var wg sync.WaitGroup
 	errs := make(chan error, workers)
 	for i := range workers {
@@ -114,7 +114,7 @@ func TestRegisterArtifactCapUnderConcurrency(t *testing.T) {
 func TestRegisterArtifactAgainAtTheCap(t *testing.T) {
 	repo := &artifactRows{rows: map[string]registry.Artifact{}}
 	s := NewService(repo, nil, Limits{MaxArtifacts: 1})
-	doc := templates.Artifacts[slices.Sorted(maps.Keys(templates.Artifacts))[0]]
+	doc := templates.EmulatorArtifacts[slices.Sorted(maps.Keys(templates.EmulatorArtifacts))[0]]
 	first, err := s.RegisterArtifact(t.Context(), doc)
 	require.NoError(t, err)
 	again, err := s.RegisterArtifact(t.Context(), doc)
@@ -180,7 +180,7 @@ func (r *storedTemplate) AddOrUpdate(_ context.Context, t *registry.Template) er
 }
 
 func TestRegisterTemplateEnforcesSizeLimit(t *testing.T) {
-	doc := templates.Templates["renew.json"]
+	doc := templates.EmulatorTemplates["renew.json"]
 	s := NewService(nil, nil, Limits{MaxDocumentBytes: len(doc) - 1})
 	_, err := s.RegisterTemplate(t.Context(), doc)
 	require.ErrorIs(t, err, registry.ErrInvalidDocument)
@@ -191,13 +191,13 @@ func newService(t *testing.T) (*Service, *countingArtifacts, *storedTemplate, re
 	t.Helper()
 	artifacts := &countingArtifacts{docs: map[string]registry.Artifact{}}
 	docs := map[string][]byte{}
-	for _, doc := range templates.Artifacts {
+	for _, doc := range templates.EmulatorArtifacts {
 		a, err := registry.NewArtifact(doc, 0)
 		require.NoError(t, err)
 		artifacts.docs[a.ID] = *a
 		docs[a.ID] = a.Document
 	}
-	decoded, err := template.Decode(templates.Templates["renew.json"])
+	decoded, err := template.Decode(templates.EmulatorTemplates["renew.json"])
 	require.NoError(t, err)
 	tpl, err := registry.NewDecodedTemplate(decoded, docs)
 	require.NoError(t, err)

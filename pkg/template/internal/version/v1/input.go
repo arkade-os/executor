@@ -336,7 +336,8 @@ func checkClosure(
 	f := in.contract.def.FindFunction(in.function)
 	l := f.FindLeaf(in.leaf)
 	emulated := slices.ContainsFunc(l.Asm, func(tok string) bool {
-		return strings.HasPrefix(tok, "<EMULATOR_KEY:") || strings.HasPrefix(tok, "<TWEAK:")
+		return strings.HasPrefix(tok, "<EMULATOR_KEY:") || strings.HasPrefix(tok, "<SIGNER_KEY:") ||
+			strings.HasPrefix(tok, "<TWEAK:")
 	})
 	cltv := typ == model.Virtual && slices.ContainsFunc(l.Asm, isCLTV)
 	if !emulated && !cltv {

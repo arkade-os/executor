@@ -201,7 +201,7 @@ func decodeTemplate(t *testing.T, body []byte) template {
 
 func templateDocument(t *testing.T) string {
 	t.Helper()
-	doc, err := os.ReadFile("../../templates/renew.json")
+	doc, err := os.ReadFile("../../templates/emulator/renew.json")
 	require.NoError(t, err)
 	return string(doc)
 }

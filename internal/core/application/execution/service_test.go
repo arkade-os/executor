@@ -62,7 +62,7 @@ func TestTrack(t *testing.T) {
 func TestDueAt(t *testing.T) {
 	owner, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	inst := instance(t, templates.Templates["renew.json"], map[string]string{
+	inst := instance(t, templates.EmulatorTemplates["renew.json"], map[string]string{
 		"owner": hex.EncodeToString(
 			owner.PubKey().SerializeCompressed(),
 		),
@@ -95,7 +95,7 @@ func TestDueAt(t *testing.T) {
 func TestDueAtOnchainWaitsForConfirmations(t *testing.T) {
 	owner, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	inst := instance(t, templates.Templates["board.json"], map[string]string{
+	inst := instance(t, templates.EmulatorTemplates["board.json"], map[string]string{
 		"owner": hex.EncodeToString(
 			owner.PubKey().SerializeCompressed(),
 		),
@@ -290,7 +290,7 @@ func TestRebroadcastSendsOnlyAWitnessTransaction(t *testing.T) {
 func instance(t *testing.T, doc []byte, variables map[string]string) *template.Instance {
 	t.Helper()
 	docs := map[string][]byte{}
-	for _, a := range templates.Artifacts {
+	for _, a := range templates.EmulatorArtifacts {
 		if parsed, err := artifact.Parse(a); err == nil {
 			docs[parsed.ID()] = a
 		}

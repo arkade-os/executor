@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txsigner"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/arkade-os/executor/internal/core/domain/execution"
@@ -45,6 +46,7 @@ type ark struct {
 	VtxosChunks       []int
 
 	Submitted    []string
+	Finalized    []string
 	refuseSubmit error
 	unreachable  bool
 	intentFee    string
@@ -171,18 +173,40 @@ func (a *ark) SubmitTx(
 	if a.refuseSubmit != nil {
 		return "", "", nil, a.refuseSubmit
 	}
-	txid, signedArk, err := a.signAsServer(arkTx)
+	tweaked := a.tweakedKeys(arkTx)
+	txid, signedArk, err := a.signAsServer(arkTx, tweaked...)
 	if err != nil {
 		return "", "", nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	signed := make([]string, len(checkpoints))
 	for i, cp := range checkpoints {
-		if _, signed[i], err = a.signAsServer(cp); err != nil {
+		if _, signed[i], err = a.signAsServer(cp, tweaked...); err != nil {
 			return "", "", nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
 	a.Submitted = append(a.Submitted, txid)
 	return txid, signedArk, signed, nil
+}
+
+func (a *ark) FinalizeTx(_ context.Context, txid string, _ []string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Finalized = append(a.Finalized, txid)
+	return nil
+}
+
+func (a *ark) CosignOnchainTx(ctx context.Context, raw string) (string, error) {
+	a.mu.Lock()
+	refuse := a.refuseSubmit
+	a.mu.Unlock()
+	if refuse != nil {
+		return "", refuse
+	}
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(raw), true)
+	if err != nil {
+		return "", status.Error(codes.InvalidArgument, err.Error())
+	}
+	return a.chain.Broadcast(ctx, ptx.UnsignedTx)
 }
 
 func (a *ark) GetVirtualTxs(
@@ -386,24 +410,24 @@ func (e *emulator) SubmitTx(
 	return signed, signedCheckpoints, nil
 }
 
-func (e *emulator) SubmitOnchainTx(_ context.Context, raw string) (string, error) {
+func (e *emulator) SubmitOnchainTx(_ context.Context, raw string) (string, bool, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.refuse != nil {
-		return "", e.refuse
+		return "", false, e.refuse
 	}
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(raw), true)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	packet, err := arkade.FindEmulatorPacket(ptx.UnsignedTx)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	prevouts := map[wire.OutPoint]*wire.TxOut{}
 	for i, in := range ptx.Inputs {
 		if in.WitnessUtxo == nil {
-			return "", fmt.Errorf("input %d has no witness utxo", i)
+			return "", false, fmt.Errorf("input %d has no witness utxo", i)
 		}
 		prevouts[ptx.UnsignedTx.TxIn[i].PreviousOutPoint] = in.WitnessUtxo
 	}
@@ -419,7 +443,7 @@ func (e *emulator) SubmitOnchainTx(_ context.Context, raw string) (string, error
 		}
 		in := &ptx.Inputs[i]
 		if len(in.TaprootLeafScript) == 0 {
-			return "", fmt.Errorf("input %d has no leaf", i)
+			return "", false, fmt.Errorf("input %d has no leaf", i)
 		}
 		key := arkade.ComputeArkadeScriptPrivateKey(
 			e.key, arkade.ArkadeScriptHash(entry.Script),
@@ -429,11 +453,11 @@ func (e *emulator) SubmitOnchainTx(_ context.Context, raw string) (string, error
 			hashes, txscript.SigHashDefault, ptx.UnsignedTx, i, fetcher, leaf,
 		)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		sig, err := schnorr.Sign(key, sighash)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		hash := leaf.TapHash()
 		in.TaprootScriptSpendSig = append(in.TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
@@ -442,7 +466,8 @@ func (e *emulator) SubmitOnchainTx(_ context.Context, raw string) (string, error
 		})
 	}
 	e.Signed++
-	return ptx.B64Encode()
+	signed, err := ptx.B64Encode()
+	return signed, false, err
 }
 
 func (e *emulator) SubmitIntent(_ context.Context, in execution.Intent) (string, error) {
@@ -479,7 +504,7 @@ func (e *emulator) Hang(before, after bool) {
 	e.hangBefore, e.hangAfter = before, after
 }
 
-func (a *ark) signAsServer(raw string) (string, string, error) {
+func (a *ark) signAsServer(raw string, tweaked ...*btcec.PrivateKey) (string, string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(raw), true)
 	if err != nil {
 		return "", "", err
@@ -488,34 +513,41 @@ func (a *ark) signAsServer(raw string) (string, string, error) {
 	for i, in := range ptx.Inputs {
 		prevouts[ptx.UnsignedTx.TxIn[i].PreviousOutPoint] = in.WitnessUtxo
 	}
-	fetcher := txscript.NewMultiPrevOutFetcher(prevouts)
-	hashes := txscript.NewTxSigHashes(ptx.UnsignedTx, fetcher)
-	xOnly := schnorr.SerializePubKey(a.server.PubKey())
-	for i := range ptx.Inputs {
-		in := &ptx.Inputs[i]
-		if len(in.TaprootLeafScript) != 1 ||
-			!bytes.Contains(in.TaprootLeafScript[0].Script, xOnly) {
+	hashes := txscript.NewTxSigHashes(
+		ptx.UnsignedTx, txscript.NewMultiPrevOutFetcher(prevouts),
+	)
+	for i, in := range ptx.Inputs {
+		if len(in.TaprootLeafScript) != 1 {
 			continue
 		}
-		leaf := txscript.NewBaseTapLeaf(in.TaprootLeafScript[0].Script)
-		sighash, err := txscript.CalcTapscriptSignaturehash(
-			hashes, txscript.SigHashDefault, ptx.UnsignedTx, i, fetcher, leaf,
-		)
-		if err != nil {
-			return "", "", err
+		for _, key := range append([]*btcec.PrivateKey{a.server}, tweaked...) {
+			if !bytes.Contains(
+				in.TaprootLeafScript[0].Script, schnorr.SerializePubKey(key.PubKey()),
+			) {
+				continue
+			}
+			if err := txsigner.SignTapscriptInput(ptx, i, key, hashes); err != nil {
+				return "", "", err
+			}
 		}
-		sig, err := schnorr.Sign(a.server, sighash)
-		if err != nil {
-			return "", "", err
-		}
-		hash := leaf.TapHash()
-		in.TaprootScriptSpendSig = append(in.TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
-			XOnlyPubKey: xOnly, LeafHash: hash[:], Signature: sig.Serialize(),
-			SigHash: txscript.SigHashDefault,
-		})
 	}
 	signed, err := ptx.B64Encode()
 	return ptx.UnsignedTx.TxHash().String(), signed, err
+}
+
+func (a *ark) tweakedKeys(raw string) []*btcec.PrivateKey {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(raw), true)
+	if err != nil {
+		return nil
+	}
+	packet, _ := arkade.FindEmulatorPacket(ptx.UnsignedTx)
+	keys := make([]*btcec.PrivateKey, len(packet))
+	for i, entry := range packet {
+		keys[i] = arkade.ComputeArkadeScriptPrivateKey(
+			a.server, arkade.ArkadeScriptHash(entry.Script),
+		)
+	}
+	return keys
 }
 
 func (a *ark) landAt(script, outpoint string, amount uint64, createdAt, expiresAt time.Time) {
@@ -558,6 +590,12 @@ func (a *ark) submitted() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return slices.Clone(a.Submitted)
+}
+
+func (a *ark) finalized() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.Finalized)
 }
 
 func (a *ark) spent(outpoint string) bool {

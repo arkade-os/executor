@@ -331,7 +331,7 @@ func (d *Definition) checkAsm(tokens []string, names map[string]string) error {
 		parts := strings.Split(p[1], ":")
 		switch {
 		case p[1] == "SERVER_KEY", p[1] == "COSIGNER_KEY":
-		case parts[0] == "EMULATOR_KEY" && len(parts) == 2:
+		case (parts[0] == "EMULATOR_KEY" || parts[0] == "SIGNER_KEY") && len(parts) == 2:
 			if !d.hasCovenant(parts[1]) {
 				return invalid("%q names no function with arkade", tok)
 			}

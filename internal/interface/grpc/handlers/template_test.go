@@ -88,7 +88,7 @@ func testTemplateDocument(t *testing.T, name string) string {
 	t.Helper()
 	doc, err := os.ReadFile("../../../../pkg/template/testdata/" + name)
 	if errors.Is(err, fs.ErrNotExist) {
-		doc, err = os.ReadFile("../../../../templates/" + name)
+		doc, err = os.ReadFile("../../../../templates/emulator/" + name)
 	}
 	require.NoError(t, err)
 	return string(doc)

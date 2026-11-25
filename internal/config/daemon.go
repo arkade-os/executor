@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	delegationapp "github.com/arkade-os/executor/internal/core/application/delegation"
@@ -17,6 +18,7 @@ import (
 	grpcserver "github.com/arkade-os/executor/internal/interface/grpc"
 	"github.com/arkade-os/executor/internal/interface/grpc/handlers"
 	"github.com/arkade-os/executor/templates"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 // Daemon is the composition root: the services wired to postgres, arkd, electrum and the emulator
@@ -38,7 +40,7 @@ func NewDaemon(ctx context.Context, cfg Config) (_ *Daemon, err error) {
 		return nil, err
 	}
 	d.closers = append(d.closers, func() { _ = db.Close() })
-	ark, indexer, chain, emu, err := d.connect(cfg)
+	ark, indexer, chain, standalone, err := d.connect(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -46,19 +48,18 @@ func NewDaemon(ctx context.Context, cfg Config) (_ *Daemon, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("arkd info: %w", err)
 	}
-	emuInfo, err := emu.Info(ctx)
+	emu, emulatorKey, err := emulators(ctx, ark, arkInfo.SignerPubkey, standalone)
 	if err != nil {
-		return nil, fmt.Errorf("emulator info: %w", err)
+		return nil, err
 	}
+	artifacts, docs := defaultTemplates(cfg, emulatorKey != nil)
 
 	reg := registry.NewService(db.Artifacts(), db.Templates(), registry.Limits{
 		MaxArtifacts: cfg.MaxArtifacts, MaxTemplates: cfg.MaxTemplates,
 		MaxDocumentBytes: cfg.MaxDocumentBytes,
 	})
-	if cfg.DefaultTemplates {
-		if err := reg.RegisterDefaults(ctx, templates.Artifacts, templates.Templates); err != nil {
-			return nil, fmt.Errorf("default templates: %w", err)
-		}
+	if err := reg.RegisterDefaults(ctx, artifacts, docs); err != nil {
+		return nil, fmt.Errorf("default templates: %w", err)
 	}
 	delegations := delegationapp.NewService(
 		reg,
@@ -68,7 +69,7 @@ func NewDaemon(ctx context.Context, cfg Config) (_ *Daemon, err error) {
 		cfg.CosignerKey.PubKey(),
 		cfg.EncryptionKey,
 		arkInfo.SignerPubkey,
-		emuInfo.SignerPubkey,
+		emulatorKey,
 		arkInfo.Network,
 		delegationapp.Limits{
 			MinDelegationExpiry: cfg.MinDelegationExpiry, MaxDelegations: cfg.MaxDelegations,
@@ -77,9 +78,7 @@ func NewDaemon(ctx context.Context, cfg Config) (_ *Daemon, err error) {
 			IdleExpiry: cfg.IdleExpiry, EvictIdleAfter: cfg.EvictIdleAfter,
 		},
 	)
-	if cfg.DefaultTemplates {
-		delegations.StartStreams(ctx, templates.Templates)
-	}
+	delegations.StartStreams(ctx, docs)
 	delegations.Start(context.Background())
 	d.closers = append(d.closers, delegations.Stop)
 	execution := executionapp.NewService(
@@ -160,7 +159,7 @@ func (d *Daemon) connect(
 		d.closers = append(d.closers, c.Close)
 		chain = c
 	}
-	if emu == nil {
+	if emu == nil && cfg.EmulatorURL != "" {
 		c, err := emulator.NewClient(cfg.EmulatorURL)
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -169,4 +168,42 @@ func (d *Daemon) connect(
 		emu = c
 	}
 	return ark, indexer, chain, emu, nil
+}
+
+func emulators(
+	ctx context.Context, ark ports.Signer, signerKey *btcec.PublicKey, standalone ports.Emulator,
+) (ports.Emulator, *btcec.PublicKey, error) {
+	arkdEmulator := arkd.NewEmulator(ark)
+	if standalone == nil {
+		return arkdEmulator, nil, nil
+	}
+	info, err := standalone.Info(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("emulator info: %w", err)
+	}
+	if info.SignerPubkey.IsEqual(signerKey) {
+		return nil, nil, fmt.Errorf(
+			"the emulator at %sEMULATOR_URL signs with arkd's signer key: unset it, arkd emulates",
+			envPrefix,
+		)
+	}
+	return emulator.NewRouter(standalone, info.SignerPubkey, arkdEmulator), info.SignerPubkey, nil
+}
+
+func defaultTemplates(cfg Config, standalone bool) (artifacts, docs map[string][]byte) {
+	artifacts, docs = map[string][]byte{}, map[string][]byte{}
+	if !cfg.DefaultTemplates {
+		return artifacts, docs
+	}
+	maps.Copy(artifacts, templates.Artifacts)
+	maps.Copy(docs, templates.Templates)
+	if standalone {
+		for name, doc := range templates.EmulatorArtifacts {
+			artifacts["emulator/"+name] = doc
+		}
+		for name, doc := range templates.EmulatorTemplates {
+			docs["emulator/"+name] = doc
+		}
+	}
+	return artifacts, docs
 }

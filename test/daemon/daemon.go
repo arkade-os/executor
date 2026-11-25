@@ -130,6 +130,9 @@ func WithDelegationExpiry(min, interval, pruneAfter time.Duration) func(*config.
 	}
 }
 
+// WithoutEmulator leaves arkd alone to emulate, as a daemon with no emulator URL does.
+func WithoutEmulator(c *config.Config) { c.Emulator = nil }
+
 func WithVtxosDelay(d time.Duration) func(*config.Config) {
 	return func(c *config.Config) { c.Ark.(*ark).vtxosDelay = d }
 }
@@ -202,6 +205,10 @@ func boot(
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	emulatorKey := emu.signer
+	if cfg.Emulator == nil {
+		emulatorKey = nil
+	}
 	standin.once.Do(func() { go standin.runSessions(t.Context()) })
 	d, err := config.NewDaemon(context.Background(), cfg)
 	require.NoError(t, err)
@@ -218,7 +225,7 @@ func boot(
 		AdminURL: "http://127.0.0.1:" + strconv.Itoa(cfg.AdminPort),
 		DB:       db,
 		Server:   server.PubKey(),
-		Emulator: emu.signer,
+		Emulator: emulatorKey,
 		Cosigner: cosigner.PubKey(),
 		Arkd:     standin,
 		Chain:    chain,

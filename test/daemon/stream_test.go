@@ -393,7 +393,7 @@ func claimStreamTemplate(t *testing.T, d *Daemon) string {
 	t.Helper()
 	code, body := post(
 		t, d.AdminURL+"/v1/template",
-		map[string]string{"document": string(templates.Templates["claim.json"])},
+		map[string]string{"document": string(templates.EmulatorTemplates["claim.json"])},
 	)
 	require.Equal(t, http.StatusOK, code, string(body))
 	return decodeTemplate(t, body).ID
@@ -420,7 +420,7 @@ func registerUntriggeredClaim(t *testing.T, d *Daemon) string {
 func editClaim(t *testing.T, edit func(map[string]any)) []byte {
 	t.Helper()
 	var doc map[string]any
-	require.NoError(t, json.Unmarshal(templates.Templates["claim.json"], &doc))
+	require.NoError(t, json.Unmarshal(templates.EmulatorTemplates["claim.json"], &doc))
 	edit(doc)
 	raw, err := json.Marshal(doc)
 	require.NoError(t, err)
@@ -478,7 +478,7 @@ func fundingTx(t *testing.T, d *Daemon, sw swap, amount int64) ([]byte, *psbt.Pa
 
 func artifactDocs() map[string][]byte {
 	docs := map[string][]byte{}
-	for _, doc := range templates.Artifacts {
+	for _, doc := range templates.EmulatorArtifacts {
 		if parsed, err := artifact.Parse(doc); err == nil {
 			docs[parsed.ID()] = doc
 		}

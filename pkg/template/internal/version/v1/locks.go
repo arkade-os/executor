@@ -146,6 +146,7 @@ func (i *Instance) Sequence(slot int) uint32 {
 }
 
 func (i *Instance) OfflineSpend(directOnchain bool) error {
+	var arkd, emulator bool
 	for _, in := range i.tmpl.inputs {
 		leaf := in.selectedLeaf
 		if leaf == nil {
@@ -159,14 +160,25 @@ func (i *Instance) OfflineSpend(directOnchain bool) error {
 				)
 			}
 		}
-		if err := offlineSigners(leaf.Asm, directOnchain); err != nil {
+		signer, emulated, err := offlineSigners(leaf.Asm, directOnchain)
+		if err != nil {
 			return fmt.Errorf("%w: input %q: %v", failure.ErrUnsupported, in.name, err)
 		}
+		arkd, emulator = arkd || signer, emulator || emulated
+	}
+	if arkd && emulator {
+		return fmt.Errorf(
+			"%w: the spent leaves name both arkd's tweaked key and the emulator's",
+			failure.ErrUnsupported,
+		)
 	}
 	return nil
 }
 
-func offlineSigners(tokens []string, directOnchain bool) error {
+// arkd settles a leaf only when it names its signer key, plain or tweaked by an arkade script, and
+// its plain key signs no bitcoin transaction.
+func offlineSigners(tokens []string, directOnchain bool) (signer, emulator bool, err error) {
+	server := false
 	for n, tok := range tokens {
 		switch tok {
 		case "OP_CHECKSIG", "OP_CHECKSIGVERIFY", "OP_CHECKSIGADD":
@@ -174,17 +186,28 @@ func offlineSigners(tokens []string, directOnchain bool) error {
 			continue
 		}
 		if n == 0 {
-			return fmt.Errorf("%w: checksig has no key", failure.ErrUnsupported)
+			return false, false, fmt.Errorf("%w: checksig has no key", failure.ErrUnsupported)
 		}
 		key := tokens[n-1]
-		emulator := strings.HasPrefix(key, "<EMULATOR_KEY:") && strings.HasSuffix(key, ">")
-		server := key == "<SERVER_KEY>"
-		if directOnchain && emulator || !directOnchain && (server || emulator) {
-			continue
+		switch {
+		case strings.HasPrefix(key, "<EMULATOR_KEY:") && strings.HasSuffix(key, ">"):
+			emulator = true
+		case strings.HasPrefix(key, "<SIGNER_KEY:") && strings.HasSuffix(key, ">"):
+			signer = true
+		case key == "<SERVER_KEY>" && !directOnchain:
+			server = true
+		default:
+			return false, false, fmt.Errorf(
+				"%w: signer %s is not available offline", failure.ErrUnsupported, key,
+			)
 		}
-		return fmt.Errorf("%w: signer %s is not available offline", failure.ErrUnsupported, key)
 	}
-	return nil
+	if !directOnchain && !server && !signer {
+		return false, false, fmt.Errorf(
+			"%w: arkd signs no key of the leaf", failure.ErrUnsupported,
+		)
+	}
+	return signer, emulator, nil
 }
 
 // acceptsCSV reports whether nSequence seq satisfies <req> OP_CHECKSEQUENCEVERIFY (BIP 112).

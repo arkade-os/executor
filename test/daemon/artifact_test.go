@@ -85,7 +85,7 @@ func decodeArtifact(t *testing.T, body []byte) artifactView {
 
 func artifactDocument(t *testing.T) string {
 	t.Helper()
-	doc, err := os.ReadFile("../../templates/artifacts/delegated_vtxo.json")
+	doc, err := os.ReadFile("../../templates/emulator/artifacts/delegated_vtxo.json")
 	require.NoError(t, err)
 	return string(doc)
 }

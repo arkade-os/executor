@@ -46,6 +46,9 @@ type Signer interface {
 	SubmitTx(
 		ctx context.Context, signedArkTx string, checkpoints []string,
 	) (arkTxid, finalArkTx string, signedCheckpoints []string, err error)
+	FinalizeTx(ctx context.Context, arkTxid string, signedCheckpoints []string) error
+	// CosignOnchainTx cosigns a bitcoin transaction, given a base64 psbt, and broadcasts it.
+	CosignOnchainTx(ctx context.Context, tx string) (txid string, err error)
 }
 
 // BatchEvent is an event of a batch.
@@ -103,21 +106,21 @@ type Database interface {
 	Ping(ctx context.Context) error
 }
 
-// TODO once the emulation is merged into arkd, merge this interface with Signer
-
 type EmulatorInfo struct {
 	SignerPubkey *btcec.PublicKey
 }
 
-// Emulator cosigns what a covenant allows.
+// Emulator cosigns what a covenant allows: arkd with its signer key, a standalone emulator with
+// its own, or a router between the two.
 type Emulator interface {
 	Info(ctx context.Context) (EmulatorInfo, error)
 	// SubmitTx cosigns an offchain transaction and its checkpoints, given base64 psbts.
 	SubmitTx(
 		ctx context.Context, tx string, checkpoints []string,
 	) (signedTx string, signedCheckpoints []string, err error)
-	// SubmitOnchainTx cosigns a bitcoin transaction, given a base64 psbt.
-	SubmitOnchainTx(ctx context.Context, tx string) (signedTx string, err error)
+	// SubmitOnchainTx cosigns a bitcoin transaction, given a base64 psbt. broadcast tells the
+	// emulator sent it to the network itself, signedTx is then empty.
+	SubmitOnchainTx(ctx context.Context, tx string) (signedTx string, broadcast bool, err error)
 	// SubmitIntent cosigns the proof of an intent.
 	SubmitIntent(ctx context.Context, in execution.Intent) (signedProof string, err error)
 	// SubmitFinalization cosigns the forfeits of an intent once its batch is validated.

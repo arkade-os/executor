@@ -7,7 +7,7 @@ replace github.com/arkade-os/executor/api-spec => ./api-spec
 replace github.com/arkade-os/executor/pkg/template => ./pkg/template
 
 require (
-	github.com/arkade-os/arkd/api-spec v0.0.0-20260901090427-f863e4847193
+	github.com/arkade-os/arkd/api-spec v0.0.0-20261105114752-97386cb3d95c
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20261105114752-97386cb3d95c
 	github.com/arkade-os/arkd/pkg/client-lib v0.0.0-20260901090427-f863e4847193
 	github.com/arkade-os/arkd/pkg/client-wallet v0.0.0-20260901090427-f863e4847193

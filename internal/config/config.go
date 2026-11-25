@@ -18,7 +18,7 @@ type Config struct {
 	Version             string
 	DatabaseURL         string
 	ArkURL              string
-	EmulatorURL         string
+	EmulatorURL         string // empty without a standalone emulator
 	ElectrumURL         string
 	Port                int
 	AdminPort           int
@@ -80,7 +80,7 @@ func Load() (Config, error) {
 	cfg.EmulatorURL = os.Getenv(envPrefix + "EMULATOR_URL")
 	cfg.ElectrumURL = os.Getenv(envPrefix + "ELECTRUM_URL")
 	for name, value := range map[string]string{
-		"DATABASE_URL": cfg.DatabaseURL, "ARK_URL": cfg.ArkURL, "EMULATOR_URL": cfg.EmulatorURL, "ELECTRUM_URL": cfg.ElectrumURL,
+		"DATABASE_URL": cfg.DatabaseURL, "ARK_URL": cfg.ArkURL, "ELECTRUM_URL": cfg.ElectrumURL,
 	} {
 		if value == "" {
 			return Config{}, fmt.Errorf("%s%s is required", envPrefix, name)

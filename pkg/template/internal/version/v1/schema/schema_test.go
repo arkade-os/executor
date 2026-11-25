@@ -191,7 +191,9 @@ func fixture(t testing.TB, name string) []byte {
 	t.Helper()
 	doc, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "testdata", name))
 	if errors.Is(err, fs.ErrNotExist) {
-		doc, err = os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "templates", name))
+		doc, err = os.ReadFile(
+			filepath.Join("..", "..", "..", "..", "..", "..", "templates", "emulator", name),
+		)
 	}
 	require.NoError(t, err)
 	return doc

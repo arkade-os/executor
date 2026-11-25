@@ -3,11 +3,34 @@
 Alpha software: use at your own risk.
 
 `executord` renews Arkade VTXOs and boards bitcoin while their owner is offline. A wallet registers
-a delegation on the addresses of its template inputs; every spend is co-signed by the
-[emulator](https://github.com/arkade-os/emulator) only if it satisfies the template's covenant.
+a delegation on the addresses of its template inputs; every spend is co-signed only if it satisfies
+the template's covenant, by arkd's signer or by a standalone
+[emulator](https://github.com/arkade-os/emulator).
 
-The default templates in [`templates/`](templates) are registered at startup: `renew`, `board`
-(non-interactive boarding) and `claim` (VHTLC claim stream).
+The default templates are registered at startup: `renew`, `board` (non-interactive boarding) and
+`claim` (VHTLC claim stream).
+
+## Emulation
+
+Two cosigners can run a covenant, and one daemon serves both: a template picks one by the key its
+spent leaves name.
+
+- `<SIGNER_KEY:fn>` is arkd's signer key tweaked by the arkade script of `fn`: arkd's signer runs
+  the covenant and signs. A leaf may name it alone (`<SIGNER_KEY:fn> OP_CHECKSIG`), as the defaults
+  in [`templates/`](templates) do, or next to `<SERVER_KEY>`. It needs an arkd whose signer
+  emulates. arkd broadcasts the onchain transactions it cosigns, and cosigns only the collaborative
+  leaves of a confirmed output, not an exit (`OP_CHECKSEQUENCEVERIFY`) leaf.
+- `<EMULATOR_KEY:fn>` is the key of a standalone [emulator](https://github.com/arkade-os/emulator)
+  tweaked the same way, available when `EXECUTOR_EMULATOR_URL` is set. arkd settles a leaf only
+  when it names its signer key, so a virtual or proof leaf names `<SERVER_KEY>` next to it, as the
+  defaults in [`templates/emulator/`](templates/emulator) do. The emulator's key must differ from
+  arkd's signer key.
+
+A template whose spent leaves name both tweaked keys is refused. The two sets of defaults have
+different addresses: a wallet moves to the leaves arkd emulates by registering a delegation of
+the new template and spending its coins to the new address, while its old delegations keep
+renewing. The `claim` stream ships for the standalone emulator only: its leaf is the one of the
+VHTLC the swap creates.
 
 ## Run
 
@@ -37,7 +60,7 @@ On both ports, a REST request other than `GET` or `DELETE` carries
 | Variable | | Default |
 |---|---|---|
 | `EXECUTOR_ARK_URL` | arkd gRPC address | required |
-| `EXECUTOR_EMULATOR_URL` | emulator gRPC address | required |
+| `EXECUTOR_EMULATOR_URL` | gRPC address of a standalone emulator, for the templates naming `<EMULATOR_KEY:fn>` | unset |
 | `EXECUTOR_ELECTRUM_URL` | Electrum server, `tcp://host:port` or `ssl://host:port` | required |
 | `EXECUTOR_DATABASE_URL` | postgres DSN | required |
 | `EXECUTOR_COSIGNER_KEY` | private key cosigning arkd's vtxo trees, 32 bytes hex | required |

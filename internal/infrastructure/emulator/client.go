@@ -53,8 +53,9 @@ func (c *Client) SubmitTx(
 	return c.emulator.SubmitTx(ctx, tx, checkpoints)
 }
 
-func (c *Client) SubmitOnchainTx(ctx context.Context, tx string) (string, error) {
-	return c.emulator.SubmitOnchainTx(ctx, tx)
+func (c *Client) SubmitOnchainTx(ctx context.Context, tx string) (string, bool, error) {
+	signed, err := c.emulator.SubmitOnchainTx(ctx, tx)
+	return signed, false, err
 }
 
 func (c *Client) SubmitIntent(ctx context.Context, in execution.Intent) (string, error) {

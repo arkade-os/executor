@@ -280,7 +280,7 @@ type renewal struct {
 func newRenewal(t *testing.T, maxFee int64) renewal {
 	t.Helper()
 	server, emulator, cosigner, owner := testKey(1), testKey(2), testKey(3), testKey(4)
-	inst := instantiateWith(t, templates.Templates["renew.json"], map[string][]byte{
+	inst := instantiateWith(t, templates.EmulatorTemplates["renew.json"], map[string][]byte{
 		"owner": owner.PubKey().SerializeCompressed(), "exit_delay": scriptNum(1<<22 | 1),
 		"renewal_window": scriptNum(1024), "max_fee": scriptNum(maxFee),
 	}, template.Keys{Server: server.PubKey(), Emulator: emulator.PubKey(), Cosigner: cosigner.PubKey()})
@@ -326,7 +326,7 @@ type boarding struct {
 func newBoarding(t *testing.T) boarding {
 	t.Helper()
 	server, emulator, cosigner, owner := testKey(1), testKey(2), testKey(3), testKey(4)
-	inst := instantiateWith(t, templates.Templates["board.json"], map[string][]byte{
+	inst := instantiateWith(t, templates.EmulatorTemplates["board.json"], map[string][]byte{
 		"owner": owner.PubKey().
 			SerializeCompressed(),
 		"boarding_exit_delay": scriptNum(1<<22 | 2),
@@ -459,7 +459,7 @@ func instantiateWith(
 
 func artifactDocs() map[string][]byte {
 	docs := map[string][]byte{}
-	for _, a := range templates.Artifacts {
+	for _, a := range templates.EmulatorArtifacts {
 		if parsed, err := artifact.Parse(a); err == nil {
 			docs[parsed.ID()] = a
 		}

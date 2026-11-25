@@ -7,6 +7,7 @@ package e2e
 import (
 	"context"
 	"net"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -28,6 +29,8 @@ const (
 	arkdAdminURL = "http://localhost:7071"
 	password     = "password"
 )
+
+var arkdEmulates = os.Getenv("ARKD_EMULATES") == "true"
 
 type executor struct {
 	cfg      config.Config

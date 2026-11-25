@@ -109,20 +109,12 @@
         {
           "name": "renew",
           "asm": [
-            "<SERVER_KEY>",
-            "OP_CHECKSIGVERIFY",
-            "<EMULATOR_KEY:renew>",
+            "<SIGNER_KEY:renew>",
             "OP_CHECKSIG"
           ],
           "witness": [
             {
-              "name": "serverSig",
-              "type": "signature",
-              "encoding": "schnorr-64",
-              "injected": true
-            },
-            {
-              "name": "emulatorSig",
+              "name": "signerSig",
               "type": "signature",
               "encoding": "schnorr-64",
               "injected": true

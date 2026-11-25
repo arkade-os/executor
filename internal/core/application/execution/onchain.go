@@ -46,9 +46,15 @@ func (s *Service) spendOnchain(
 	}
 	s.send(attemptUpdate{attempt: a})
 	encoded := base64.StdEncoding.EncodeToString(raw.Bytes())
-	signed, err := s.emulator.SubmitOnchainTx(ctx, encoded)
+	signed, broadcast, err := s.emulator.SubmitOnchainTx(ctx, encoded)
 	if err != nil {
 		fail(fmt.Errorf("emulator: %w", refusal(ctx, err)))
+		return
+	}
+	if broadcast {
+		log.WithFields(log.Fields{"delegation": a.DelegationID, "txid": txid}).
+			Info("onchain tx broadcast by the emulator")
+		s.send(attemptDone{attempt: a})
 		return
 	}
 	merged, err := merge(encoded, signed)

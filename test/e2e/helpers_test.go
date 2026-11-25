@@ -68,12 +68,27 @@ func registerDocument(t *testing.T, d executor, doc []byte) string {
 
 func fixture(t *testing.T, file string) []byte {
 	t.Helper()
-	doc, err := os.ReadFile(filepath.Join("..", "..", "pkg", "template", "testdata", file))
-	if errors.Is(err, fs.ErrNotExist) {
-		doc, err = os.ReadFile(filepath.Join("..", "..", "templates", file))
+	dirs := []string{
+		filepath.Join("..", "..", "pkg", "template", "testdata"), defaultTemplates(),
+		filepath.Join("..", "..", "templates", "emulator"),
 	}
-	require.NoError(t, err)
-	return doc
+	for _, dir := range dirs {
+		doc, err := os.ReadFile(filepath.Join(dir, file))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		require.NoError(t, err)
+		return doc
+	}
+	require.Fail(t, "no fixture "+file)
+	return nil
+}
+
+func defaultTemplates() string {
+	if arkdEmulates {
+		return filepath.Join("..", "..", "templates")
+	}
+	return filepath.Join("..", "..", "templates", "emulator")
 }
 
 func artifacts(t *testing.T) map[string][]byte {
@@ -82,7 +97,7 @@ func artifacts(t *testing.T) map[string][]byte {
 		filepath.Join("..", "..", "pkg", "template", "testdata", "artifacts", "*.json"),
 	)
 	require.NoError(t, err)
-	defaults, err := filepath.Glob(filepath.Join("..", "..", "templates", "artifacts", "*.json"))
+	defaults, err := filepath.Glob(filepath.Join(defaultTemplates(), "artifacts", "*.json"))
 	require.NoError(t, err)
 	paths = append(paths, defaults...)
 	docs := map[string][]byte{}
