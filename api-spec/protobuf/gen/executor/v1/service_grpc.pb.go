@@ -33,13 +33,11 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ExecutorServiceClient interface {
-	// GetInfo tells the daemon's version, network and keys.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
 	// RegisterDelegation binds a template to variables. The daemon acts on coins landing at the
 	// template's input addresses until expires_at. Registering an active delegation again returns it
 	// unchanged.
 	RegisterDelegation(ctx context.Context, in *RegisterDelegationRequest, opts ...grpc.CallOption) (*RegisterDelegationResponse, error)
-	// GetDelegation returns a delegation with its coins, by ?address=.
 	GetDelegation(ctx context.Context, in *GetDelegationRequest, opts ...grpc.CallOption) (*GetDelegationResponse, error)
 	// RegisterArtifact stores a compiler artifact under its content id. Idempotent.
 	RegisterArtifact(ctx context.Context, in *RegisterArtifactRequest, opts ...grpc.CallOption) (*RegisterArtifactResponse, error)
@@ -143,13 +141,11 @@ func (c *executorServiceClient) ListTemplates(ctx context.Context, in *ListTempl
 // All implementations should embed UnimplementedExecutorServiceServer
 // for forward compatibility.
 type ExecutorServiceServer interface {
-	// GetInfo tells the daemon's version, network and keys.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
 	// RegisterDelegation binds a template to variables. The daemon acts on coins landing at the
 	// template's input addresses until expires_at. Registering an active delegation again returns it
 	// unchanged.
 	RegisterDelegation(context.Context, *RegisterDelegationRequest) (*RegisterDelegationResponse, error)
-	// GetDelegation returns a delegation with its coins, by ?address=.
 	GetDelegation(context.Context, *GetDelegationRequest) (*GetDelegationResponse, error)
 	// RegisterArtifact stores a compiler artifact under its content id. Idempotent.
 	RegisterArtifact(context.Context, *RegisterArtifactRequest) (*RegisterArtifactResponse, error)

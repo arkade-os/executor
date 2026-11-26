@@ -5,7 +5,6 @@ package executor.v1;
 import "meshapi/gateway/annotations.proto";
 
 service ExecutorService {
-  // GetInfo tells the daemon's version, network and keys.
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/info"
@@ -20,7 +19,6 @@ service ExecutorService {
       body: "*"
     };
   }
-  // GetDelegation returns a delegation with its coins, by ?address=.
   rpc GetDelegation(GetDelegationRequest) returns (GetDelegationResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/delegation"
@@ -64,11 +62,10 @@ message GetInfoResponse {
   string network = 2;
   // batch_cosigner_pubkey is the daemon's own compressed key, which cosigns arkd's batch trees.
   string batch_cosigner_pubkey = 3;
-  // operator_pubkey is the operator's signer key.
   string operator_pubkey = 4;
   // sealing_pubkey seals template secrets for this daemon; empty without a sealing key.
   string sealing_pubkey = 5;
-  // emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade covenants.
+  // emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade contracts.
   string emulator_pubkey = 6;
 }
 
@@ -93,7 +90,6 @@ message GetDelegationResponse {
 }
 
 message RegisterArtifactRequest {
-  // document is the artifact JSON document.
   string document = 1;
 }
 message RegisterArtifactResponse {
@@ -107,7 +103,6 @@ message GetArtifactResponse {
 }
 
 message RegisterTemplateRequest {
-  // document is the template JSON document.
   string document = 1;
 }
 message RegisterTemplateResponse {

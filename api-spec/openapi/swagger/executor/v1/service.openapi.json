@@ -91,7 +91,6 @@
         "tags": [
           "ExecutorService"
         ],
-        "description": "GetDelegation returns a delegation with its coins, by ?address=.",
         "operationId": "ExecutorService_GetDelegation",
         "parameters": [
           {
@@ -171,7 +170,6 @@
         "tags": [
           "ExecutorService"
         ],
-        "description": "GetInfo tells the daemon's version, network and keys.",
         "operationId": "ExecutorService_GetInfo",
         "responses": {
           "200": {
@@ -501,14 +499,13 @@
           },
           "emulatorPubkey": {
             "type": "string",
-            "description": "emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade covenants."
+            "description": "emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade contracts."
           },
           "network": {
             "type": "string"
           },
           "operatorPubkey": {
-            "type": "string",
-            "description": "operator_pubkey is the operator's signer key."
+            "type": "string"
           },
           "sealingPubkey": {
             "type": "string",
@@ -607,8 +604,7 @@
         "type": "object",
         "properties": {
           "document": {
-            "type": "string",
-            "description": "document is the artifact JSON document."
+            "type": "string"
           }
         }
       },
@@ -656,8 +652,7 @@
         "type": "object",
         "properties": {
           "document": {
-            "type": "string",
-            "description": "document is the template JSON document."
+            "type": "string"
           }
         }
       },

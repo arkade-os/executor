@@ -64,11 +64,10 @@ type GetInfoResponse struct {
 	Network string                 `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
 	// batch_cosigner_pubkey is the daemon's own compressed key, which cosigns arkd's batch trees.
 	BatchCosignerPubkey string `protobuf:"bytes,3,opt,name=batch_cosigner_pubkey,json=batchCosignerPubkey,proto3" json:"batch_cosigner_pubkey,omitempty"`
-	// operator_pubkey is the operator's signer key.
-	OperatorPubkey string `protobuf:"bytes,4,opt,name=operator_pubkey,json=operatorPubkey,proto3" json:"operator_pubkey,omitempty"`
+	OperatorPubkey      string `protobuf:"bytes,4,opt,name=operator_pubkey,json=operatorPubkey,proto3" json:"operator_pubkey,omitempty"`
 	// sealing_pubkey seals template secrets for this daemon; empty without a sealing key.
 	SealingPubkey string `protobuf:"bytes,5,opt,name=sealing_pubkey,json=sealingPubkey,proto3" json:"sealing_pubkey,omitempty"`
-	// emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade covenants.
+	// emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade contracts.
 	EmulatorPubkey string `protobuf:"bytes,6,opt,name=emulator_pubkey,json=emulatorPubkey,proto3" json:"emulator_pubkey,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -351,9 +350,8 @@ func (x *GetDelegationResponse) GetCoins() []*Coin {
 }
 
 type RegisterArtifactRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// document is the artifact JSON document.
-	Document      string `protobuf:"bytes,1,opt,name=document,proto3" json:"document,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Document      string                 `protobuf:"bytes,1,opt,name=document,proto3" json:"document,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -528,9 +526,8 @@ func (x *GetArtifactResponse) GetArtifact() *Artifact {
 }
 
 type RegisterTemplateRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// document is the template JSON document.
-	Document      string `protobuf:"bytes,1,opt,name=document,proto3" json:"document,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Document      string                 `protobuf:"bytes,1,opt,name=document,proto3" json:"document,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
