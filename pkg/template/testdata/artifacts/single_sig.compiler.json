@@ -31,7 +31,7 @@
           "name": "spend",
           "witness": [
             {
-              "name": "serverSig",
+              "name": "operatorSig",
               "type": "signature",
               "encoding": "schnorr-64",
               "injected": true
@@ -44,7 +44,7 @@
             }
           ],
           "asm": [
-            "<SERVER_KEY>",
+            "<OPERATOR_KEY>",
             "OP_CHECKSIGVERIFY",
             "<EMULATOR_KEY:spend>",
             "OP_CHECKSIG"

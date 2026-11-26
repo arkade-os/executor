@@ -39,8 +39,9 @@ func TestStarted(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ark := &countingSigner{}
 			s := &Service{
-				ark: ark, cosigner: "cosigner", ctx: t.Context(), events: make(chan any, 8),
-				slots: make(chan struct{}, 2), limits: Limits{MinBatchExpiry: floor},
+				ark: ark, batchCosigner: "batchCosigner", ctx: t.Context(),
+				events: make(chan any, 8), slots: make(chan struct{}, 2),
+				limits:  Limits{MinBatchExpiry: floor},
 				session: execution.Session{Duration: session},
 			}
 			b := newBatchWorker(s)
@@ -68,7 +69,7 @@ func TestStarted(t *testing.T) {
 			require.Empty(t, b.intents)
 			if tc.confirmed {
 				require.EqualValues(t, 2, ark.confirmed.Load())
-				require.Equal(t, [][]string{{"a:0", "b:0", "cosigner"}}, ark.followed)
+				require.Equal(t, [][]string{{"a:0", "b:0", "batchCosigner"}}, ark.followed)
 				require.Empty(t, failures)
 				require.Equal(t, []int64{1, 2}, taken)
 				require.NotNil(t, b.inFlight)
@@ -97,7 +98,7 @@ func TestSignatures(t *testing.T) {
 		session := &countingSession{}
 		ark := &countingSigner{}
 		b := &batchWorker{
-			s:        &Service{ark: ark, cosigner: "cosigner"},
+			s:        &Service{ark: ark, batchCosigner: "batchCosigner"},
 			inFlight: &current{id: "batch", session: session},
 		}
 		ev := ports.TreeNoncesAggregated{ID: "batch"}
@@ -293,7 +294,7 @@ func TestCheckTree(t *testing.T) {
 		expected string
 	}{
 		{
-			name:   "outputs delivered under the cosigner key",
+			name:   "outputs delivered under the batch cosigner key",
 			intent: intentOf(t, []*wire.TxOut{vtxo}, nil, nil),
 			leaves: []tree.Leaf{leafOf(t, ours, nil, vtxo), leafOf(t, theirs, nil, stranger)},
 		},
@@ -301,7 +302,7 @@ func TestCheckTree(t *testing.T) {
 			name:     "output under another cosigner",
 			intent:   intentOf(t, []*wire.TxOut{vtxo}, nil, nil),
 			leaves:   []tree.Leaf{leafOf(t, theirs, nil, vtxo), leafOf(t, ours, nil, stranger)},
-			expected: "under the cosigner key",
+			expected: "under the batch cosigner key",
 		},
 		{
 			name:   "onchain output paid",
@@ -331,13 +332,13 @@ func TestCheckTree(t *testing.T) {
 			name:     "assets missing",
 			intent:   intentOf(t, []*wire.TxOut{vtxo}, held, nil),
 			leaves:   []tree.Leaf{leafOf(t, ours, nil, vtxo)},
-			expected: "under the cosigner key",
+			expected: "under the batch cosigner key",
 		},
 		{
 			name:     "fewer assets than registered",
 			intent:   intentOf(t, []*wire.TxOut{vtxo}, held, nil),
 			leaves:   []tree.Leaf{leafOf(t, ours, fewer, vtxo)},
-			expected: "under the cosigner key",
+			expected: "under the batch cosigner key",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -358,7 +359,7 @@ func TestCheckTree(t *testing.T) {
 			)
 			require.NoError(t, err)
 			b := &batchWorker{
-				s: &Service{info: ports.ArkInfo{ForfeitPubkey: forfeit}, cosignerKey: ours},
+				s: &Service{info: ports.ArkInfo{ForfeitPubkey: forfeit}, batchCosignerKey: ours},
 			}
 			r := &current{expiry: expiry, intents: []*registration{tc.intent}}
 
@@ -511,11 +512,13 @@ func intentOf(
 }
 
 func leafOf(
-	t *testing.T, cosigner *btcec.PrivateKey, assets asset.Packet, outputs ...*wire.TxOut,
+	t *testing.T, batchCosigner *btcec.PrivateKey, assets asset.Packet, outputs ...*wire.TxOut,
 ) tree.Leaf {
 	t.Helper()
 	leaf := tree.Leaf{
-		CosignersPublicKeys: []string{hex.EncodeToString(cosigner.PubKey().SerializeCompressed())},
+		CosignersPublicKeys: []string{
+			hex.EncodeToString(batchCosigner.PubKey().SerializeCompressed()),
+		},
 	}
 	for _, out := range outputs {
 		leaf.Outputs = append(leaf.Outputs, tree.LeafOutput{

@@ -24,7 +24,7 @@ import (
 // the claim stream starts with the defaults and a streamed funding transaction gets its swap
 // claimed.
 func TestDefaultStreamSpawnsADelegationThatClaims(t *testing.T) {
-	d := Start(t, WithEncryptionKey, WithDefaultTemplates)
+	d := Start(t, WithSealingKey, WithDefaultTemplates)
 	st := streamsOf(t, d)
 	require.Len(t, st, 1)
 	require.Equal(t, "active", st[0].Status)
@@ -68,7 +68,7 @@ func TestStreamKeepsThePreimageFromADecoy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := Start(
-				t, WithEncryptionKey, WithDefaultTemplates, WithTemplateMaxFailures(1),
+				t, WithSealingKey, WithDefaultTemplates, WithTemplateMaxFailures(1),
 				WithRetryDelay(100*time.Millisecond),
 			)
 			waitStreaming(t, d)
@@ -116,7 +116,7 @@ func TestStreamKeepsThePreimageFromADecoy(t *testing.T) {
 }
 
 func TestStreamedTransactionsThatDoNotMatchSpawnNothing(t *testing.T) {
-	d := Start(t, WithEncryptionKey, WithDefaultTemplates)
+	d := Start(t, WithSealingKey, WithDefaultTemplates)
 	waitStreaming(t, d)
 	sw := newSwap(t, d, claimStreamTemplate(t, d))
 	_, funding := fundingTx(t, d, sw, 10_000)
@@ -135,14 +135,14 @@ func TestStreamedTransactionsThatDoNotMatchSpawnNothing(t *testing.T) {
 }
 
 func TestDefaultStreamStartsOnceAndStaysCancelled(t *testing.T) {
-	d := Start(t, WithEncryptionKey, WithDefaultTemplates)
-	d = d.Restart(t, WithEncryptionKey, WithDefaultTemplates)
+	d := Start(t, WithSealingKey, WithDefaultTemplates)
+	d = d.Restart(t, WithSealingKey, WithDefaultTemplates)
 	st := streamsOf(t, d)
 	require.Len(t, st, 1, "a restart registers it again as the same stream")
 
 	code, body := post(t, d.AdminURL+"/v1/admin/stream/"+st[0].ID+"/cancel", map[string]any{})
 	require.Equal(t, http.StatusOK, code, string(body))
-	d = d.Restart(t, WithEncryptionKey, WithDefaultTemplates)
+	d = d.Restart(t, WithSealingKey, WithDefaultTemplates)
 	st = streamsOf(t, d)
 	require.Len(t, st, 1)
 	require.Equal(t, "cancelled", st[0].Status)
@@ -154,13 +154,13 @@ func TestDefaultStreamStartsOnceAndStaysCancelled(t *testing.T) {
 	require.Equal(t, http.StatusPreconditionFailed, code, string(body))
 }
 
-func TestNoDefaultStreamWithoutAnEncryptionKey(t *testing.T) {
+func TestNoDefaultStreamWithoutAnSealingKey(t *testing.T) {
 	d := Start(t, WithDefaultTemplates)
 	require.Empty(t, streamsOf(t, d))
 }
 
 func TestRegisterStreamOverREST(t *testing.T) {
-	d := Start(t, WithEncryptionKey)
+	d := Start(t, WithSealingKey)
 	id := registerStreamTemplate(t, d, 86400)
 
 	code, body := post(t, d.AdminURL+"/v1/admin/stream", map[string]any{"templateId": id})
@@ -182,7 +182,7 @@ func TestRegisterStreamOverREST(t *testing.T) {
 }
 
 func TestSpawnedDelegationsHaveTheirOwnCap(t *testing.T) {
-	d := Start(t, WithEncryptionKey, WithDefaultTemplates, WithMaxDelegations(1, 1))
+	d := Start(t, WithSealingKey, WithDefaultTemplates, WithMaxDelegations(1, 1))
 	waitStreaming(t, d)
 	streamed := claimStreamTemplate(t, d)
 	_, first := fundingTx(t, d, newSwap(t, d, streamed), 10_000)
@@ -206,7 +206,7 @@ func TestSpawnedDelegationsHaveTheirOwnCap(t *testing.T) {
 
 func TestSpawnedDelegationMakesRoomOnceItsCoinIsSpent(t *testing.T) {
 	d := Start(
-		t, WithEncryptionKey, WithDefaultTemplates, WithMaxDelegations(1, 1),
+		t, WithSealingKey, WithDefaultTemplates, WithMaxDelegations(1, 1),
 		WithDelegationExpiry(24*time.Hour, 200*time.Millisecond, 0),
 	)
 	waitStreaming(t, d)
@@ -230,7 +230,7 @@ func TestSpawnedDelegationMakesRoomOnceItsCoinIsSpent(t *testing.T) {
 }
 
 func TestPublicDelegationDoesNotTakeTheCoinOfASpawnedOne(t *testing.T) {
-	d := Start(t, WithEncryptionKey, WithDefaultTemplates)
+	d := Start(t, WithSealingKey, WithDefaultTemplates)
 	waitStreaming(t, d)
 	sw := newSwap(t, d, claimStreamTemplate(t, d))
 	script, funding := fundingTx(t, d, sw, 10_000)
@@ -269,7 +269,7 @@ func TestPublicDelegationDoesNotTakeTheCoinOfASpawnedOne(t *testing.T) {
 
 func TestSpawnedDelegationExpiresAndIsPruned(t *testing.T) {
 	d := Start(
-		t, WithEncryptionKey, WithDelegationExpiry(time.Second, 100*time.Millisecond, time.Second),
+		t, WithSealingKey, WithDelegationExpiry(time.Second, 100*time.Millisecond, time.Second),
 	)
 	id := registerStreamTemplate(t, d, 2)
 	code, body := post(t, d.AdminURL+"/v1/admin/stream", map[string]any{"templateId": id})
@@ -306,7 +306,7 @@ func TestRefundWaitsForTheTipToReachItsLocktime(t *testing.T) {
 		"height": {locktime: 150, reach: func(d *Daemon) { d.Chain.Mine(60) }},
 	} {
 		t.Run(name, func(t *testing.T) {
-			d := Start(t, WithEncryptionKey)
+			d := Start(t, WithSealingKey)
 			if tc.prepare != nil {
 				tc.prepare(d)
 			}
@@ -443,7 +443,9 @@ func fundingTx(t *testing.T, d *Daemon, sw swap, amount int64) ([]byte, *psbt.Pa
 		vars[name] = mustHex(t, value)
 	}
 	inst, err := parsed.Instantiate(tpl.Context{
-		Keys:      tpl.Keys{Server: d.Server, Emulator: d.Emulator, Cosigner: d.Cosigner},
+		Keys: tpl.Keys{
+			Operator: d.Operator, Emulator: d.Emulator, BatchCosigner: d.BatchCosigner,
+		},
 		Variables: vars,
 		Decrypt:   func([]byte) ([]byte, error) { return sw.preimage, nil },
 	})
@@ -455,7 +457,7 @@ func fundingTx(t *testing.T, d *Daemon, sw swap, amount int64) ([]byte, *psbt.Pa
 	if terms == "" {
 		terms = sw.sealTerms(t, d, sw.templateID, sw.variables["receiver_program"], amount)
 	}
-	body := TLV(mustHex(t, terms), EnforcePayTo(t, program), encryptionKey(t, d))
+	body := TLV(mustHex(t, terms), EnforcePayTo(t, program), sealingKey(t, d))
 	ext, err := extension.Extension{packets.Raw(4, body)}.TxOut()
 	require.NoError(t, err)
 
@@ -486,7 +488,7 @@ func artifactDocs() map[string][]byte {
 	return docs
 }
 
-func encryptionKey(t *testing.T, d *Daemon) []byte {
+func sealingKey(t *testing.T, d *Daemon) []byte {
 	t.Helper()
 	_, body := get(t, d.RestURL+"/v1/info")
 	var info struct {

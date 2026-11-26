@@ -92,7 +92,7 @@ func TestLeafTimelocks(t *testing.T) {
 	doc := edited(t, fixture(t, "minimal.json"), func(m map[string]any) {
 		releaseFn(m)["asm"] = []any{
 			"700", "OP_CHECKLOCKTIMEVERIFY", "OP_DROP", "144", "OP_CHECKSEQUENCEVERIFY", "OP_DROP",
-			"<COSIGNER_KEY>", "OP_CHECKSIG",
+			"<BATCH_COSIGNER_KEY>", "OP_CHECKSIG",
 		}
 	})
 	build := func(doc []byte) (*wire.MsgTx, error) {

@@ -46,11 +46,11 @@ type Cap struct {
 }
 
 type Info struct {
-	Network       string
-	CosignerKey   string
-	ServerKey     string
-	EmulatorKey   string
-	EncryptionKey string // empty without an encryption key
+	Network          string
+	BatchCosignerKey string
+	OperatorKey      string
+	EmulatorKey      string
+	SealingKey       string // empty without a sealing key
 }
 
 type Service struct {
@@ -59,7 +59,7 @@ type Service struct {
 	streams     delegation.StreamRepository
 	indexer     ports.Indexer
 	keys        template.TriggerKeys // the public keys templates and triggers run under
-	encryption  *btcec.PrivateKey    // opens a template's secrets
+	sealing     *btcec.PrivateKey    // opens a template's secrets
 	network     arklib.Network
 	info        Info
 	limits      Limits
@@ -82,8 +82,8 @@ type Instance struct {
 
 func NewService(
 	registry *registry.Service, delegations delegation.DelegationRepository,
-	streams delegation.StreamRepository, indexer ports.Indexer, cosigner *btcec.PublicKey,
-	encryption *btcec.PrivateKey, server, emulator *btcec.PublicKey, network arklib.Network,
+	streams delegation.StreamRepository, indexer ports.Indexer, batchCosigner *btcec.PublicKey,
+	sealing *btcec.PrivateKey, operator, emulator *btcec.PublicKey, network arklib.Network,
 	limits Limits,
 ) *Service {
 	s := &Service{
@@ -92,21 +92,24 @@ func NewService(
 		streams:     streams,
 		indexer:     indexer,
 		keys: template.TriggerKeys{
-			Keys: template.Keys{Server: server, Emulator: emulator, Cosigner: cosigner},
+			Keys: template.Keys{
+				Operator: operator, Emulator: emulator, BatchCosigner: batchCosigner,
+			},
 		},
-		encryption: encryption,
-		network:    network,
-		limits:     limits,
-		changed:    make(chan struct{}, 1),
+		sealing: sealing,
+		network: network,
+		limits:  limits,
+		changed: make(chan struct{}, 1),
 	}
 	s.info = Info{
-		Network: network.Name, CosignerKey: hex.EncodeToString(cosigner.SerializeCompressed()),
-		ServerKey:   hex.EncodeToString(server.SerializeCompressed()),
-		EmulatorKey: hex.EncodeToString(emulator.SerializeCompressed()),
+		Network:          network.Name,
+		BatchCosignerKey: hex.EncodeToString(batchCosigner.SerializeCompressed()),
+		OperatorKey:      hex.EncodeToString(operator.SerializeCompressed()),
+		EmulatorKey:      hex.EncodeToString(emulator.SerializeCompressed()),
 	}
-	if encryption != nil {
-		s.keys.Encryption = encryption.PubKey()
-		s.info.EncryptionKey = hex.EncodeToString(s.keys.Encryption.SerializeCompressed())
+	if sealing != nil {
+		s.keys.Sealing = sealing.PubKey()
+		s.info.SealingKey = hex.EncodeToString(s.keys.Sealing.SerializeCompressed())
 	}
 	return s
 }
@@ -282,13 +285,12 @@ func (s *Service) Stop() {
 
 func (s *Service) Info() Info { return s.info }
 
-// decryptFor is nil without an encryption key.
 func (s *Service) decryptFor(templateID string) func([]byte) ([]byte, error) {
-	if s.encryption == nil {
+	if s.sealing == nil {
 		return nil
 	}
 	return func(ciphertext []byte) ([]byte, error) {
-		return ecies.Decrypt(s.encryption, ciphertext, templateID)
+		return ecies.Decrypt(s.sealing, ciphertext, templateID)
 	}
 }
 

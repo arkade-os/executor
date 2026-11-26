@@ -155,12 +155,12 @@ func (a *crashingArk) BatchEvents(ctx context.Context) (<-chan ports.BatchEvent,
 }
 
 func (a *crashingArk) SubmitTreeNonces(
-	ctx context.Context, batchID, cosigner string, nonces tree.TreeNonces,
+	ctx context.Context, batchID, batchCosigner string, nonces tree.TreeNonces,
 ) error {
 	if err := a.dead(); err != nil {
 		return err
 	}
-	return a.Signer.SubmitTreeNonces(ctx, batchID, cosigner, nonces)
+	return a.Signer.SubmitTreeNonces(ctx, batchID, batchCosigner, nonces)
 }
 
 func (a *crashingArk) SubmitSignedForfeitTxs(

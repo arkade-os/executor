@@ -32,13 +32,15 @@ type Signer interface {
 	ConfirmRegistration(ctx context.Context, proofTxid string) error
 	// BatchEvents follows every batch, whoever's intents it takes, until ctx ends or stop is
 	// called: a stream arkd ends is opened again, StreamLost then StreamReconnected telling so. The
-	// trees of a batch come only for the topics added: the cosigner keys and the coin outpoints of
-	// its intents.
+	// trees of a batch come only for the topics added: the batch cosigner keys and the coin
+	// outpoints of its intents.
 	BatchEvents(ctx context.Context) (events <-chan BatchEvent, stop func(), err error)
 	UpdateTopics(ctx context.Context, add, remove []string) error
-	SubmitTreeNonces(ctx context.Context, batchID, cosigner string, nonces tree.TreeNonces) error
+	SubmitTreeNonces(
+		ctx context.Context, batchID, batchCosigner string, nonces tree.TreeNonces,
+	) error
 	SubmitTreeSignatures(
-		ctx context.Context, batchID, cosigner string, signatures tree.TreePartialSigs,
+		ctx context.Context, batchID, batchCosigner string, signatures tree.TreePartialSigs,
 	) error
 	SubmitSignedForfeitTxs(
 		ctx context.Context, signedForfeits []string, signedCommitmentTx string,

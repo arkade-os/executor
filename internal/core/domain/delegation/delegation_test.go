@@ -67,7 +67,7 @@ func TestNewDelegationDerivesVtxoAddressAndInputFromTemplate(t *testing.T) {
 		t, in.Script, "5120"+hex.EncodeToString(schnorr.SerializePubKey(decoded.VtxoTapKey)),
 	)
 	require.Equal(
-		t, schnorr.SerializePubKey(p.Keys.Server), schnorr.SerializePubKey(decoded.Signer),
+		t, schnorr.SerializePubKey(p.Keys.Operator), schnorr.SerializePubKey(decoded.Signer),
 	)
 }
 
@@ -171,9 +171,9 @@ func TestNewDelegationCapsTheSizeOfVariables(t *testing.T) {
 	}
 }
 
-func TestNewDelegationWithSecretsNeedsAnEncryptionKey(t *testing.T) {
+func TestNewDelegationWithSecretsNeedsAnSealingKey(t *testing.T) {
 	_, err := NewDelegation(secretParams(t, nil))
-	require.ErrorIs(t, err, ErrNoEncryptionKey)
+	require.ErrorIs(t, err, ErrNoSealingKey)
 
 	d, err := NewDelegation(
 		secretParams(t, func([]byte) ([]byte, error) { return make([]byte, 32), nil }),
@@ -182,27 +182,27 @@ func TestNewDelegationWithSecretsNeedsAnEncryptionKey(t *testing.T) {
 	require.NotEmpty(t, d.Inputs[0].Address)
 }
 
-func TestNewDelegationRefusesServerKeyOnAnOnchainLeaf(t *testing.T) {
+func TestNewDelegationRefusesOperatorKeyOnAnOnchainLeaf(t *testing.T) {
 	p := renewalParams(t)
 	raw := bytes.ReplaceAll(
-		fixture(t, "minimal.json"), []byte("COSIGNER_KEY"), []byte("SERVER_KEY"),
+		fixture(t, "minimal.json"), []byte("BATCH_COSIGNER_KEY"), []byte("OPERATOR_KEY"),
 	)
 	p.Template = parseDoc(t, raw)
 	p.Variables = nil
 	_, err := NewDelegation(p)
 	require.ErrorIs(t, err, ErrInvalidArgs)
-	require.NotErrorIs(t, err, ErrCosignerKeyLeaf)
+	require.NotErrorIs(t, err, ErrBatchCosignerKeyLeaf)
 }
 
-func TestNewDelegationRefusesLeafSignedByTheCosignerKey(t *testing.T) {
+func TestNewDelegationRefusesLeafSignedByTheBatchCosignerKey(t *testing.T) {
 	p := renewalParams(t)
 	p.Template = parseDoc(t, fixture(t, "minimal.json"))
 	p.Variables = nil
 	_, err := NewDelegation(p)
-	require.ErrorIs(t, err, ErrCosignerKeyLeaf)
+	require.ErrorIs(t, err, ErrBatchCosignerKeyLeaf)
 }
 
-func TestNewDelegationAcceptsCosignerKeyUsedOnlyInsideACovenant(t *testing.T) {
+func TestNewDelegationAcceptsBatchCosignerKeyUsedOnlyInsideACovenant(t *testing.T) {
 	p := renewalParams(t)
 	p.Template = parseDoc(t, templates.Templates["board.json"])
 	p.Variables["boarding_exit_delay"] = scriptNum(1<<22 | 2)
@@ -322,10 +322,10 @@ func secretParams(t *testing.T, decrypt func([]byte) ([]byte, error)) Delegation
               "leaves": [
                 {
                   "name": "claim",
-                  "asm": ["OP_HASH160", "<h>", "OP_EQUALVERIFY", "<SERVER_KEY>", "OP_CHECKSIG"],
+                  "asm": ["OP_HASH160", "<h>", "OP_EQUALVERIFY", "<OPERATOR_KEY>", "OP_CHECKSIG"],
                   "witness": [
                     {"name": "preimage", "type": "bytes32", "encoding": "raw"},
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
               ]
@@ -374,7 +374,7 @@ func testKeys(t *testing.T) template.Keys {
 		require.NoError(t, err)
 		keys[i] = k.PubKey()
 	}
-	return template.Keys{Server: keys[0], Emulator: keys[1], Cosigner: keys[2]}
+	return template.Keys{Operator: keys[0], Emulator: keys[1], BatchCosigner: keys[2]}
 }
 
 func scriptNum(n int64) string {

@@ -11,8 +11,8 @@ func (h *Executor) GetInfo(
 ) (*executorv1.GetInfoResponse, error) {
 	info := h.delegations.Info()
 	return &executorv1.GetInfoResponse{
-		Version: h.version, Network: info.Network, BatchCosignerPubkey: info.CosignerKey,
-		OperatorPubkey: info.ServerKey, EmulatorPubkey: info.EmulatorKey,
-		SealingPubkey: info.EncryptionKey,
+		Version: h.version, Network: info.Network, BatchCosignerPubkey: info.BatchCosignerKey,
+		OperatorPubkey: info.OperatorKey, EmulatorPubkey: info.EmulatorKey,
+		SealingPubkey: info.SealingKey,
 	}, nil
 }

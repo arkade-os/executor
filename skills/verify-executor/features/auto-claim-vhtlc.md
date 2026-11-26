@@ -43,7 +43,6 @@ must get no claim built, must leave the `claim` template active whatever
 
 ## Gotchas
 
-The harness configures an encryption key. A standalone executor without `EXECUTOR_ENCRYPTION_KEY`
-cannot reproduce that setup. The default `claim` seals terms, not a bare preimage: the preimage,
-the receiver program and the least amount. Use the packet/sealing helpers rather than fabricated
+The default `claim` seals terms, not a bare preimage: the preimage, the receiver program and the
+least amount. Use the packet/sealing helpers rather than fabricated
 preimages or directly inserted child rows. Keep test secrets in local evidence only.

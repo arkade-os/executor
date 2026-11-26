@@ -310,7 +310,7 @@ func instance(t *testing.T, doc []byte, variables map[string]string) *template.I
 		keys[i] = k.PubKey()
 	}
 	inst, err := tmpl.Instantiate(template.Context{
-		Keys:      template.Keys{Server: keys[0], Emulator: keys[1], Cosigner: keys[2]},
+		Keys:      template.Keys{Operator: keys[0], Emulator: keys[1], BatchCosigner: keys[2]},
 		Variables: decoded,
 	})
 	require.NoError(t, err)

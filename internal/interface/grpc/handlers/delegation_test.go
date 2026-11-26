@@ -90,7 +90,9 @@ func TestRegisterDelegationErrors(t *testing.T) {
 	_, err = h.RegisterDelegation(
 		t.Context(), &executorv1.RegisterDelegationRequest{TemplateId: release},
 	)
-	require.Equal(t, codes.FailedPrecondition, status.Code(err), "a leaf naming the cosigner key")
+	require.Equal(
+		t, codes.FailedPrecondition, status.Code(err), "a leaf naming the batch cosigner key",
+	)
 
 	require.NoError(t, h.registry.SetTemplateStatus(t.Context(), id, "disabled"))
 	_, err = h.RegisterDelegation(
@@ -178,18 +180,18 @@ func TestGetDelegationErrors(t *testing.T) {
 
 func TestGetInfo(t *testing.T) {
 	h := testHandler(t, 0)
-	server, emulator, cosigner := testKeys(t)
+	operator, emulator, batchCosigner := testKeys(t)
 	info, err := h.GetInfo(t.Context(), &executorv1.GetInfoRequest{})
 	require.NoError(t, err)
 	require.Equal(t, "test", info.GetVersion())
 	require.Equal(t, "regtest", info.GetNetwork())
 	require.Equal(
 		t,
-		hex.EncodeToString(cosigner.PubKey().SerializeCompressed()),
+		hex.EncodeToString(batchCosigner.PubKey().SerializeCompressed()),
 		info.GetBatchCosignerPubkey(),
 	)
 	require.Equal(
-		t, hex.EncodeToString(server.PubKey().SerializeCompressed()), info.GetOperatorPubkey(),
+		t, hex.EncodeToString(operator.PubKey().SerializeCompressed()), info.GetOperatorPubkey(),
 	)
 	require.Equal(
 		t, hex.EncodeToString(emulator.PubKey().SerializeCompressed()), info.GetEmulatorPubkey(),

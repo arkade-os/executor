@@ -254,14 +254,14 @@ func flatTree(t *testing.T, n int) []tree.TxTreeNode {
 	t.Helper()
 	key, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	cosigner := hex.EncodeToString(key.PubKey().SerializeCompressed())
+	batchCosigner := hex.EncodeToString(key.PubKey().SerializeCompressed())
 	leaves := make([]tree.Leaf, n)
 	for i := range leaves {
 		leaves[i] = tree.Leaf{
 			Outputs: []tree.LeafOutput{
 				{Amount: 1000, Script: "5120" + hex.EncodeToString(make([]byte, 32))},
 			},
-			CosignersPublicKeys: []string{cosigner},
+			CosignersPublicKeys: []string{batchCosigner},
 		}
 	}
 	vtxoTree, err := tree.BuildVtxoTree(

@@ -21,9 +21,9 @@
               "leaves": [
                 {
                   "name": "spend",
-                  "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<exitKey>", "OP_CHECKSIG"],
+                  "asm": ["<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<exitKey>", "OP_CHECKSIG"],
                   "witness": [
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "exitSig", "type": "signature", "encoding": "schnorr-64"}
                   ]
                 }
@@ -57,7 +57,7 @@
                   "0x636f7369676e6572735f7075626c69635f6b6579732e30",
                   "OP_INSPECTINTENTMESSAGE",
                   "OP_VERIFY",
-                  "<COSIGNER_KEY>",
+                  "<BATCH_COSIGNER_KEY>",
                   "OP_EQUALVERIFY",
                   "0x636f7369676e6572735f7075626c69635f6b6579732e31",
                   "OP_INSPECTINTENTMESSAGE",
@@ -72,7 +72,7 @@
                   "5",
                   "OP_INSPECTPACKET",
                   "OP_VERIFY",
-                  "0x01240034bd49eface6535f8c2a7764f50fc5bf2add0a31ccecdbb2f2cfbbe97569943c00000100",
+                  "0x0124001113fb48aab52aa0a07cfe802211f6b155aa335f0e81bf498fd3fdfb20eab20c00000100",
                   "OP_EQUALVERIFY",
                   "0",
                   "OP_INSPECTOUTPUTSCRIPTPUBKEY",
@@ -99,9 +99,9 @@
               "leaves": [
                 {
                   "name": "seed",
-                  "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:seed>", "OP_CHECKSIG"],
+                  "asm": ["<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:seed>", "OP_CHECKSIG"],
                   "witness": [
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
@@ -135,8 +135,8 @@
                 "leaves": [
                   {
                     "name": "delayed_server_spend",
-                    "asm": ["4194306", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<SERVER_KEY>", "OP_CHECKSIG"],
-                    "witness": [{"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
+                    "asm": ["4194306", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<OPERATOR_KEY>", "OP_CHECKSIG"],
+                    "witness": [{"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
                   }
                 ]
               },
@@ -163,7 +163,7 @@
                     "0x636f7369676e6572735f7075626c69635f6b6579732e30",
                     "OP_INSPECTINTENTMESSAGE",
                     "OP_VERIFY",
-                    "<COSIGNER_KEY>",
+                    "<BATCH_COSIGNER_KEY>",
                     "OP_EQUALVERIFY",
                     "0x636f7369676e6572735f7075626c69635f6b6579732e31",
                     "OP_INSPECTINTENTMESSAGE",
@@ -202,9 +202,9 @@
                 "leaves": [
                   {
                     "name": "renew",
-                    "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:renew>", "OP_CHECKSIG"],
+                    "asm": ["<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:renew>", "OP_CHECKSIG"],
                     "witness": [
-                      {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                      {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                       {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                     ]
                   }
@@ -231,8 +231,8 @@
                 "leaves": [
                   {
                     "name": "delayed_server_spend",
-                    "asm": ["4194306", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<SERVER_KEY>", "OP_CHECKSIG"],
-                    "witness": [{"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
+                    "asm": ["4194306", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<OPERATOR_KEY>", "OP_CHECKSIG"],
+                    "witness": [{"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
                   }
                 ]
               },
@@ -261,7 +261,7 @@
                     "0x636f7369676e6572735f7075626c69635f6b6579732e30",
                     "OP_INSPECTINTENTMESSAGE",
                     "OP_VERIFY",
-                    "<COSIGNER_KEY>",
+                    "<BATCH_COSIGNER_KEY>",
                     "OP_EQUALVERIFY",
                     "0x636f7369676e6572735f7075626c69635f6b6579732e31",
                     "OP_INSPECTINTENTMESSAGE",
@@ -286,9 +286,9 @@
                 "leaves": [
                   {
                     "name": "renew",
-                    "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:renew>", "OP_CHECKSIG"],
+                    "asm": ["<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:renew>", "OP_CHECKSIG"],
                     "witness": [
-                      {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                      {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                       {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                     ]
                   }
@@ -305,7 +305,7 @@
     "rules": [{"type": 2, "action": "emit", "from": "deposit", "data": "0500000000000000"}],
     "advertise": [
       {
-        "template": "34bd49eface6535f8c2a7764f50fc5bf2add0a31ccecdbb2f2cfbbe97569943c",
+        "template": "1113fb48aab52aa0a07cfe802211f6b155aa335f0e81bf498fd3fdfb20eab20c",
         "outputs": ["counter", "reserve"]
       }
     ]

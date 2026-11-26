@@ -66,7 +66,7 @@ message GetInfoResponse {
   string batch_cosigner_pubkey = 3;
   // operator_pubkey is the operator's signer key.
   string operator_pubkey = 4;
-  // sealing_pubkey seals template secrets for this daemon; empty without an encryption key.
+  // sealing_pubkey seals template secrets for this daemon; empty without a sealing key.
   string sealing_pubkey = 5;
   // emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade covenants.
   string emulator_pubkey = 6;

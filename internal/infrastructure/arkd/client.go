@@ -114,15 +114,15 @@ func (c *Client) ConfirmRegistration(ctx context.Context, proofTxid string) erro
 }
 
 func (c *Client) SubmitTreeNonces(
-	ctx context.Context, batchID, cosigner string, nonces tree.TreeNonces,
+	ctx context.Context, batchID, batchCosigner string, nonces tree.TreeNonces,
 ) error {
-	return c.ark.SubmitTreeNonces(ctx, batchID, cosigner, nonces)
+	return c.ark.SubmitTreeNonces(ctx, batchID, batchCosigner, nonces)
 }
 
 func (c *Client) SubmitTreeSignatures(
-	ctx context.Context, batchID, cosigner string, signatures tree.TreePartialSigs,
+	ctx context.Context, batchID, batchCosigner string, signatures tree.TreePartialSigs,
 ) error {
-	return c.ark.SubmitTreeSignatures(ctx, batchID, cosigner, signatures)
+	return c.ark.SubmitTreeSignatures(ctx, batchID, batchCosigner, signatures)
 }
 
 func (c *Client) SubmitSignedForfeitTxs(

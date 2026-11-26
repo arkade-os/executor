@@ -54,7 +54,7 @@ func TestParseArtifactCovenant(t *testing.T) {
 		return `{"contractName":"C","constructorInputs":[{"name":"k","type":"pubkey"}],"functions":[{"name":"f",
 		"arkade":{"inputs":[{"name":"amount","type":"int"}],"asm":[` + asm + `]},
 		"leaves":[{"name":"l","witness":[{"name":"s","type":"signature","encoding":"schnorr-64","injected":true}],
-		"asm":["<SERVER_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:f>","OP_CHECKSIG"]}]}]}`
+		"asm":["<OPERATOR_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:f>","OP_CHECKSIG"]}]}]}`
 	}
 	a, err := Parse([]byte(doc(`"<k>","OP_CHECKSIG"`)))
 	require.NoError(t, err)
@@ -298,7 +298,7 @@ const idDoc = `{"contractName":"C","constructorInputs":[{"name":"k","type":"pubk
 "structs":[{"name":"S","fields":[{"name":"x","type":"int"}]}],
 "functions":[
 {"name":"f","arkade":{"inputs":[{"name":"a","type":"int"}],"asm":["<k>","OP_CHECKSIG"]},"leaves":[
- {"name":"l1","witness":[{"name":"s","type":"signature","encoding":"schnorr-64","injected":true}],"asm":["<SERVER_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:f>","OP_CHECKSIG"]},
+ {"name":"l1","witness":[{"name":"s","type":"signature","encoding":"schnorr-64","injected":true}],"asm":["<OPERATOR_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:f>","OP_CHECKSIG"]},
  {"name":"l2","witness":[],"asm":["OP_1"]}]},
 {"name":"g","leaves":[{"name":"m","witness":[],"asm":["<n>","OP_DROP","OP_1"]}]}]}`
 
@@ -322,7 +322,7 @@ func TestParseArtifactArrayInput(t *testing.T) {
 		return `{"contractName":"C","constructorInputs":[{"name":"k","type":"pubkey"}],"functions":[{"name":"f",
 		"arkade":{"inputs":[{"name":"sigs","type":"` + typ + `"}],"asm":["<k>","OP_CHECKSIG"]},
 		"leaves":[{"name":"l","witness":[{"name":"s","type":"signature","encoding":"schnorr-64","injected":true}],
-		"asm":["<SERVER_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:f>","OP_CHECKSIG"]}]}]}`
+		"asm":["<OPERATOR_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:f>","OP_CHECKSIG"]}]}]}`
 	}
 	for _, typ := range []string{"bytes[3]", "signature[3]"} {
 		a, err := Parse([]byte(doc(typ)))

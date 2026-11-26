@@ -19,8 +19,8 @@ make test-e2e     # end-to-end tests on the regtest stack
 make regtest-down
 ```
 
-In production use `ghcr.io/arkade-os/executor` with the variables below, and back up the cosigner
-and encryption keys.
+In production use `ghcr.io/arkade-os/executor` with the variables below, and back up the batch
+cosigner and sealing keys.
 
 - Port 7080 is the public API ([service.proto](api-spec/protobuf/executor/v1/service.proto)).
 - Port 7081 is the admin API and UI. It has no authentication, listens on every interface and
@@ -40,8 +40,8 @@ On both ports, a REST request other than `GET` or `DELETE` carries
 | `EXECUTOR_EMULATOR_URL` | emulator gRPC address | required |
 | `EXECUTOR_ELECTRUM_URL` | Electrum server, `tcp://host:port` or `ssl://host:port` | required |
 | `EXECUTOR_DATABASE_URL` | postgres DSN | required |
-| `EXECUTOR_COSIGNER_KEY` | private key cosigning arkd's vtxo trees, 32 bytes hex | required |
-| `EXECUTOR_ENCRYPTION_KEY` | ECIES key for template secrets, hex | unset |
+| `EXECUTOR_BATCH_COSIGNER_KEY` | private key cosigning arkd's vtxo trees, 32 bytes hex | required |
+| `EXECUTOR_SEALING_KEY` | ECIES private key template secrets are sealed to, 32 bytes hex | required |
 | `EXECUTOR_PORT` | public API port | `7080` |
 | `EXECUTOR_ADMIN_PORT` | admin API and UI port, different from `PORT` | `7081` |
 | `EXECUTOR_DEFAULT_TEMPLATES` | register the default templates at startup | `true` |
@@ -79,9 +79,9 @@ On both ports, a REST request other than `GET` or `DELETE` carries
   its template asks for. `GET /v1/admin/status` shows the queue, the planned batches and the coins
   forecast to miss their deadline.
 - **Batch checks.** Before it cosigns a batch, the daemon checks that arkd's tree pays every
-  output it registered, with its assets, in leaves its cosigner key signs from the root down, and
-  that the commitment transaction pays the onchain outputs. It does not join a batch whose expiry
-  is below `MIN_BATCH_EXPIRY`: the intents are queued again.
+  output it registered, with its assets, in leaves its batch cosigner key signs from the root
+  down, and that the commitment transaction pays the onchain outputs. It does not join a batch
+  whose expiry is below `MIN_BATCH_EXPIRY`: the intents are queued again.
 - **Caps.** A registration that meets a full cap first makes room among the delegations serving no
   coin, and is refused only when none qualifies. A delegation holding an unspent coin is never
   removed this way.
@@ -99,7 +99,7 @@ A template with a `trigger` is registered by the operator as a stream (admin `Re
 the trigger's packet, the daemon captures the trigger's variables, checks that the template locks
 the output and spawns a delegation that expires after `expires_after_seconds`.
 
-A default template with a trigger, like `claim`, starts by itself when an encryption key is
-configured. For `claim`, the receiver seals its terms (preimage, program to pay, least amount) to
-the daemon's encryption key and the template id, and the funder puts that ciphertext in the packet.
-The daemon claims only an output that pays that program at least that amount.
+A default template with a trigger, like `claim`, starts by itself. For `claim`, the receiver seals
+its terms (preimage, program to pay, least amount) to the daemon's sealing key and the template
+id, and the funder puts that ciphertext in the packet. The daemon claims only an output that pays
+that program at least that amount.

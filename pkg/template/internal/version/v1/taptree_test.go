@@ -89,7 +89,7 @@ func TestTaptreeParse(t *testing.T) {
 	}
 }
 
-// treeDoc watches a coin whose tree is given whole and holds the leaf "<SERVER_KEY> OP_CHECKSIG".
+// treeDoc watches a coin whose tree is given whole and holds the leaf "<OPERATOR_KEY> OP_CHECKSIG".
 const treeDoc = `{
   "format": "template/v1",
   "type": "virtual",
@@ -108,8 +108,8 @@ const treeDoc = `{
               "leaves": [
                 {
                   "name": "spend",
-                  "asm": ["<SERVER_KEY>", "OP_CHECKSIG"],
-                  "witness": [{"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
+                  "asm": ["<OPERATOR_KEY>", "OP_CHECKSIG"],
+                  "witness": [{"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
                 }
               ]
             }
@@ -133,7 +133,7 @@ func closureLeaf(t *testing.T, keys ...*btcec.PublicKey) string {
 
 func serverLeaf(t *testing.T) string {
 	t.Helper()
-	return closureLeaf(t, testKeys(t).Server)
+	return closureLeaf(t, testKeys(t).Operator)
 }
 
 func instantiateTree(t *testing.T, leaves []string) (*Instance, error) {

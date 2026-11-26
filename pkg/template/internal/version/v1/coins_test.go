@@ -52,7 +52,7 @@ func poolDoc(t *testing.T) []byte {
 		m["delegation"] = map[string]any{"trigger": map[string]any{"funds": map[string]any{
 			"packet":                7,
 			"decode":                "tlv",
-			"require":               map[string]any{"tlv:0": "<SERVER_KEY>"},
+			"require":               map[string]any{"tlv:0": "<OPERATOR_KEY>"},
 			"capture":               map[string]any{"note": "tlv:1"},
 			"expires_after_seconds": 60,
 			"all_outputs":           true,
@@ -133,7 +133,7 @@ func TestEachCoin(t *testing.T) {
 func TestAllOutputsMatch(t *testing.T) {
 	keys := model.TriggerKeys{Keys: testKeys(t)}
 	tr := parseDoc(t, poolDoc(t)).Triggers()[0]
-	ptx, _ := streamed7(t, tlv(0, keys.Server.SerializeCompressed(), 1, []byte{1}))
+	ptx, _ := streamed7(t, tlv(0, keys.Operator.SerializeCompressed(), 1, []byte{1}))
 	tx := ptx.UnsignedTx
 	tx.TxOut = append(tx.TxOut[:2:2], wire.NewTxOut(1000, tx.TxOut[0].PkScript), tx.TxOut[2])
 	ptx.Outputs = append(ptx.Outputs[:2:2], psbt.POutput{}, ptx.Outputs[2])

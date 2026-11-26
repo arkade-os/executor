@@ -183,7 +183,7 @@ func TestMetricsFollowACoin(t *testing.T) {
 }
 
 func TestMetricsCountAFailedAttempt(t *testing.T) {
-	d := Start(t, WithEncryptionKey)
+	d := Start(t, WithSealingKey)
 	w, _ := claimDelegation(t, d)
 
 	d.Emu.Refuse(status.Error(codes.InvalidArgument, "no preimage"))
@@ -197,7 +197,7 @@ func TestMetricsCountAFailedAttempt(t *testing.T) {
 }
 
 func TestMetricsCountASucceededAttempt(t *testing.T) {
-	d := Start(t, WithEncryptionKey)
+	d := Start(t, WithSealingKey)
 	w, _ := claimDelegation(t, d)
 
 	outpoint := d.Arkd.Fund(w.Inputs[0].Script, 10_000, time.Now().Add(time.Hour))

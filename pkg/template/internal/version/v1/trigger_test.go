@@ -26,7 +26,7 @@ import (
 
 func TestTriggerMatch(t *testing.T) {
 	keys := model.TriggerKeys{Keys: testKeys(t)}
-	server := keys.Server.SerializeCompressed()
+	operator := keys.Operator.SerializeCompressed()
 	to := bytes.Repeat([]byte{7}, 32)
 	push := pushScript(t, to)
 	tr := parseDoc(t, triggerDoc(t, baseTrigger())).Triggers()[0]
@@ -34,7 +34,7 @@ func TestTriggerMatch(t *testing.T) {
 	require.Equal(t, 0, tr.Input())
 	require.Equal(t, []string{"note", "to", "tree"}, tr.Captured())
 
-	ptx, tree := streamed(t, tlv(1, []byte("hi"), 2, push, 3, server, 9, []byte{1}))
+	ptx, tree := streamed(t, tlv(1, []byte("hi"), 2, push, 3, operator, 9, []byte{1}))
 	got, err := tr.Match(ptx, keys, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, []model.Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
@@ -48,9 +48,9 @@ func TestTriggerMatch(t *testing.T) {
 	for name, body := range map[string][]byte{
 		"another key":      tlv(1, []byte("hi"), 2, push, 3, testKey(t, 2).SerializeCompressed()),
 		"no key":           tlv(1, []byte("hi"), 2, push),
-		"missing capture":  tlv(2, push, 3, server),
-		"truncated":        append(tlv(1, []byte("hi"), 2, push, 3, server), 1, 0),
-		"script too short": tlv(1, nil, 2, push[:5], 3, server),
+		"missing capture":  tlv(2, push, 3, operator),
+		"truncated":        append(tlv(1, []byte("hi"), 2, push, 3, operator), 1, 0),
+		"script too short": tlv(1, nil, 2, push[:5], 3, operator),
 	} {
 		p, _ := streamed(t, body)
 		_, err := tr.Match(p, keys, nil, nil)
@@ -61,14 +61,14 @@ func TestTriggerMatch(t *testing.T) {
 	_, err = tr.Match(noExt, keys, nil, nil)
 	require.ErrorIs(t, err, failure.ErrNoMatch, "no packet 4")
 
-	foreign, _ := streamed(t, tlv(1, nil, 2, push, 3, server))
+	foreign, _ := streamed(t, tlv(1, nil, 2, push, 3, operator))
 	foreign.UnsignedTx.TxOut[0].PkScript = append([]byte{0x51, 0x20}, make([]byte, 32)...)
 	_, err = tr.Match(foreign, keys, nil, nil)
 	require.ErrorIs(
 		t, err, failure.ErrNoMatch, "a tree that does not derive its output's key is no candidate",
 	)
 
-	last, _ := streamed(t, tlv(1, []byte("a"), 1, []byte("b"), 2, push, 3, server))
+	last, _ := streamed(t, tlv(1, []byte("a"), 1, []byte("b"), 2, push, 3, operator))
 	got, err = tr.Match(last, keys, nil, nil)
 	require.NoError(t, err)
 	require.Equal(
@@ -76,7 +76,7 @@ func TestTriggerMatch(t *testing.T) {
 		"a repeated tag keeps the last value",
 	)
 
-	two, tree := streamed(t, tlv(1, nil, 2, push, 3, server))
+	two, tree := streamed(t, tlv(1, nil, 2, push, 3, operator))
 	two.UnsignedTx.TxOut[1].PkScript = bytes.Clone(two.UnsignedTx.TxOut[0].PkScript)
 	two.Outputs[1].TaprootTapTree = tree
 	got, err = tr.Match(two, keys, nil, nil)
@@ -88,7 +88,8 @@ func TestTriggerMatch(t *testing.T) {
 func TestTriggerMinValue(t *testing.T) {
 	keys := model.TriggerKeys{Keys: testKeys(t)}
 	body := tlv(
-		1, nil, 2, pushScript(t, bytes.Repeat([]byte{7}, 32)), 3, keys.Server.SerializeCompressed(),
+		1, nil, 2, pushScript(t, bytes.Repeat([]byte{7}, 32)), 3,
+		keys.Operator.SerializeCompressed(),
 	)
 	trig := baseTrigger()
 	trig["min_value"] = 1000
@@ -132,7 +133,7 @@ func TestTriggerMinValue(t *testing.T) {
 
 func TestTriggerRecords(t *testing.T) {
 	keys := model.TriggerKeys{Keys: testKeys(t)}
-	server := keys.Server.SerializeCompressed()
+	operator := keys.Operator.SerializeCompressed()
 	to := bytes.Repeat([]byte{7}, 32)
 	push := pushScript(t, to)
 	trig := baseTrigger()
@@ -142,9 +143,9 @@ func TestTriggerRecords(t *testing.T) {
 		return append(binary.BigEndian.AppendUint16(nil, uint16(len(fields))), fields...)
 	}
 	body := slices.Concat(
-		record(tlv(1, []byte("a"), 2, push, 3, server)),
+		record(tlv(1, []byte("a"), 2, push, 3, operator)),
 		record(tlv(1, []byte("b"), 2, push, 3, testKey(t, 2).SerializeCompressed())),
-		record(tlv(1, []byte("c"), 2, push, 3, server)),
+		record(tlv(1, []byte("c"), 2, push, 3, operator)),
 	)
 	ptx, _ := streamed(t, body)
 	got, err := tr.Match(ptx, keys, nil, nil)
@@ -159,23 +160,26 @@ func TestTriggerRecords(t *testing.T) {
 	)
 	_, err = tr.Match(bad, keys, nil, nil)
 	require.ErrorIs(t, err, failure.ErrNoMatch)
-	trunc, _ := streamed(t, append(record(tlv(1, []byte("a"), 2, push, 3, server)), 0, 9))
+	trunc, _ := streamed(t, append(record(tlv(1, []byte("a"), 2, push, 3, operator)), 0, 9))
 	_, err = tr.Match(trunc, keys, nil, nil)
 	require.ErrorIs(t, err, failure.ErrNoMatch, "a truncated record")
 
-	trig["require"] = map[string]any{"tlv:3": "<COSIGNER_KEY>"}
+	trig["require"] = map[string]any{"tlv:3": "<BATCH_COSIGNER_KEY>"}
 	_, err = Parse(triggerDoc(t, trig), nil)
-	require.Error(t, err, "COSIGNER_KEY is no service key a rule requires")
+	require.Error(t, err, "BATCH_COSIGNER_KEY is no service key a rule requires")
 }
 
 func TestTriggerRequiresAndRaw(t *testing.T) {
-	encryption, err := btcec.NewPrivateKey()
+	sealing, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	keys := model.TriggerKeys{Encryption: encryption.PubKey(), Keys: testKeys(t)}
+	keys := model.TriggerKeys{Sealing: sealing.PubKey(), Keys: testKeys(t)}
 	to := bytes.Repeat([]byte{7}, 32)
 	for name, want := range map[string][]byte{
-		"<ENCRYPTION_KEY>": encryption.PubKey().SerializeCompressed(),
+		"<SEALING_KEY>":    sealing.PubKey().SerializeCompressed(),
+		"<ENCRYPTION_KEY>": sealing.PubKey().SerializeCompressed(),
 		"<EMULATOR_KEY>":   keys.Emulator.SerializeCompressed(),
+		"<OPERATOR_KEY>":   keys.Operator.SerializeCompressed(),
+		"<SERVER_KEY>":     keys.Operator.SerializeCompressed(),
 	} {
 		trig := baseTrigger()
 		trig["require"] = map[string]any{"tlv:3": name}
@@ -263,7 +267,7 @@ func TestTriggerVariableRequirements(t *testing.T) {
 		"packet": 4,
 		"decode": "tlv",
 		"require": map[string]any{
-			"tlv:3": "<SERVER_KEY>", "tlv:6": "$(<secret> OP_SHA256 <tlv:6> OP_EQUAL)",
+			"tlv:3": "<OPERATOR_KEY>", "tlv:6": "$(<secret> OP_SHA256 <tlv:6> OP_EQUAL)",
 		},
 		"capture": map[string]any{
 			"note": "tlv:1", "to": "$(<tlv:2> 2 32 OP_SUBSTR)", "tree": "output:taptree",
@@ -283,7 +287,7 @@ func TestTriggerVariableRequirements(t *testing.T) {
 	}
 	ptx, _ = streamed(
 		t,
-		tlv(1, nil, 2, push, 3, keys.Server.SerializeCompressed(), 6, digest[:], 7, []byte("ct")),
+		tlv(1, nil, 2, push, 3, keys.Operator.SerializeCompressed(), 6, digest[:], 7, []byte("ct")),
 	)
 	got, err = tr.Match(ptx, keys, nil, open)
 	require.NoError(t, err, "the requirement reads the plaintext")
@@ -336,7 +340,7 @@ func TestTriggerGroups(t *testing.T) {
 	require.Equal(t, []int{0, 1}, []int{trs[0].Input(), trs[1].Input()})
 	require.Equal(t, 120*time.Second, trs[1].TTL())
 
-	op := keys.Server.SerializeCompressed()
+	op := keys.Operator.SerializeCompressed()
 	ptx, _ := streamed7(t, tlv(0, op, 1, []byte("g"), 3, []byte("n"), 4, []byte("n")))
 	got, err := trs[1].Match(ptx, keys, map[string][]byte{"operator": op}, nil)
 	require.NoError(t, err)
@@ -426,7 +430,7 @@ func triggerDoc(t *testing.T, trigger map[string]any) []byte {
 func baseTrigger() map[string]any {
 	return map[string]any{
 		"packet": 4, "decode": "tlv",
-		"require": map[string]any{"tlv:3": "<SERVER_KEY>"},
+		"require": map[string]any{"tlv:3": "<OPERATOR_KEY>"},
 		"capture": map[string]any{
 			"note": "tlv:1", "to": "$(<tlv:2> 2 32 OP_SUBSTR)", "tree": "output:taptree",
 		},

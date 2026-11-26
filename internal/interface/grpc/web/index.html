@@ -212,7 +212,7 @@ const tx = (value, n = 8, onchain = false) => copy(value, n, explorer(value, onc
 const go = (hash, label) => `<a href="#${esc(hash)}">${label}</a>`;
 
 const CHECKS = {
-  db: ['db', 'Postgres'], arkd: ['arkd', 'the Ark server'], electrum: ['electrum', 'the chain indexer, for onchain coins'],
+  db: ['db', 'Postgres'], arkd: ['arkd', 'the Ark operator'], electrum: ['electrum', 'the chain indexer, for onchain coins'],
   emulator: ['emulator', 'the covenant signer'], loop: ['scheduler', 'runs coins as they come due; fails when work is due and nothing ran'],
 };
 const checkName = (name) => CHECKS[name]?.[0] || name;
@@ -313,7 +313,8 @@ function variablesList(variables, templateId) {
   return entries.length ? `<dl class="kv">${entries.map(([k, v]) => `<dt class="mono">${esc(k)}</dt><dd>${variable(k, types[k], v)}</dd>`).join('')}</dl>` : '<p class="empty">No variable.</p>';
 }
 
-const DAEMON_KEYS = { ENCRYPTION_KEY: "this daemon's sealing key", SERVER_KEY: "the operator's key", EMULATOR_KEY: "the emulator's key", COSIGNER_KEY: "this daemon's batch cosigner key" };
+const DAEMON_KEYS = { SEALING_KEY: "this daemon's sealing key", OPERATOR_KEY: "the operator's key", EMULATOR_KEY: "the emulator's key", BATCH_COSIGNER_KEY: "this daemon's batch cosigner key" };
+Object.assign(DAEMON_KEYS, { ENCRYPTION_KEY: DAEMON_KEYS.SEALING_KEY, SERVER_KEY: DAEMON_KEYS.OPERATOR_KEY, COSIGNER_KEY: DAEMON_KEYS.BATCH_COSIGNER_KEY });
 function source(s) {
   if (s === 'output:taptree') return "the matched output's taptree";
   const m = /^tlv:(\d+)$/.exec(s);

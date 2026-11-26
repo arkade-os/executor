@@ -323,12 +323,12 @@ func mixedPaymentDoc(t *testing.T, fees bool) []byte {
         "constructorInputs": [{"name": "owner", "type": "pubkey"}],
         "structs": [],
         "functions": [
-          {"name": "spend", "leaves": [{"name": "spend", "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<owner>", "OP_CHECKSIG"],
-            "witness": [{"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+          {"name": "spend", "leaves": [{"name": "spend", "asm": ["<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<owner>", "OP_CHECKSIG"],
+            "witness": [{"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                         {"name": "ownerSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]}]},
           {"name": "pay", "arkade": {"inputs": [], "asm": ["OP_1"]},
-            "leaves": [{"name": "pay", "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:pay>", "OP_CHECKSIG"],
-            "witness": [{"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+            "leaves": [{"name": "pay", "asm": ["<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:pay>", "OP_CHECKSIG"],
+            "witness": [{"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                         {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]}]}
         ]
       },

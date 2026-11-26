@@ -45,7 +45,8 @@ func TestLocktimeFromLeaf(t *testing.T) {
 func TestLocktimeNeedsCLTVClosure(t *testing.T) {
 	doc := edited(t, []byte(releaseDoc), func(m map[string]any) {
 		releaseLeaf(m)["asm"] = []any{
-			"<lock>", "OP_CHECKLOCKTIMEVERIFY", "OP_DROP", "<SERVER_KEY>", "OP_CHECKSIGVERIFY", "1",
+			"<lock>", "OP_CHECKLOCKTIMEVERIFY", "OP_DROP", "<OPERATOR_KEY>", "OP_CHECKSIGVERIFY",
+			"1",
 		}
 	})
 	_, err := parseDoc(t, doc).Instantiate(releaseContext(t, 200))
@@ -156,13 +157,13 @@ const releaseDoc = `{
                     "<lock>",
                     "OP_CHECKLOCKTIMEVERIFY",
                     "OP_DROP",
-                    "<SERVER_KEY>",
+                    "<OPERATOR_KEY>",
                     "OP_CHECKSIGVERIFY",
                     "<EMULATOR_KEY:release>",
                     "OP_CHECKSIG"
                   ],
                   "witness": [
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }

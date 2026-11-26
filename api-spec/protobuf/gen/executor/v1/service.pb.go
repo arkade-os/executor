@@ -66,7 +66,7 @@ type GetInfoResponse struct {
 	BatchCosignerPubkey string `protobuf:"bytes,3,opt,name=batch_cosigner_pubkey,json=batchCosignerPubkey,proto3" json:"batch_cosigner_pubkey,omitempty"`
 	// operator_pubkey is the operator's signer key.
 	OperatorPubkey string `protobuf:"bytes,4,opt,name=operator_pubkey,json=operatorPubkey,proto3" json:"operator_pubkey,omitempty"`
-	// sealing_pubkey seals template secrets for this daemon; empty without an encryption key.
+	// sealing_pubkey seals template secrets for this daemon; empty without a sealing key.
 	SealingPubkey string `protobuf:"bytes,5,opt,name=sealing_pubkey,json=sealingPubkey,proto3" json:"sealing_pubkey,omitempty"`
 	// emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade covenants.
 	EmulatorPubkey string `protobuf:"bytes,6,opt,name=emulator_pubkey,json=emulatorPubkey,proto3" json:"emulator_pubkey,omitempty"`

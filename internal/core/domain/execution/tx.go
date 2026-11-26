@@ -173,10 +173,10 @@ func FinalizeOnchain(signed *psbt.Packet) (*wire.MsgTx, error) {
 }
 
 // BuildIntent builds the transaction of inst spending coins, one per input in order, and the intent
-// registering it under the cosigner key; txs hold the transactions that created the coins.
+// registering it under the batch cosigner key; txs hold the transactions that created the coins.
 func BuildIntent(
 	inst *template.Instance, inputs []delegation.Input, coins []delegation.Coin,
-	txs map[string]*wire.MsgTx, fee template.Fee, cosigner *btcec.PublicKey,
+	txs map[string]*wire.MsgTx, fee template.Fee, batchCosigner *btcec.PublicKey,
 	swept []bool,
 ) (*Intent, error) {
 	sources, err := sourcesOf(coins, txs)
@@ -219,7 +219,7 @@ func BuildIntent(
 	in.Message, err = intent.RegisterMessage{
 		BaseMessage:          intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
 		OnchainOutputIndexes: append([]int{}, act.Onchain...),
-		CosignersPublicKeys:  []string{hex.EncodeToString(cosigner.SerializeCompressed())},
+		CosignersPublicKeys:  []string{hex.EncodeToString(batchCosigner.SerializeCompressed())},
 	}.Encode()
 	if err != nil {
 		return nil, err

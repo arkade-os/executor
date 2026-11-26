@@ -84,9 +84,9 @@ func testHandlerAndStores(
 ) (*Executor, *coins, *attempts) {
 	t.Helper()
 	reg := testService(t, maxArtifacts)
-	server, emulator, cosigner := testKeys(t)
+	operator, emulator, batchCosigner := testKeys(t)
 	svc := delegationapp.NewService(
-		reg, newDelegations(), newStreams(), nil, cosigner.PubKey(), nil, server.PubKey(),
+		reg, newDelegations(), newStreams(), nil, batchCosigner.PubKey(), nil, operator.PubKey(),
 		emulator.PubKey(), arklib.BitcoinRegTest, limits,
 	)
 	coins, attempts := newCoins(), newAttempts()
@@ -96,7 +96,7 @@ func testHandlerAndStores(
 	return NewExecutor(reg, svc, execution, "test"), coins, attempts
 }
 
-func testKeys(t *testing.T) (server, emulator, cosigner *btcec.PrivateKey) {
+func testKeys(t *testing.T) (operator, emulator, batchCosigner *btcec.PrivateKey) {
 	t.Helper()
 	keys := make([]*btcec.PrivateKey, 3)
 	for i := range keys {

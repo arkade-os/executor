@@ -269,7 +269,7 @@ func swapOutput(t *testing.T, d executor, swap swap) (string, []byte, []byte) {
 	require.NoError(t, err)
 	tapKey, err := schnorr.ParsePubKey(inst.PkScript(0)[2:])
 	require.NoError(t, err)
-	addr, err := (&arklib.Address{HRP: arklib.BitcoinRegTest.Addr, Signer: keys.Server, VtxoTapKey: tapKey}).EncodeV0()
+	addr, err := (&arklib.Address{HRP: arklib.BitcoinRegTest.Addr, Signer: keys.Operator, VtxoTapKey: tapKey}).EncodeV0()
 	require.NoError(t, err)
 	return addr, inst.PkScript(0), tree
 }

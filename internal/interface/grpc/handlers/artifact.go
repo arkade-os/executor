@@ -70,7 +70,7 @@ func toStatus(err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, registry.ErrArtifactInUse), errors.Is(err, registry.ErrTemplateInUse),
 		errors.Is(err, registry.ErrTemplateDisabled), errors.Is(err, registry.ErrUnsupported), errors.Is(err, delegation.ErrStreamOnly),
-		errors.Is(err, delegation.ErrNoEncryptionKey), errors.Is(err, delegation.ErrCosignerKeyLeaf),
+		errors.Is(err, delegation.ErrNoSealingKey), errors.Is(err, delegation.ErrBatchCosignerKeyLeaf),
 		errors.Is(err, delegation.ErrDomainClash),
 		errors.Is(err, delegation.ErrBlocked), errors.Is(err, delegation.ErrNotActive),
 		errors.Is(err, delegation.ErrNotCancelled), errors.Is(err, delegation.ErrNotStream):

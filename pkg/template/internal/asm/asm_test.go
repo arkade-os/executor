@@ -14,7 +14,7 @@ func TestAssemble(t *testing.T) {
 	key := bytes.Repeat([]byte{0x11}, 32)
 	lookup := func(name string) (Value, error) {
 		switch name {
-		case "SERVER_KEY":
+		case "OPERATOR_KEY":
 			return Value{Type: "bytes32", Raw: key}, nil
 		case "delay":
 			return Value{Type: "int", Raw: ScriptNum(4194306)}, nil
@@ -38,7 +38,7 @@ func TestAssemble(t *testing.T) {
 		AddData(key).AddOp(txscript.OP_CHECKSIG).Script()
 	require.NoError(t, err)
 	got, err := Assemble(
-		[]string{"<delay>", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<SERVER_KEY>", "OP_CHECKSIG"},
+		[]string{"<delay>", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<OPERATOR_KEY>", "OP_CHECKSIG"},
 		lookup,
 	)
 	require.NoError(t, err)

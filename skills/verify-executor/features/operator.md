@@ -29,13 +29,13 @@ For template management and startup defaults:
 ```bash
 skills/verify-executor/scripts/verify.sh daemon '^TestDefaultTemplates$'
 skills/verify-executor/scripts/verify.sh e2e \
-  '^(TestTemplateRegistry|TestTemplateCannotNameTheCosignerKey)$'
+  '^(TestTemplateRegistry|TestTemplateCannotNameTheBatchCosignerKey)$'
 ```
 
 Defaults must register once and preserve an operator's disabled-template choice across restart.
 The registry journey verifies idempotent registration, invalid-template rejection, refusal of
 delegations against a disabled template and refusal to delete a referenced template. A template
-naming the executor's cosigner key must be rejected for delegation.
+naming the executor's batch cosigner key must be rejected for delegation.
 
 For the limits on what the public port may register and keep:
 
@@ -91,5 +91,5 @@ UI. If no browser harness is available, report browser behavior as unverified.
 Keep the admin listener private: it has no authentication of its own, so a proxy must
 authenticate its clients. The Compose profile publishes 7081 on loopback for local regtest.
 `make run` only supplies the database and log level; from a clean environment it still needs the
-required connection and cosigner variables listed in `internal/config/config.go`.
+required connection and batch cosigner variables listed in `internal/config/config.go`.
 Do not infer standalone launch readiness from the abbreviated README command alone.

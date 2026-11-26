@@ -318,7 +318,7 @@ func contractErr(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, contract.ErrNoCosigner):
+	case errors.Is(err, contract.ErrNoBatchCosigner):
 		return fmt.Errorf("%w: %v", failure.ErrUnsupported, err)
 	case errors.Is(err, contract.ErrBadTree):
 		return fmt.Errorf("%w: %v", failure.ErrIneligible, err)

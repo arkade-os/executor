@@ -31,7 +31,7 @@ func TestNewStreamRefusesInvalidTemplateKeyTTLOrVariables(t *testing.T) {
 		want error
 	}{
 		"no trigger": {func(p *StreamParams) { p.Template = parseDoc(t, templates.Templates["renew.json"]) }, ErrNotStream},
-		"no key":     {func(p *StreamParams) { p.Encryption = false }, ErrNoEncryptionKey},
+		"no key":     {func(p *StreamParams) { p.Sealing = false }, ErrNoSealingKey},
 		"short ttl":  {func(p *StreamParams) { p.MinExpiry = 48 * time.Hour }, ErrInvalidArgs},
 		"given and captured": {func(p *StreamParams) {
 			p.Variables = map[string]string{"preimage": "00"}
@@ -90,7 +90,7 @@ func TestSpawnRefusesWrongOutputMissingKeyOrBadCapturedValue(t *testing.T) {
 		want error
 	}{
 		"another output": {func(p *SpawnParams) { p.Output = append([]byte{0x51, 0x20}, make([]byte, 32)...) }, ErrIneligible},
-		"no key":         {func(p *SpawnParams) { p.Decrypt = nil }, ErrNoEncryptionKey},
+		"no key":         {func(p *SpawnParams) { p.Decrypt = nil }, ErrNoSealingKey},
 		"bad value":      {func(p *SpawnParams) { p.Captured["receiver_program"] = "zz" }, ErrInvalidArgs},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestSpawnAddsTheStreamsVariables(t *testing.T) {
 func streamParams(t *testing.T) StreamParams {
 	t.Helper()
 	tmpl := parseDoc(t, templates.Templates["claim.json"])
-	return StreamParams{Template: tmpl, MinExpiry: time.Hour, Encryption: true}
+	return StreamParams{Template: tmpl, MinExpiry: time.Hour, Sealing: true}
 }
 
 func unboundTrigger(t *testing.T) *template.Template {
@@ -157,7 +157,7 @@ func spawnParams(t *testing.T) SpawnParams {
 		},
 		Now: time.Unix(1_800_000_000, 0),
 		Keys: template.Keys{
-			Server: scalarKey(1), Emulator: scalarKey(3), Cosigner: scalarKey(99),
+			Operator: scalarKey(1), Emulator: scalarKey(3), BatchCosigner: scalarKey(99),
 		},
 		Network: arklib.BitcoinRegTest,
 		Decrypt: func(ciphertext []byte) ([]byte, error) { return ciphertext, nil },

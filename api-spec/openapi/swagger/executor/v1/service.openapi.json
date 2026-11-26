@@ -512,7 +512,7 @@
           },
           "sealingPubkey": {
             "type": "string",
-            "description": "sealing_pubkey seals template secrets for this daemon; empty without an encryption key."
+            "description": "sealing_pubkey seals template secrets for this daemon; empty without a sealing key."
           },
           "version": {
             "type": "string"

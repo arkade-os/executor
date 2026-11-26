@@ -303,7 +303,7 @@ func TestCounterIncrements(t *testing.T) {
 func TestVHTLCAddress(t *testing.T) {
 	v := vhtlcVector(t)
 	// the address the ts-sdk derives for the same keys, delays and preimage hash
-	inst := instantiateVHTLC(t, v.Server, v.Vars)
+	inst := instantiateVHTLC(t, v.Operator, v.Vars)
 	require.Equal(t, v.Tapscripts, inst.Tapscripts(0))
 	require.Equal(t, v.PkScript, hex.EncodeToString(inst.PkScript(0)))
 	require.Len(t, inst.Tapscripts(0), 9)
@@ -336,8 +336,8 @@ func TestCounterCovenant(t *testing.T) {
 func TestVHTLCClaimCovenant(t *testing.T) {
 	v := vhtlcVector(t)
 	htlc := sourceWith(t, 100_000)
-	lockTo(htlc, instantiateVHTLC(t, v.Server, v.Vars).PkScript(0))
-	inst := instantiateVHTLC(t, v.Server, v.Vars, htlc)
+	lockTo(htlc, instantiateVHTLC(t, v.Operator, v.Vars).PkScript(0))
+	inst := instantiateVHTLC(t, v.Operator, v.Vars, htlc)
 	act, err := inst.Build([]*model.Source{htlc}, model.Fee{Dust: 330})
 	require.NoError(t, err)
 
@@ -487,7 +487,7 @@ func TestNonInteractiveClaimTrigger(t *testing.T) {
 	ptx.UnsignedTx.TxOut[0].PkScript = pkScript
 	ptx.Outputs[0].TaprootTapTree = tree
 	got, err := parseFixture(t, "claim.json").Triggers()[0].Match(
-		ptx, model.TriggerKeys{Encryption: enc.PubKey()}, nil, nil,
+		ptx, model.TriggerKeys{Sealing: enc.PubKey()}, nil, nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, []model.Capture{{Output: 0, Outputs: []int{0}, Variables: map[string]string{
@@ -497,7 +497,7 @@ func TestNonInteractiveClaimTrigger(t *testing.T) {
 
 	ptx.UnsignedTx.TxOut[0].Value = 999
 	_, err = parseFixture(t, "claim.json").Triggers()[0].Match(
-		ptx, model.TriggerKeys{Encryption: enc.PubKey()}, nil, nil,
+		ptx, model.TriggerKeys{Sealing: enc.PubKey()}, nil, nil,
 	)
 	require.ErrorIs(t, err, failure.ErrNoMatch, "a coin below 1000 sats is not claimed")
 }
@@ -559,8 +559,7 @@ func TestCounterSeedCovenant(t *testing.T) {
 
 var otherScript = append([]byte{0x51, 0x20}, make([]byte, 32)...)
 
-// cosignerHex is private scalar 1, the cosigner key of testKeys, as intent messages spell it.
-const cosignerHex = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+const batchCosignerHex = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
 type renewalParams struct {
 	owner          *btcec.PublicKey
@@ -588,7 +587,7 @@ func (p renewalParams) vars(t *testing.T) map[string][]byte {
 }
 
 // masterCovenant is master's buildArkadeScript in its fee-check form, the only one renew.json
-// keeps, without the cosigner check.
+// keeps, without the batch cosigner check.
 func masterCovenant(t *testing.T, window, maxFee int64) []byte {
 	t.Helper()
 	s, err := txscript.NewScriptBuilder().
@@ -614,19 +613,19 @@ func masterCovenant(t *testing.T, window, maxFee int64) []byte {
 	return s
 }
 
-// masterPkScript is master's tree around the cosigner leaf, with the forfeit leaf of ark's default
-// vtxo script first.
+// masterPkScript is master's tree around the batch cosigner leaf, with the forfeit leaf of ark's
+// default vtxo script first.
 func masterPkScript(t *testing.T, keys model.Keys, p renewalParams) []byte {
 	t.Helper()
 	cov := masterCovenant(t, p.window, p.maxFee)
 	tweaked := arkade.ComputeArkadeScriptPublicKey(keys.Emulator, arkade.ArkadeScriptHash(cov))
 	vtxo := script.TapscriptsVtxoScript{Closures: []script.Closure{
-		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{p.owner, keys.Server}},
+		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{p.owner, keys.Operator}},
 		&script.CSVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{p.owner}},
 			Locktime:        p.exit,
 		},
-		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{keys.Server, tweaked}},
+		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{keys.Operator, tweaked}},
 	}}
 	tapKey, _, err := vtxo.TapTree()
 	require.NoError(t, err)
@@ -704,10 +703,10 @@ func instantiateBound(t *testing.T, tmpl *Template, counter uint64) boundInstanc
 
 // the sealed preimage is its own ciphertext, opened by an identity decryption
 func instantiateVHTLC(
-	t *testing.T, server string, vars map[string]string, sources ...*model.Source,
+	t *testing.T, operator string, vars map[string]string, sources ...*model.Source,
 ) *Instance {
 	t.Helper()
-	raw, err := hex.DecodeString(server)
+	raw, err := hex.DecodeString(operator)
 	require.NoError(t, err)
 	key, err := btcec.ParsePubKey(raw)
 	require.NoError(t, err)
@@ -717,7 +716,7 @@ func instantiateVHTLC(
 		require.NoError(t, err)
 	}
 	c := model.Context{
-		Keys:      model.Keys{Server: key, Emulator: testKey(t, 3)},
+		Keys:      model.Keys{Operator: key, Emulator: testKey(t, 3)},
 		Variables: values,
 		Decrypt:   func(ciphertext []byte) ([]byte, error) { return ciphertext, nil },
 	}
@@ -818,7 +817,9 @@ func tampers(t *testing.T, out int, tunnel bool) []tamper {
 		},
 		{
 			"second cosigner",
-			func(c *intentCheck) { c.msg.CosignersPublicKeys = append(c.msg.CosignersPublicKeys, cosignerHex) },
+			func(c *intentCheck) {
+				c.msg.CosignersPublicKeys = append(c.msg.CosignersPublicKeys, batchCosignerHex)
+			},
 			"OP_VERIFY failed",
 		},
 		{"other cosigner", func(c *intentCheck) {
@@ -856,7 +857,7 @@ func runIntent(
 		msg: intent.RegisterMessage{
 			BaseMessage:          intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
 			OnchainOutputIndexes: []int{},
-			CosignersPublicKeys:  []string{cosignerHex},
+			CosignersPublicKeys:  []string{batchCosignerHex},
 		},
 		expiry: time.Now().Add(time.Minute),
 	}
@@ -1002,9 +1003,9 @@ func (p prevouts) FetchVtxoPrevOutPkScript(op wire.OutPoint) []byte {
 }
 
 type vhtlcVec struct {
-	Server, Preimage, ReceiverProgram, PkScript string
-	Tapscripts                                  []string
-	Vars                                        map[string]string
+	Operator, Preimage, ReceiverProgram, PkScript string
+	Tapscripts                                    []string
+	Vars                                          map[string]string
 }
 
 func vhtlcVector(t *testing.T) vhtlcVec {
@@ -1029,10 +1030,10 @@ func instantiateClaimUnder(
 	t.Helper()
 	tree, err := txutils.TapTree(leaves).Encode()
 	require.NoError(t, err)
-	server, err := btcec.ParsePubKey(unhex(t, v.Server))
+	operator, err := btcec.ParsePubKey(unhex(t, v.Operator))
 	require.NoError(t, err)
 	return parseFixture(t, "claim.json").Instantiate(model.Context{
-		Keys: model.Keys{Server: server, Emulator: testKey(t, 3)},
+		Keys: model.Keys{Operator: operator, Emulator: testKey(t, 3)},
 		Variables: map[string][]byte{
 			"taptree": tree, "receiver_program": unhex(t, v.ReceiverProgram), "terms": terms,
 		},

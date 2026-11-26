@@ -97,17 +97,15 @@ func TestRegisterStreamErrors(t *testing.T) {
 	require.Equal(t, codes.NotFound, status.Code(err))
 }
 
-// testStreamAdmin is an admin over a daemon with an encryption key and the claim template, which
-// has a trigger.
 func testStreamAdmin(t *testing.T) (*Admin, string) {
 	t.Helper()
 	reg := testService(t, 10)
-	server, emulator, cosigner := testKeys(t)
-	encryption, err := btcec.NewPrivateKey()
+	operator, emulator, batchCosigner := testKeys(t)
+	sealing, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	svc := delegationapp.NewService(
-		reg, newDelegations(), newStreams(), nil, cosigner.PubKey(), encryption, server.PubKey(),
-		emulator.PubKey(), arklib.BitcoinRegTest,
+		reg, newDelegations(), newStreams(), nil, batchCosigner.PubKey(), sealing,
+		operator.PubKey(), emulator.PubKey(), arklib.BitcoinRegTest,
 		delegationapp.Limits{MinDelegationExpiry: time.Hour},
 	)
 	stored, err := reg.RegisterTemplate(t.Context(), []byte(testTemplateDocument(t, "claim.json")))

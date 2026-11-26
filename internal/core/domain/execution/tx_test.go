@@ -140,14 +140,14 @@ func TestCheckTxRefusesTxNotSpendingExactlyTheWatchedCoins(t *testing.T) {
 
 // claim is a VHTLC claim watch with a coin funded by a real transaction.
 type claim struct {
-	inst                       *template.Instance
-	inputs                     []delegation.Input
-	coin                       delegation.Coin
-	source                     *wire.MsgTx
-	txs                        map[string]*wire.MsgTx
-	unroll                     []byte
-	receiver                   string
-	server, emulator, cosigner *btcec.PrivateKey
+	inst                              *template.Instance
+	inputs                            []delegation.Input
+	coin                              delegation.Coin
+	source                            *wire.MsgTx
+	txs                               map[string]*wire.MsgTx
+	unroll                            []byte
+	receiver                          string
+	operator, emulator, batchCosigner *btcec.PrivateKey
 }
 
 func newClaim(t *testing.T) claim {
@@ -158,7 +158,8 @@ func newClaim(t *testing.T) claim {
 		scalar.SetInt(uint32(i + 1))
 		keys[i] = btcec.PrivKeyFromScalar(&scalar)
 	}
-	server, emulator, cosigner, sender, receiver := keys[0], keys[1], keys[2], keys[3], keys[4]
+	operator, emulator, batchCosigner := keys[0], keys[1], keys[2]
+	sender, receiver := keys[3], keys[4]
 	preimage := make([]byte, 32)
 	_, err := rand.Read(preimage)
 	require.NoError(t, err)
@@ -180,7 +181,8 @@ func newClaim(t *testing.T) claim {
 	require.NoError(t, err)
 	inst, err := tmpl.Instantiate(template.Context{
 		Keys: template.Keys{
-			Server: server.PubKey(), Emulator: emulator.PubKey(), Cosigner: cosigner.PubKey(),
+			Operator: operator.PubKey(), Emulator: emulator.PubKey(),
+			BatchCosigner: batchCosigner.PubKey(),
 		},
 		Variables: variables,
 		Decrypt:   func(ciphertext []byte) ([]byte, error) { return ciphertext, nil },
@@ -192,7 +194,7 @@ func newClaim(t *testing.T) claim {
 	source.AddTxOut(wire.NewTxOut(10_000, inst.PkScript(0)))
 	pkScript := hex.EncodeToString(inst.PkScript(0))
 	unroll, err := (&script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{server.PubKey()}},
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{operator.PubKey()}},
 		Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144},
 	}).Script()
 	require.NoError(t, err)
@@ -219,9 +221,9 @@ func newClaim(t *testing.T) claim {
 		receiver: hex.EncodeToString(
 			program,
 		),
-		server:   server,
-		emulator: emulator,
-		cosigner: cosigner,
+		operator:      operator,
+		emulator:      emulator,
+		batchCosigner: batchCosigner,
 	}
 }
 

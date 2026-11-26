@@ -1,11 +1,11 @@
 {
   "renew.json": "d78996bc48dca7d9cc6da69bf2ee8d8feaa521c4aa5998c410e3e9ba2dc69297",
   "board.json": "2f8b8761c3d98230cbb170814643f591c29f737c0cf68f600f81920024dccbf8",
-  "counter.json": "34bd49eface6535f8c2a7764f50fc5bf2add0a31ccecdbb2f2cfbbe97569943c",
-  "vhtlc_claim.json": "a447966fbe7446164f67167b09e570d3d46cc5b2cfa7227b3aff5e336a6d70c2",
-  "vhtlc_refund.json": "30f61607826886439788b434605fbd083e8d3dbf1a8d8b5770490bdfc2bdb5e2",
-  "onchain_release.json": "e09bbc0b3400b3b357747cb00282c167ecb52652dcb011170d153e7dcf9517d2",
-  "counter_seed.json": "dc6ca69c4a7b7a6272aeb8dbcba03dd718e0ece325ed9a4e0ad0e766b47609cb",
+  "counter.json": "1113fb48aab52aa0a07cfe802211f6b155aa335f0e81bf498fd3fdfb20eab20c",
+  "vhtlc_claim.json": "1f132f70a6414ab6adfd7460c1be912552545263b7178b5d105459e0c5e0001e",
+  "vhtlc_refund.json": "6e90d32f5e44bd58b4f2e3258d0b7fc1e1b030ea1cd5393b4f59a170c7642d2e",
+  "onchain_release.json": "463f33f43551b27e2962b66a6437cc09b301aae651c655f9c6ed80262f060650",
+  "counter_seed.json": "49d405b1453e8ba191ed56c8fed70470bae482e071c83dfb3924aa3d6baf4d05",
   "claim.json": "4e8674c7b52609cf03221665fbe2b1199616558514b4baaf64ffd07338e0e08e",
-  "minimal.json": "7b2dca63e79d0e11e202d020384031fbc9acec9e49a42ff92136ac44b31aa3f0"
+  "minimal.json": "5bb02727d649d0d12ba6a36e5355a77b531865199f8943e2c228dcc36ea2c412"
 }

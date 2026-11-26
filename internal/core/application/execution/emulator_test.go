@@ -40,13 +40,13 @@ func TestForEmulator(t *testing.T) {
 }
 
 func TestSignForfeitsMergesTheEmulator(t *testing.T) {
-	server := testKey(1)
-	forfeit := leafTx(t, server.PubKey(), wire.OutPoint{Hash: [32]byte{1}})
+	operator := testKey(1)
+	forfeit := leafTx(t, operator.PubKey(), wire.OutPoint{Hash: [32]byte{1}})
 	forfeits := []string{mustEncode(t, forfeit)}
 
-	serverSigned := leafTx(t, server.PubKey(), wire.OutPoint{Hash: [32]byte{1}})
-	signWith(t, serverSigned, server)
-	signed, err := signForfeits(forfeits, []string{mustEncode(t, serverSigned)})
+	operatorSigned := leafTx(t, operator.PubKey(), wire.OutPoint{Hash: [32]byte{1}})
+	signWith(t, operatorSigned, operator)
+	signed, err := signForfeits(forfeits, []string{mustEncode(t, operatorSigned)})
 	require.NoError(t, err)
 	out, err := psbt.NewFromRawBytes(strings.NewReader(signed[0]), true)
 	require.NoError(t, err)
@@ -60,8 +60,8 @@ func TestSignForfeitsMergesTheEmulator(t *testing.T) {
 }
 
 func TestSignCommitmentOfABoardingInput(t *testing.T) {
-	server := testKey(1)
-	boarding := leafTx(t, server.PubKey(), wire.OutPoint{Hash: [32]byte{1}})
+	operator := testKey(1)
+	boarding := leafTx(t, operator.PubKey(), wire.OutPoint{Hash: [32]byte{1}})
 	in := &execution.Intent{Tx: boarding, Boarding: []bool{true}}
 	commitment := commitmentOf(t, boarding)
 
@@ -73,7 +73,7 @@ func TestSignCommitmentOfABoardingInput(t *testing.T) {
 	require.Equal(t, boarding.Inputs[0].TaprootLeafScript, tx.Inputs[1].TaprootLeafScript)
 	require.Equal(t, boarding.Inputs[0].WitnessUtxo, tx.Inputs[1].WitnessUtxo)
 
-	signWith(t, tx, server)
+	signWith(t, tx, operator)
 	remote := mustEncode(t, tx)
 	for signed, sigs := range map[string]int{remote: 1, "": 0} {
 		out, err := signCommitment(in, commitment, signed)
@@ -88,7 +88,7 @@ func TestSignCommitmentOfABoardingInput(t *testing.T) {
 	require.ErrorContains(t, err, "signed commitment tx")
 	_, err = signCommitment(in, "nope", "")
 	require.ErrorContains(t, err, "commitment tx")
-	other := leafTx(t, server.PubKey(), wire.OutPoint{Hash: [32]byte{9}})
+	other := leafTx(t, operator.PubKey(), wire.OutPoint{Hash: [32]byte{9}})
 	_, err = boardingCommitment(in, mustEncode(t, other))
 	require.ErrorContains(t, err, "omits boarding input")
 }
