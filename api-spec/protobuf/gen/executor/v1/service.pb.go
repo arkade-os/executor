@@ -62,12 +62,13 @@ type GetInfoResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Version string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
 	Network string                 `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
-	// cosigner_pubkey is the compressed key that cosigns arkd's vtxo trees.
-	CosignerPubkey string `protobuf:"bytes,3,opt,name=cosigner_pubkey,json=cosignerPubkey,proto3" json:"cosigner_pubkey,omitempty"`
-	ServerPubkey   string `protobuf:"bytes,4,opt,name=server_pubkey,json=serverPubkey,proto3" json:"server_pubkey,omitempty"`
-	// encryption_pubkey seals template secrets for this daemon; empty without an encryption key.
-	EncryptionPubkey string `protobuf:"bytes,5,opt,name=encryption_pubkey,json=encryptionPubkey,proto3" json:"encryption_pubkey,omitempty"`
-	// emulator_pubkey merges into server_pubkey once arkd's signer runs the arkade covenants.
+	// batch_cosigner_pubkey is the daemon's own compressed key, which cosigns arkd's batch trees.
+	BatchCosignerPubkey string `protobuf:"bytes,3,opt,name=batch_cosigner_pubkey,json=batchCosignerPubkey,proto3" json:"batch_cosigner_pubkey,omitempty"`
+	// operator_pubkey is the operator's signer key.
+	OperatorPubkey string `protobuf:"bytes,4,opt,name=operator_pubkey,json=operatorPubkey,proto3" json:"operator_pubkey,omitempty"`
+	// sealing_pubkey seals template secrets for this daemon; empty without a sealing key.
+	SealingPubkey string `protobuf:"bytes,5,opt,name=sealing_pubkey,json=sealingPubkey,proto3" json:"sealing_pubkey,omitempty"`
+	// emulator_pubkey merges into operator_pubkey once arkd's signer runs the arkade covenants.
 	EmulatorPubkey string `protobuf:"bytes,6,opt,name=emulator_pubkey,json=emulatorPubkey,proto3" json:"emulator_pubkey,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -117,23 +118,23 @@ func (x *GetInfoResponse) GetNetwork() string {
 	return ""
 }
 
-func (x *GetInfoResponse) GetCosignerPubkey() string {
+func (x *GetInfoResponse) GetBatchCosignerPubkey() string {
 	if x != nil {
-		return x.CosignerPubkey
+		return x.BatchCosignerPubkey
 	}
 	return ""
 }
 
-func (x *GetInfoResponse) GetServerPubkey() string {
+func (x *GetInfoResponse) GetOperatorPubkey() string {
 	if x != nil {
-		return x.ServerPubkey
+		return x.OperatorPubkey
 	}
 	return ""
 }
 
-func (x *GetInfoResponse) GetEncryptionPubkey() string {
+func (x *GetInfoResponse) GetSealingPubkey() string {
 	if x != nil {
-		return x.EncryptionPubkey
+		return x.SealingPubkey
 	}
 	return ""
 }
@@ -1320,13 +1321,13 @@ var File_executor_v1_service_proto protoreflect.FileDescriptor
 const file_executor_v1_service_proto_rawDesc = "" +
 	"\n" +
 	"\x19executor/v1/service.proto\x12\vexecutor.v1\x1a!meshapi/gateway/annotations.proto\"\x10\n" +
-	"\x0eGetInfoRequest\"\xe9\x01\n" +
+	"\x0eGetInfoRequest\"\xf2\x01\n" +
 	"\x0fGetInfoResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x18\n" +
-	"\anetwork\x18\x02 \x01(\tR\anetwork\x12'\n" +
-	"\x0fcosigner_pubkey\x18\x03 \x01(\tR\x0ecosignerPubkey\x12#\n" +
-	"\rserver_pubkey\x18\x04 \x01(\tR\fserverPubkey\x12+\n" +
-	"\x11encryption_pubkey\x18\x05 \x01(\tR\x10encryptionPubkey\x12'\n" +
+	"\anetwork\x18\x02 \x01(\tR\anetwork\x122\n" +
+	"\x15batch_cosigner_pubkey\x18\x03 \x01(\tR\x13batchCosignerPubkey\x12'\n" +
+	"\x0foperator_pubkey\x18\x04 \x01(\tR\x0eoperatorPubkey\x12%\n" +
+	"\x0esealing_pubkey\x18\x05 \x01(\tR\rsealingPubkey\x12'\n" +
 	"\x0femulator_pubkey\x18\x06 \x01(\tR\x0eemulatorPubkey\"\xee\x01\n" +
 	"\x19RegisterDelegationRequest\x12\x1f\n" +
 	"\vtemplate_id\x18\x01 \x01(\tR\n" +

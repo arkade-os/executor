@@ -52,41 +52,41 @@ type Limits struct {
 }
 
 type Service struct {
-	delegations *delegationapp.Service
-	templates   *registryapp.Service
-	ark         ports.Signer
-	indexer     ports.Indexer
-	chain       ports.ChainWatcher
-	emulator    ports.Emulator
-	cosignerKey *btcec.PrivateKey // signs arkd's vtxo tree
-	cosigner    string            // its public key, compressed hex, as arkd names tree cosigners
-	coins       delegation.CoinRepository
-	attempts    delegation.AttemptRepository
-	summaries   ports.SummaryRepository
-	limits      Limits
-	info        ports.ArkInfo
-	nextDue     time.Time // the next coin to become ready, zero when none will
-	dispatched  time.Time
-	sub         ports.Subscription
-	chainSub    ports.ChainSubscription
-	tip         delegation.Tip
-	inflight    map[string]string // the status each script is being listed for
-	listing     chan struct{}
-	events      chan any
-	ctx         context.Context
-	stop        context.CancelFunc
-	done        chan struct{}
-	wg          sync.WaitGroup
-	slots       chan struct{} // the offchain worker pool
-	timer       *time.Timer
-	pending     map[int64]*pending
-	entries     map[int64]execution.Entry // queued by delegation, touched by the loop only
-	session     execution.Session
-	batch       *batchWorker
-	status      atomic.Pointer[Status]
-	beat        atomic.Int64 // when the loop last handled something, unix nanoseconds
-	wake        atomic.Int64 // when its timer is set to fire, zero when unset
-	started     time.Time
+	delegations      *delegationapp.Service
+	templates        *registryapp.Service
+	ark              ports.Signer
+	indexer          ports.Indexer
+	chain            ports.ChainWatcher
+	emulator         ports.Emulator
+	batchCosignerKey *btcec.PrivateKey // signs arkd's vtxo tree
+	batchCosigner    string            // its public key, as arkd names tree cosigners
+	coins            delegation.CoinRepository
+	attempts         delegation.AttemptRepository
+	summaries        ports.SummaryRepository
+	limits           Limits
+	info             ports.ArkInfo
+	nextDue          time.Time // the next coin to become ready, zero when none will
+	dispatched       time.Time
+	sub              ports.Subscription
+	chainSub         ports.ChainSubscription
+	tip              delegation.Tip
+	inflight         map[string]string // the status each script is being listed for
+	listing          chan struct{}
+	events           chan any
+	ctx              context.Context
+	stop             context.CancelFunc
+	done             chan struct{}
+	wg               sync.WaitGroup
+	slots            chan struct{} // the offchain worker pool
+	timer            *time.Timer
+	pending          map[int64]*pending
+	entries          map[int64]execution.Entry // queued by delegation, touched by the loop only
+	session          execution.Session
+	batch            *batchWorker
+	status           atomic.Pointer[Status]
+	beat             atomic.Int64 // when the loop last handled something, unix nanoseconds
+	wake             atomic.Int64 // when its timer is set to fire, zero when unset
+	started          time.Time
 
 	attemptsSucceeded, attemptsFailed uint64 // since the daemon started
 	templateFailures                  uint64 // failures charged to a template
@@ -153,7 +153,7 @@ func NewService(
 ) *Service {
 	s := &Service{
 		delegations: delegations, templates: templates, ark: ark, indexer: indexer, chain: chain,
-		emulator: emulator, cosignerKey: key, coins: coins, attempts: attempts,
+		emulator: emulator, batchCosignerKey: key, coins: coins, attempts: attempts,
 		summaries: summaries, limits: limits, events: make(chan any, 256),
 		slots:    make(chan struct{}, limits.OffchainConcurrency),
 		pending:  map[int64]*pending{},
@@ -162,7 +162,7 @@ func NewService(
 		listing:  make(chan struct{}, maxListings),
 	}
 	if key != nil {
-		s.cosigner = hex.EncodeToString(key.PubKey().SerializeCompressed())
+		s.batchCosigner = hex.EncodeToString(key.PubKey().SerializeCompressed())
 	}
 	s.batch = newBatchWorker(s)
 	return s

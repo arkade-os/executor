@@ -329,8 +329,8 @@ func keysOf(t *testing.T, d executor) template.Keys {
 	info, err := d.client.GetInfo(t.Context(), &executorv1.GetInfoRequest{})
 	require.NoError(t, err)
 	return template.Keys{
-		Server: parseKey(t, info.ServerPubkey), Emulator: parseKey(t, info.EmulatorPubkey),
-		Cosigner: parseKey(t, info.CosignerPubkey),
+		Operator: parseKey(t, info.OperatorPubkey), Emulator: parseKey(t, info.EmulatorPubkey),
+		BatchCosigner: parseKey(t, info.BatchCosignerPubkey),
 	}
 }
 

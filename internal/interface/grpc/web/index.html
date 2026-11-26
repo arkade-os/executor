@@ -212,7 +212,7 @@ const tx = (value, n = 8, onchain = false) => copy(value, n, explorer(value, onc
 const go = (hash, label) => `<a href="#${esc(hash)}">${label}</a>`;
 
 const CHECKS = {
-  db: ['db', 'Postgres'], arkd: ['arkd', 'the Ark server'], electrum: ['electrum', 'the chain indexer, for onchain coins'],
+  db: ['db', 'Postgres'], arkd: ['arkd', 'the Ark operator'], electrum: ['electrum', 'the chain indexer, for onchain coins'],
   emulator: ['emulator', 'the covenant signer'], loop: ['scheduler', 'runs coins as they come due; fails when work is due and nothing ran'],
 };
 const checkName = (name) => CHECKS[name]?.[0] || name;
@@ -282,7 +282,7 @@ const bip68 = (v) => (v & (1 << 22) ? span((v & 0xffff) * 512) : `${(v & 0xffff)
 // a 32-byte push is a key: named when it is one of the daemon's or a variable
 function keyName(x, variables) {
   const i = state.info || {};
-  const known = [['server', i.serverPubkey], ['emulator', i.emulatorPubkey], ['cosigner', i.cosignerPubkey], ...Object.entries(variables || {})];
+  const known = [['operator', i.operatorPubkey], ['emulator', i.emulatorPubkey], ['batch cosigner', i.batchCosignerPubkey], ...Object.entries(variables || {})];
   return known.find(([, k]) => k && (k.length === 64 || k.length === 66) && k.slice(-64) === x)?.[0] ?? `key·${x.slice(0, 6)}`;
 }
 function scriptWords(hex, variables) {
@@ -313,7 +313,8 @@ function variablesList(variables, templateId) {
   return entries.length ? `<dl class="kv">${entries.map(([k, v]) => `<dt class="mono">${esc(k)}</dt><dd>${variable(k, types[k], v)}</dd>`).join('')}</dl>` : '<p class="empty">No variable.</p>';
 }
 
-const DAEMON_KEYS = { ENCRYPTION_KEY: "this daemon's encryption key", SERVER_KEY: "arkd's server key", EMULATOR_KEY: "the emulator's key", COSIGNER_KEY: "this daemon's cosigner key" };
+const DAEMON_KEYS = { SEALING_KEY: "this daemon's sealing key", OPERATOR_KEY: "the operator's key", EMULATOR_KEY: "the emulator's key", BATCH_COSIGNER_KEY: "this daemon's batch cosigner key" };
+Object.assign(DAEMON_KEYS, { ENCRYPTION_KEY: DAEMON_KEYS.SEALING_KEY, SERVER_KEY: DAEMON_KEYS.OPERATOR_KEY, COSIGNER_KEY: DAEMON_KEYS.BATCH_COSIGNER_KEY });
 function source(s) {
   if (s === 'output:taptree') return "the matched output's taptree";
   const m = /^tlv:(\d+)$/.exec(s);
@@ -481,10 +482,10 @@ const views = {
           <dl class="kv">
             <dt>Batch session</dt><dd>every ${esc(span(s.sessionSeconds))}, at most ${num(s.maxIntents).toLocaleString()} intents</dd>
             <dt>Expiry reserve</dt><dd>${esc(span(s.reserveSeconds))}</dd>
-            <dt>Cosigner key</dt><dd>${copy(state.info?.cosignerPubkey)}</dd>
-            <dt>Server key</dt><dd>${copy(state.info?.serverPubkey)}</dd>
+            <dt>Batch cosigner key</dt><dd>${copy(state.info?.batchCosignerPubkey)}</dd>
+            <dt>Operator key</dt><dd>${copy(state.info?.operatorPubkey)}</dd>
             <dt>Emulator key</dt><dd>${copy(state.info?.emulatorPubkey)}</dd>
-            <dt>Encryption key</dt><dd>${copy(state.info?.encryptionPubkey)}</dd>
+            <dt>Sealing key</dt><dd>${copy(state.info?.sealingPubkey)}</dd>
           </dl>
           ${table([
             { title: 'Dependency', cell: (e) => `${esc(checkName(e.name))}<div class="small muted">${esc(CHECKS[e.name]?.[1] || '')}</div>` },

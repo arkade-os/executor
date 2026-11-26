@@ -45,7 +45,7 @@ func TestTemplateRegistry(t *testing.T) {
 	}), "the disabled template is listed")
 }
 
-func TestTemplateCannotNameTheCosignerKey(t *testing.T) {
+func TestTemplateCannotNameTheBatchCosignerKey(t *testing.T) {
 	d := start(t)
 	release := registerTemplate(t, d, "delegate_release.json")
 

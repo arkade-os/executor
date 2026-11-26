@@ -145,7 +145,7 @@ func seal(t *testing.T, d executor, templateID string, plaintext []byte) string 
 	t.Helper()
 	info, err := d.client.GetInfo(t.Context(), &executorv1.GetInfoRequest{})
 	require.NoError(t, err)
-	ciphertext, err := ecies.Encrypt(parseKey(t, info.EncryptionPubkey), plaintext, templateID)
+	ciphertext, err := ecies.Encrypt(parseKey(t, info.SealingPubkey), plaintext, templateID)
 	require.NoError(t, err)
 	return hex.EncodeToString(ciphertext)
 }
@@ -180,7 +180,7 @@ func streamFunding(t *testing.T, d executor, alice testWallet, swap swap) string
 	addr, pkScript, tree := swapOutput(t, d, swap)
 	info, err := d.client.GetInfo(t.Context(), &executorv1.GetInfoRequest{})
 	require.NoError(t, err)
-	key, err := hex.DecodeString(info.EncryptionPubkey)
+	key, err := hex.DecodeString(info.SealingPubkey)
 	require.NoError(t, err)
 	program, err := hex.DecodeString(swap.variables["receiver_program"])
 	require.NoError(t, err)
@@ -269,7 +269,7 @@ func swapOutput(t *testing.T, d executor, swap swap) (string, []byte, []byte) {
 	require.NoError(t, err)
 	tapKey, err := schnorr.ParsePubKey(inst.PkScript(0)[2:])
 	require.NoError(t, err)
-	addr, err := (&arklib.Address{HRP: arklib.BitcoinRegTest.Addr, Signer: keys.Server, VtxoTapKey: tapKey}).EncodeV0()
+	addr, err := (&arklib.Address{HRP: arklib.BitcoinRegTest.Addr, Signer: keys.Operator, VtxoTapKey: tapKey}).EncodeV0()
 	require.NoError(t, err)
 	return addr, inst.PkScript(0), tree
 }

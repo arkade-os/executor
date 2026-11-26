@@ -21,7 +21,7 @@ import (
 )
 
 func TestClaimLandsThroughAnOffchainAttempt(t *testing.T) {
-	d := Start(t, WithEncryptionKey)
+	d := Start(t, WithSealingKey)
 	w, sw := claimDelegation(t, d)
 
 	outpoint := d.Arkd.Fund(w.Inputs[0].Script, 10_000, time.Now().Add(time.Hour))
@@ -68,7 +68,7 @@ func TestClaimLandsThroughAnOffchainAttempt(t *testing.T) {
 
 // the daemon dies after recording the attempt, before the emulator reached arkd.
 func TestRestartBeforeTheEmulatorFailsTheAttempt(t *testing.T) {
-	d := Start(t, WithEncryptionKey)
+	d := Start(t, WithSealingKey)
 	w, _ := claimDelegation(t, d)
 
 	d.Emu.Hang(true, false)
@@ -82,7 +82,7 @@ func TestRestartBeforeTheEmulatorFailsTheAttempt(t *testing.T) {
 
 	d.Emu.Hang(false, false)
 	d = d.Restart(
-		t, WithEncryptionKey, WithLandingWindow(time.Second), WithRetryDelay(100*time.Millisecond),
+		t, WithSealingKey, WithLandingWindow(time.Second), WithRetryDelay(100*time.Millisecond),
 	)
 	require.Eventually(t, func() bool {
 		attempts = listAttempts(t, d, w.ID)
@@ -101,7 +101,7 @@ func TestRestartBeforeTheEmulatorFailsTheAttempt(t *testing.T) {
 
 // the emulator finalized at arkd and the daemon died before it heard back.
 func TestRestartAfterTheEmulatorFinalizedSucceedsOnceTheCoinsAreSpent(t *testing.T) {
-	d := Start(t, WithEncryptionKey)
+	d := Start(t, WithSealingKey)
 	w, _ := claimDelegation(t, d)
 
 	d.Emu.Hang(false, true)
@@ -115,7 +115,7 @@ func TestRestartAfterTheEmulatorFinalizedSucceedsOnceTheCoinsAreSpent(t *testing
 	txid := attempts[0].Txid
 
 	d.Emu.Hang(false, false)
-	d = d.Restart(t, WithEncryptionKey, WithLandingWindow(time.Minute))
+	d = d.Restart(t, WithSealingKey, WithLandingWindow(time.Minute))
 	d.Arkd.Spend(outpoint, txid)
 	require.Eventually(t, func() bool {
 		return attemptRows(t, d, "succeeded") == 1
@@ -126,7 +126,7 @@ func TestRestartAfterTheEmulatorFinalizedSucceedsOnceTheCoinsAreSpent(t *testing
 }
 
 func TestRefusedAttemptsAreRetried(t *testing.T) {
-	d := Start(t, WithEncryptionKey, WithRetryDelay(300*time.Millisecond))
+	d := Start(t, WithSealingKey, WithRetryDelay(300*time.Millisecond))
 	w, _ := claimDelegation(t, d)
 
 	d.Emu.Refuse(status.Error(codes.InvalidArgument, "no preimage"))
@@ -256,9 +256,9 @@ func (s swap) sealTerms(
 
 func seal(t *testing.T, d *Daemon, preimage []byte, templateID string) string {
 	t.Helper()
-	encryption, err := btcec.ParsePubKey(encryptionKey(t, d))
+	sealing, err := btcec.ParsePubKey(sealingKey(t, d))
 	require.NoError(t, err)
-	ciphertext, err := ecies.Encrypt(encryption, preimage, templateID)
+	ciphertext, err := ecies.Encrypt(sealing, preimage, templateID)
 	require.NoError(t, err)
 	return hex.EncodeToString(ciphertext)
 }

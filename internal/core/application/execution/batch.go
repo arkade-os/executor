@@ -235,7 +235,7 @@ func (b *batchWorker) intentOf(
 	}
 	in, err := execution.BuildIntent(
 		inst.Template, inst.Delegation.Inputs, e.Coins, txs,
-		template.Fee{Intent: info.IntentFees, Dust: info.Dust}, s.cosignerKey.PubKey(), swept,
+		template.Fee{Intent: info.IntentFees, Dust: info.Dust}, s.batchCosignerKey.PubKey(), swept,
 	)
 	if err != nil {
 		return nil, err
@@ -305,7 +305,7 @@ func (b *batchWorker) started(ev ports.BatchStarted) {
 		}
 		return
 	}
-	topics := topicsOf(b.s.cosigner, ours)
+	topics := topicsOf(b.s.batchCosigner, ours)
 	if err := b.s.ark.UpdateTopics(b.s.ctx, topics, nil); err != nil {
 		log.WithError(err).Warn("follow the trees of a batch")
 	}
@@ -368,21 +368,21 @@ func (b *batchWorker) signing(ev ports.TreeSigningStarted) {
 		b.abort(err)
 		return
 	}
-	if r.session != nil || !slices.Contains(ev.CosignersPubkeys, b.s.cosigner) {
+	if r.session != nil || !slices.Contains(ev.CosignersPubkeys, b.s.batchCosigner) {
 		return
 	}
 	if err := b.checkTree(r, commitment, ev.VtxoTree); err != nil {
 		b.abort(err)
 		return
 	}
-	session := tree.NewTreeSignerSession(b.s.cosignerKey)
+	session := tree.NewTreeSignerSession(b.s.batchCosignerKey)
 	if err := session.Init(root, commitment.UnsignedTx.TxOut[0].Value, ev.VtxoTree); err != nil {
 		b.abort(err)
 		return
 	}
 	nonces, err := session.GetNonces()
 	if err == nil {
-		err = b.s.ark.SubmitTreeNonces(b.s.ctx, ev.ID, b.s.cosigner, nonces)
+		err = b.s.ark.SubmitTreeNonces(b.s.ctx, ev.ID, b.s.batchCosigner, nonces)
 	}
 	if err != nil {
 		b.abort(fmt.Errorf("tree nonces: %w", err))
@@ -401,7 +401,7 @@ func (b *batchWorker) signatures(ev ports.TreeNoncesAggregated) {
 	r.session.SetAggregatedNonces(ev.TreeNonces)
 	sigs, err := r.session.Sign()
 	if err == nil {
-		err = b.s.ark.SubmitTreeSignatures(b.s.ctx, ev.ID, b.s.cosigner, sigs)
+		err = b.s.ark.SubmitTreeSignatures(b.s.ctx, ev.ID, b.s.batchCosigner, sigs)
 	}
 	if err != nil {
 		b.abort(fmt.Errorf("tree signatures: %w", err))
@@ -431,12 +431,14 @@ func (b *batchWorker) checkTree(
 			onchain = append(onchain, delivery{out: out})
 		}
 	}
-	delivered, err := cosignedLeaves(vtxoTree, schnorr.SerializePubKey(b.s.cosignerKey.PubKey()))
+	delivered, err := cosignedLeaves(
+		vtxoTree, schnorr.SerializePubKey(b.s.batchCosignerKey.PubKey()),
+	)
 	if err != nil {
 		return fmt.Errorf("vtxo tree: %w", err)
 	}
 	if !delivers(delivered, wanted) {
-		return errors.New("vtxo tree does not deliver the outputs under the cosigner key")
+		return errors.New("vtxo tree does not deliver the outputs under the batch cosigner key")
 	}
 	paid := make([]delivery, len(commitment.UnsignedTx.TxOut))
 	for i, out := range commitment.UnsignedTx.TxOut {
@@ -642,8 +644,8 @@ func newBatchWorker(s *Service) *batchWorker {
 	}
 }
 
-func topicsOf(cosigner string, intents []*registration) []string {
-	topics := []string{cosigner}
+func topicsOf(batchCosigner string, intents []*registration) []string {
+	topics := []string{batchCosigner}
 	for _, h := range intents {
 		topics = append(topics, h.attempt.Coins...)
 	}

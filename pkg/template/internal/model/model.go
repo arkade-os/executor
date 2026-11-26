@@ -35,7 +35,7 @@ type Slot struct {
 	AllOutputs bool
 }
 
-// Keys are the service keys a contract is resolved under; Cosigner is the daemon's cosigner.
+// Keys are the service keys a contract is resolved under.
 type Keys = contract.Keys
 
 type Context struct {
@@ -83,7 +83,7 @@ type Action struct {
 
 // TriggerKeys are the daemon keys a trigger may require, compared compressed.
 type TriggerKeys struct {
-	Encryption *btcec.PublicKey
+	Sealing *btcec.PublicKey
 	Keys
 }
 

@@ -48,8 +48,8 @@ type Config struct {
 	PublicRegistry      bool          // the public port registers artifacts and templates too
 	LogLevel            int
 	DefaultTemplates    bool
-	CosignerKey         *btcec.PrivateKey
-	EncryptionKey       *btcec.PrivateKey // nil refuses templates with secrets
+	BatchCosignerKey    *btcec.PrivateKey
+	SealingKey          *btcec.PrivateKey // nil refuses templates with secrets
 
 	// Ark, Indexer, Chain and Emulator replace the clients dialled from the URLs; tests set them.
 	Ark      ports.Signer
@@ -155,16 +155,17 @@ func Load() (Config, error) {
 	if cfg.PublicRegistry, err = envBool("PUBLIC_REGISTRY", cfg.PublicRegistry); err != nil {
 		return Config{}, err
 	}
-	if os.Getenv(envPrefix+"COSIGNER_KEY") == "" {
-		return Config{}, fmt.Errorf("%sCOSIGNER_KEY is required", envPrefix)
-	}
-	if cfg.CosignerKey, err = parseKey(
-		"COSIGNER_KEY", os.Getenv(envPrefix+"COSIGNER_KEY"),
-	); err != nil {
-		return Config{}, err
-	}
-	if value := os.Getenv(envPrefix + "ENCRYPTION_KEY"); value != "" {
-		if cfg.EncryptionKey, err = parseKey("ENCRYPTION_KEY", value); err != nil {
+	for _, f := range []struct {
+		name string
+		dst  **btcec.PrivateKey
+	}{
+		{"BATCH_COSIGNER_KEY", &cfg.BatchCosignerKey}, {"SEALING_KEY", &cfg.SealingKey},
+	} {
+		value := os.Getenv(envPrefix + f.name)
+		if value == "" {
+			return Config{}, fmt.Errorf("%s%s is required", envPrefix, f.name)
+		}
+		if *f.dst, err = parseKey(f.name, value); err != nil {
 			return Config{}, err
 		}
 	}

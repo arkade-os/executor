@@ -599,7 +599,7 @@ func twoItemCondition(t *testing.T) []byte {
                     "OP_3",
                     "OP_EQUAL",
                     "OP_VERIFY",
-                    "<SERVER_KEY>",
+                    "<OPERATOR_KEY>",
                     "OP_CHECKSIGVERIFY",
                     "<EMULATOR_KEY:claim>",
                     "OP_CHECKSIG"
@@ -607,7 +607,7 @@ func twoItemCondition(t *testing.T) []byte {
                   "witness": [
                     {"name": "a", "type": "int", "encoding": "raw"},
                     {"name": "b", "type": "int", "encoding": "raw"},
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
@@ -665,14 +665,14 @@ func hashLockWithCovenant(t *testing.T) []byte {
                     "<h>",
                     "OP_EQUAL",
                     "OP_VERIFY",
-                    "<SERVER_KEY>",
+                    "<OPERATOR_KEY>",
                     "OP_CHECKSIGVERIFY",
                     "<EMULATOR_KEY:claim>",
                     "OP_CHECKSIG"
                   ],
                   "witness": [
                     {"name": "preimage", "type": "bytes32", "encoding": "raw"},
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }

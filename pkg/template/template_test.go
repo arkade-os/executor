@@ -35,9 +35,9 @@ type vector struct {
 	Artifacts       map[string]json.RawMessage `json:"artifacts"`
 	Bindings        struct {
 		Keys struct {
-			Server   string `json:"server"`
-			Emulator string `json:"emulator"`
-			Cosigner string `json:"cosigner"`
+			Operator      string `json:"operator"`
+			Emulator      string `json:"emulator"`
+			BatchCosigner string `json:"batch_cosigner"`
 		} `json:"keys"`
 		Variables map[string]string `json:"variables"`
 	} `json:"bindings"`
@@ -142,7 +142,7 @@ func TestBindingsOwnValuesAndRebuildFromSources(t *testing.T) {
 	for _, value := range bindings.Variables {
 		clear(value)
 	}
-	*bindings.Keys.Server = *bindings.Keys.Cosigner
+	*bindings.Keys.Operator = *bindings.Keys.BatchCosigner
 	req := v.request(t)
 	a, err := bound.Build(req)
 	require.NoError(t, err)
@@ -284,7 +284,7 @@ func TestMissingKeysAndMalformedSourcesReturnErrors(t *testing.T) {
 	v := loadVector(t, "renew-fee")
 	_, compiled := compileVector(t, v)
 	bindings := v.bindings(t)
-	bindings.Keys.Server = nil
+	bindings.Keys.Operator = nil
 	_, err := compiled.Bind(bindings)
 	require.ErrorIs(t, err, template.ErrUnsupported)
 	bound, err := compiled.Bind(v.bindings(t))
@@ -374,9 +374,9 @@ func (v vector) bindings(t testing.TB) template.Bindings {
 	}
 	b := template.Bindings{
 		Keys: template.Keys{
-			Server:   key(v.Bindings.Keys.Server),
-			Emulator: key(v.Bindings.Keys.Emulator),
-			Cosigner: key(v.Bindings.Keys.Cosigner),
+			Operator:      key(v.Bindings.Keys.Operator),
+			Emulator:      key(v.Bindings.Keys.Emulator),
+			BatchCosigner: key(v.Bindings.Keys.BatchCosigner),
 		},
 		Variables: map[string][]byte{},
 	}

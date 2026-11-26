@@ -41,14 +41,14 @@ type executor struct {
 
 func start(t *testing.T, tweak ...func(*config.Config)) executor {
 	t.Helper()
-	cosigner, err := btcec.NewPrivateKey()
+	batchCosigner, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	encryption, err := btcec.NewPrivateKey()
+	sealing, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	cfg := config.Default()
 	cfg.Version, cfg.DatabaseURL, cfg.ArkURL, cfg.EmulatorURL, cfg.ElectrumURL = "e2e", daemon.DatabaseURL(), arkURL, emulatorURL, electrumURL
 	cfg.MaxDelegations, cfg.RetryDelay, cfg.PruneAfter, cfg.PublicRateLimit = 50_000, 5*time.Second, 0, 0
-	cfg.CosignerKey, cfg.EncryptionKey = cosigner, encryption
+	cfg.BatchCosignerKey, cfg.SealingKey = batchCosigner, sealing
 	daemon.ResetDatabase(t, cfg.DatabaseURL)
 	return boot(t, cfg, tweak)
 }

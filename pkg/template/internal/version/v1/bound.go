@@ -38,8 +38,8 @@ func (t *Template) Bind(b model.Bindings) (*BoundTemplate, error) {
 		tmpl: t,
 		vars: vars,
 		keys: model.Keys{
-			Server: clone(b.Keys.Server), Emulator: clone(b.Keys.Emulator),
-			Cosigner: clone(b.Keys.Cosigner),
+			Operator: clone(b.Keys.Operator), Emulator: clone(b.Keys.Emulator),
+			BatchCosigner: clone(b.Keys.BatchCosigner),
 		},
 	}, nil
 }

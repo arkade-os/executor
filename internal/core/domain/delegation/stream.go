@@ -32,10 +32,10 @@ type StreamRepository interface {
 }
 
 type StreamParams struct {
-	Template   *template.Template
-	Variables  map[string]string
-	MinExpiry  time.Duration
-	Encryption bool // an encryption key is configured
+	Template  *template.Template
+	Variables map[string]string
+	MinExpiry time.Duration
+	Sealing   bool // a sealing key is configured
 }
 
 type SpawnParams struct {
@@ -58,8 +58,8 @@ func NewStream(p StreamParams) (*Stream, error) {
 	}
 	trigger := triggers[0]
 	switch {
-	case len(p.Template.Sealed()) > 0 && !p.Encryption:
-		return nil, ErrNoEncryptionKey
+	case len(p.Template.Sealed()) > 0 && !p.Sealing:
+		return nil, ErrNoSealingKey
 	case trigger.TTL() < p.MinExpiry:
 		return nil, fmt.Errorf(
 			"%w: the trigger's delegations expire before %s", ErrInvalidArgs, p.MinExpiry,

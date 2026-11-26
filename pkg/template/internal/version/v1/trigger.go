@@ -55,9 +55,9 @@ type captureRule struct {
 const outputTaptree = "output:taptree"
 
 var serviceKeys = map[string]func(model.TriggerKeys) *btcec.PublicKey{
-	"ENCRYPTION_KEY": func(k model.TriggerKeys) *btcec.PublicKey { return k.Encryption },
-	"SERVER_KEY":     func(k model.TriggerKeys) *btcec.PublicKey { return k.Server },
-	"EMULATOR_KEY":   func(k model.TriggerKeys) *btcec.PublicKey { return k.Emulator },
+	asm.SealingKey:  func(k model.TriggerKeys) *btcec.PublicKey { return k.Sealing },
+	asm.OperatorKey: func(k model.TriggerKeys) *btcec.PublicKey { return k.Operator },
+	asm.EmulatorKey: func(k model.TriggerKeys) *btcec.PublicKey { return k.Emulator },
 }
 
 type valueOf func(name string) (asm.Value, bool, error)
@@ -278,8 +278,8 @@ func (c *compiler) requirement(tr *Trigger, src, value string) (requirement, err
 	switch {
 	case asm.HexTok.MatchString(value):
 		r.lit, _ = hex.DecodeString(value[2:])
-	case m != nil && serviceKeys[m[1]] != nil:
-		r.key = m[1]
+	case m != nil && serviceKeys[asm.ServiceKey(m[1])] != nil:
+		r.key = asm.ServiceKey(m[1])
 	case m != nil:
 		if _, ok := c.t.variables[m[1]]; !ok {
 			return r, bad("require %q names undeclared variable %q", src, m[1])

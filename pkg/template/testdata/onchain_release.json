@@ -15,7 +15,7 @@
               "leaves": [
                 {
                   "name": "release",
-                  "asm": ["<COSIGNER_KEY>", "OP_CHECKSIG"],
+                  "asm": ["<BATCH_COSIGNER_KEY>", "OP_CHECKSIG"],
                   "witness": [{"name": "delegateSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
                 }
               ]

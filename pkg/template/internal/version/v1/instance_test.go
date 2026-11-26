@@ -27,13 +27,13 @@ func TestInstantiateWatch(t *testing.T) {
 	require.Len(t, inst.PkScript(0), 34)
 }
 
-func TestInstantiateCosignerKey(t *testing.T) {
+func TestInstantiateBatchCosignerKey(t *testing.T) {
 	keys := testKeys(t)
 	inst, err := parseFixture(t, "minimal.json").Instantiate(model.Context{Keys: keys})
 	require.NoError(t, err)
 	want, err := contract.Build(
 		parseDef(t, `{"contractName":"R","constructorInputs":[],"functions":[
-	 {"name":"release","leaves":[{"name":"release","asm":["<SERVER_KEY>","OP_CHECKSIG"],"witness":[]}]}]}`),
+	 {"name":"release","leaves":[{"name":"release","asm":["<OPERATOR_KEY>","OP_CHECKSIG"],"witness":[]}]}]}`),
 		nil,
 		keys,
 		nil,
@@ -41,10 +41,10 @@ func TestInstantiateCosignerKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(
 		t, want.Tapscripts, inst.Tapscripts(0),
-		"x-only in a leaf, like the server key it equals here",
+		"x-only in a leaf, like the operator key it equals here",
 	)
 
-	keys.Cosigner = nil
+	keys.BatchCosigner = nil
 	_, err = parseFixture(t, "minimal.json").Instantiate(model.Context{Keys: keys})
 	require.Error(t, err)
 }
@@ -54,7 +54,7 @@ func TestInstantiateMissingKey(t *testing.T) {
 		name string
 		drop func(*model.Keys)
 	}{
-		{name: "server", drop: func(k *model.Keys) { k.Server = nil }},
+		{name: "operator", drop: func(k *model.Keys) { k.Operator = nil }},
 		{name: "emulator", drop: func(k *model.Keys) { k.Emulator = nil }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -242,7 +242,8 @@ func TestInstantiateRefusesNonClosureEmulatorLeaf(t *testing.T) {
 	doc := edited(t, mixedPaymentDoc(t, false), func(m map[string]any) {
 		def := m["inputs"].([]any)[0].(map[string]any)["contract"].(map[string]any)["definition"].(map[string]any)
 		leafOf(def, 1)["asm"] = []any{
-			"<EMULATOR_KEY:pay>", "OP_CHECKSIGVERIFY", "<SERVER_KEY>", "OP_CHECKSIGVERIFY", "OP_1",
+			"<EMULATOR_KEY:pay>", "OP_CHECKSIGVERIFY", "<OPERATOR_KEY>", "OP_CHECKSIGVERIFY",
+			"OP_1",
 		}
 	})
 	tmpl := parseDoc(t, doc)
@@ -260,7 +261,9 @@ func testKey(t testing.TB, n int) *btcec.PublicKey {
 
 func testKeys(t testing.TB) model.Keys {
 	t.Helper()
-	return model.Keys{Server: testKey(t, 1), Emulator: testKey(t, 3), Cosigner: testKey(t, 1)}
+	return model.Keys{
+		Operator: testKey(t, 1), Emulator: testKey(t, 3), BatchCosigner: testKey(t, 1),
+	}
 }
 
 func parseDoc(t *testing.T, doc []byte) *Template {
@@ -311,9 +314,9 @@ func ownerFromPacket(t *testing.T) []byte {
               "leaves": [
                 {
                   "name": "spend",
-                  "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<owner>", "OP_CHECKSIG"],
+                  "asm": ["<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<owner>", "OP_CHECKSIG"],
                   "witness": [
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "ownerSig", "type": "signature", "encoding": "schnorr-64"}
                   ]
                 }
@@ -324,8 +327,8 @@ func ownerFromPacket(t *testing.T) []byte {
               "leaves": [
                 {
                   "name": "delayed_server_spend",
-                  "asm": ["4194306", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<SERVER_KEY>", "OP_CHECKSIG"],
-                  "witness": [{"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
+                  "asm": ["4194306", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<OPERATOR_KEY>", "OP_CHECKSIG"],
+                  "witness": [{"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}]
                 }
               ]
             },
@@ -335,9 +338,9 @@ func ownerFromPacket(t *testing.T) []byte {
               "leaves": [
                 {
                   "name": "renew",
-                  "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:renew>", "OP_CHECKSIG"],
+                  "asm": ["<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:renew>", "OP_CHECKSIG"],
                   "witness": [
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
@@ -389,10 +392,10 @@ func hashLock(t *testing.T) []byte {
               "leaves": [
                 {
                   "name": "claim",
-                  "asm": ["OP_HASH160", "<h>", "OP_EQUALVERIFY", "<SERVER_KEY>", "OP_CHECKSIG"],
+                  "asm": ["OP_HASH160", "<h>", "OP_EQUALVERIFY", "<OPERATOR_KEY>", "OP_CHECKSIG"],
                   "witness": [
                     {"name": "preimage", "type": "bytes32", "encoding": "raw"},
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
               ]

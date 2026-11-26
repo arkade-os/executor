@@ -571,12 +571,12 @@ const vhtlc = `
                   "name": "claim",
                   "asm": [
                     "OP_SIZE", "32", "OP_EQUALVERIFY", "OP_HASH160", "<preimageHash>", "OP_EQUAL", "OP_VERIFY",
-                    "<receiver>", "OP_CHECKSIGVERIFY", "<SERVER_KEY>", "OP_CHECKSIG"
+                    "<receiver>", "OP_CHECKSIGVERIFY", "<OPERATOR_KEY>", "OP_CHECKSIG"
                   ],
                   "witness": [
                     {"name": "preimage", "type": "bytes32", "encoding": "raw"},
                     {"name": "receiverSig", "type": "signature", "encoding": "schnorr-64"},
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
               ]
@@ -587,13 +587,13 @@ const vhtlc = `
                 {
                   "name": "refund",
                   "asm": [
-                    "<sender>", "OP_CHECKSIGVERIFY", "<receiver>", "OP_CHECKSIGVERIFY", "<SERVER_KEY>",
+                    "<sender>", "OP_CHECKSIGVERIFY", "<receiver>", "OP_CHECKSIGVERIFY", "<OPERATOR_KEY>",
                     "OP_CHECKSIG"
                   ],
                   "witness": [
                     {"name": "senderSig", "type": "signature", "encoding": "schnorr-64"},
                     {"name": "receiverSig", "type": "signature", "encoding": "schnorr-64"},
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
               ]
@@ -605,11 +605,11 @@ const vhtlc = `
                   "name": "refundWithoutReceiver",
                   "asm": [
                     "<refundLocktime>", "OP_CHECKLOCKTIMEVERIFY", "OP_DROP", "<sender>", "OP_CHECKSIGVERIFY",
-                    "<SERVER_KEY>", "OP_CHECKSIG"
+                    "<OPERATOR_KEY>", "OP_CHECKSIG"
                   ],
                   "witness": [
                     {"name": "senderSig", "type": "signature", "encoding": "schnorr-64"},
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
               ]
@@ -674,11 +674,11 @@ const vhtlc = `
                   "name": "nonInteractiveClaim",
                   "asm": [
                     "OP_SIZE", "32", "OP_EQUALVERIFY", "OP_HASH160", "<preimageHash>", "OP_EQUAL", "OP_VERIFY",
-                    "<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:nonInteractiveClaim>", "OP_CHECKSIG"
+                    "<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:nonInteractiveClaim>", "OP_CHECKSIG"
                   ],
                   "witness": [
                     {"name": "preimage", "type": "bytes32", "encoding": "raw"},
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }
@@ -698,11 +698,11 @@ const vhtlc = `
                 {
                   "name": "nonInteractiveRefund",
                   "asm": [
-                    "<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<receiver>", "OP_CHECKSIGVERIFY",
+                    "<OPERATOR_KEY>", "OP_CHECKSIGVERIFY", "<receiver>", "OP_CHECKSIGVERIFY",
                     "<EMULATOR_KEY:nonInteractiveRefund>", "OP_CHECKSIG"
                   ],
                   "witness": [
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "receiverSig", "type": "signature", "encoding": "schnorr-64"},
                     {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
@@ -710,11 +710,11 @@ const vhtlc = `
                 {
                   "name": "nonInteractiveRefundWithoutReceiver",
                   "asm": [
-                    "<refundLocktime>", "OP_CHECKLOCKTIMEVERIFY", "OP_DROP", "<SERVER_KEY>",
+                    "<refundLocktime>", "OP_CHECKLOCKTIMEVERIFY", "OP_DROP", "<OPERATOR_KEY>",
                     "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:nonInteractiveRefund>", "OP_CHECKSIG"
                   ],
                   "witness": [
-                    {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+                    {"name": "operatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
                     {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
                   ]
                 }

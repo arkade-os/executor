@@ -178,8 +178,9 @@ func offlineSigners(tokens []string, directOnchain bool) error {
 		}
 		key := tokens[n-1]
 		emulator := strings.HasPrefix(key, "<EMULATOR_KEY:") && strings.HasSuffix(key, ">")
-		server := key == "<SERVER_KEY>"
-		if directOnchain && emulator || !directOnchain && (server || emulator) {
+		m := asm.Placeholder.FindStringSubmatch(key)
+		operator := m != nil && asm.ServiceKey(m[1]) == asm.OperatorKey
+		if directOnchain && emulator || !directOnchain && (operator || emulator) {
 			continue
 		}
 		return fmt.Errorf("%w: signer %s is not available offline", failure.ErrUnsupported, key)

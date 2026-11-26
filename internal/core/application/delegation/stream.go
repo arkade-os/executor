@@ -32,7 +32,7 @@ func (s *Service) RegisterStream(
 	}
 	st, err := delegation.NewStream(delegation.StreamParams{
 		Template: tmpl, Variables: variables, MinExpiry: s.limits.MinDelegationExpiry,
-		Encryption: s.encryption != nil,
+		Sealing: s.sealing != nil,
 	})
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func (s *Service) StartStreams(ctx context.Context, documents map[string][]byte)
 		_, err = s.RegisterStream(ctx, stored.ID, nil)
 		switch {
 		case err == nil, errors.Is(err, delegation.ErrBlocked):
-		case errors.Is(err, delegation.ErrNoEncryptionKey):
+		case errors.Is(err, delegation.ErrNoSealingKey):
 			log.WithError(err).Info("default stream " + name + " not started")
 		default:
 			log.WithError(err).Warn("start default stream " + name)

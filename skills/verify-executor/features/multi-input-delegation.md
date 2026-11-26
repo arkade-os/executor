@@ -37,7 +37,7 @@ Repository and domain checks, after `make pg` when Postgres is not already up:
 
 ```bash
 go test -count=1 -timeout 10m \
-  -run '^(TestNewDelegationRegistersEveryInput|TestNewDelegationRefusesTwoSlotsOnTheSameScript|TestNewDelegationRefusesServerKeyOnAnOnchainLeaf|TestDelegationGetByAddressFindsAnyInput|TestReadySkipsInfeasibleAndBackedOffTuples|TestReadyWaitsForSequenceAndTxLocktime|TestBuildOnchainTakesTheFeeFromTheNamedInput|TestAttributeFollowsTheSpenderTransaction|TestSettleLeavesADisappearanceSubmitted|TestSettleAdoptsOneObservedSpender|TestSettleFindsAnOnchainSpender|TestRebroadcastSendsOnlyAWitnessTransaction|TestNewTemplateRefusesAllOutputs)$' \
+  -run '^(TestNewDelegationRegistersEveryInput|TestNewDelegationRefusesTwoSlotsOnTheSameScript|TestNewDelegationRefusesOperatorKeyOnAnOnchainLeaf|TestDelegationGetByAddressFindsAnyInput|TestReadySkipsInfeasibleAndBackedOffTuples|TestReadyWaitsForSequenceAndTxLocktime|TestBuildOnchainTakesTheFeeFromTheNamedInput|TestAttributeFollowsTheSpenderTransaction|TestSettleLeavesADisappearanceSubmitted|TestSettleAdoptsOneObservedSpender|TestSettleFindsAnOnchainSpender|TestRebroadcastSendsOnlyAWitnessTransaction|TestNewTemplateRefusesAllOutputs)$' \
   ./internal/core/domain/delegation/ ./internal/core/domain/execution/ \
   ./internal/core/domain/registry/ ./internal/core/application/execution/ \
   ./internal/infrastructure/postgres/
@@ -45,7 +45,7 @@ go test -count=1 -timeout 10m \
 
 `TestDelegationGetByAddressFindsAnyInput` looks up the second input's address.
 `TestNewTemplateRefusesAllOutputs` refuses `all_outputs`. Two slots on one chain with the same
-script are refused. A `SERVER_KEY` leaf on an onchain template is refused. Relative locktime uses
+script are refused. An `OPERATOR_KEY` leaf on an onchain template is refused. Relative locktime uses
 the coin's confirmed median time (the median time of the block before the coin), and a missing
 median time leaves the coin unready. A tuple whose expiry is not after the latest due is skipped
 and can be backed off; clearing that backoff makes it eligible again.

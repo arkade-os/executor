@@ -45,7 +45,7 @@ func TestRegisterDelegationOverREST(t *testing.T) {
 		t, "5120"+hex.EncodeToString(schnorr.SerializePubKey(addr.VtxoTapKey)),
 		first.Inputs[0].Script,
 	)
-	require.Equal(t, schnorr.SerializePubKey(d.Server), schnorr.SerializePubKey(addr.Signer))
+	require.Equal(t, schnorr.SerializePubKey(d.Operator), schnorr.SerializePubKey(addr.Signer))
 
 	code, body := get(t, d.AdminURL+"/v1/admin/delegation/"+first.ID)
 	require.Equal(t, http.StatusOK, code, string(body))
@@ -169,28 +169,30 @@ func TestGetInfoOverREST(t *testing.T) {
 	code, body := get(t, d.RestURL+"/v1/info")
 	require.Equal(t, http.StatusOK, code, string(body))
 	var info struct {
-		Version          string `json:"version"`
-		Network          string `json:"network"`
-		CosignerPubkey   string `json:"cosignerPubkey"`
-		ServerPubkey     string `json:"serverPubkey"`
-		EmulatorPubkey   string `json:"emulatorPubkey"`
-		EncryptionPubkey string `json:"encryptionPubkey"`
+		Version             string `json:"version"`
+		Network             string `json:"network"`
+		BatchCosignerPubkey string `json:"batchCosignerPubkey"`
+		OperatorPubkey      string `json:"operatorPubkey"`
+		EmulatorPubkey      string `json:"emulatorPubkey"`
+		SealingPubkey       string `json:"sealingPubkey"`
 	}
 	require.NoError(t, json.Unmarshal(body, &info))
 	require.Equal(t, "test", info.Version)
 	require.Equal(t, "regtest", info.Network)
-	require.Equal(t, hex.EncodeToString(d.Cosigner.SerializeCompressed()), info.CosignerPubkey)
-	require.Equal(t, hex.EncodeToString(d.Server.SerializeCompressed()), info.ServerPubkey)
+	require.Equal(
+		t, hex.EncodeToString(d.BatchCosigner.SerializeCompressed()), info.BatchCosignerPubkey,
+	)
+	require.Equal(t, hex.EncodeToString(d.Operator.SerializeCompressed()), info.OperatorPubkey)
 	require.Equal(t, hex.EncodeToString(d.Emulator.SerializeCompressed()), info.EmulatorPubkey)
-	require.Empty(t, info.EncryptionPubkey)
+	require.Empty(t, info.SealingPubkey)
 
-	encryption := newKey(9)
-	d = d.Restart(t, func(c *config.Config) { c.EncryptionKey = encryption })
+	sealing := newKey(9)
+	d = d.Restart(t, func(c *config.Config) { c.SealingKey = sealing })
 	code, body = get(t, d.RestURL+"/v1/info")
 	require.Equal(t, http.StatusOK, code, string(body))
 	require.NoError(t, json.Unmarshal(body, &info))
 	require.Equal(
-		t, hex.EncodeToString(encryption.PubKey().SerializeCompressed()), info.EncryptionPubkey,
+		t, hex.EncodeToString(sealing.PubKey().SerializeCompressed()), info.SealingPubkey,
 	)
 }
 

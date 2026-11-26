@@ -9,9 +9,9 @@ var (
 	ErrStreamOnly         = errors.New(
 		"a template with a trigger is run by a stream, not registered by clients",
 	)
-	ErrNoEncryptionKey = errors.New("template secrets need an encryption key")
-	ErrCosignerKeyLeaf = errors.New("a template leaf may not name the cosigner key")
-	ErrBlocked         = errors.New(
+	ErrNoSealingKey         = errors.New("template secrets need a sealing key")
+	ErrBatchCosignerKeyLeaf = errors.New("a template leaf may not name the batch cosigner key")
+	ErrBlocked              = errors.New(
 		"an operator cancelled this delegation: registering it again needs the operator to resume it",
 	)
 	ErrCapReached      = errors.New("cap reached")

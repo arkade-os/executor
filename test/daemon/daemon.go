@@ -26,20 +26,20 @@ import (
 )
 
 type Daemon struct {
-	Client   executorv1.ExecutorServiceClient
-	Registry executorv1.ExecutorServiceClient // on the admin port, which registers documents
-	Admin    executorv1.AdminServiceClient
-	RestURL  string
-	AdminURL string
-	DB       *sql.DB
-	Server   *btcec.PublicKey
-	Emulator *btcec.PublicKey
-	Cosigner *btcec.PublicKey
-	Arkd     *ark
-	Chain    *chain
-	Emu      *emulator
-	dsn      string
-	stop     func()
+	Client        executorv1.ExecutorServiceClient
+	Registry      executorv1.ExecutorServiceClient // on the admin port, which registers documents
+	Admin         executorv1.AdminServiceClient
+	RestURL       string
+	AdminURL      string
+	DB            *sql.DB
+	Operator      *btcec.PublicKey
+	Emulator      *btcec.PublicKey
+	BatchCosigner *btcec.PublicKey
+	Arkd          *ark
+	Chain         *chain
+	Emu           *emulator
+	dsn           string
+	stop          func()
 }
 
 // Defaults are off and the admin port takes no credentials unless an option says otherwise.
@@ -110,8 +110,8 @@ func WithTemplateMaxFailures(n int) func(*config.Config) {
 	return func(c *config.Config) { c.TemplateMaxFailures = n }
 }
 
-// WithEncryptionKey lets templates with secrets be registered.
-func WithEncryptionKey(c *config.Config) { c.EncryptionKey = newKey(9) }
+// WithSealingKey lets templates with secrets be registered.
+func WithSealingKey(c *config.Config) { c.SealingKey = newKey(9) }
 
 // WithDefaultTemplates registers the daemon's own templates and starts their streams.
 func WithDefaultTemplates(c *config.Config) { c.DefaultTemplates = true }
@@ -191,11 +191,11 @@ func boot(
 	opts []func(*config.Config),
 ) *Daemon {
 	t.Helper()
-	server, cosigner := newKey(1), newKey(4)
+	operator, batchCosigner := newKey(1), newKey(4)
 	cfg := config.Default()
 	cfg.Version, cfg.DatabaseURL, cfg.Port, cfg.AdminPort = "test", dsn, FreePort(t), FreePort(t)
 	cfg.MaxDelegations, cfg.PruneAfter, cfg.PublicRateLimit, cfg.DefaultTemplates = 1000, 0, 0, false
-	cfg.CosignerKey, cfg.Ark, cfg.Indexer, cfg.Chain, cfg.Emulator = cosigner, standin, arkd.NewIndexer(
+	cfg.BatchCosignerKey, cfg.Ark, cfg.Indexer, cfg.Chain, cfg.Emulator = batchCosigner, standin, arkd.NewIndexer(
 		standin,
 		standin,
 	), chain, emu
@@ -211,19 +211,19 @@ func boot(
 	conn := Dial(t, d.Server.PublicAddr())
 	adminConn := Dial(t, d.Server.AdminAddr())
 	return &Daemon{
-		Client:   executorv1.NewExecutorServiceClient(conn),
-		Registry: executorv1.NewExecutorServiceClient(adminConn),
-		Admin:    executorv1.NewAdminServiceClient(adminConn),
-		RestURL:  "http://127.0.0.1:" + strconv.Itoa(cfg.Port),
-		AdminURL: "http://127.0.0.1:" + strconv.Itoa(cfg.AdminPort),
-		DB:       db,
-		Server:   server.PubKey(),
-		Emulator: emu.signer,
-		Cosigner: cosigner.PubKey(),
-		Arkd:     standin,
-		Chain:    chain,
-		Emu:      emu,
-		dsn:      dsn,
-		stop:     d.Stop,
+		Client:        executorv1.NewExecutorServiceClient(conn),
+		Registry:      executorv1.NewExecutorServiceClient(adminConn),
+		Admin:         executorv1.NewAdminServiceClient(adminConn),
+		RestURL:       "http://127.0.0.1:" + strconv.Itoa(cfg.Port),
+		AdminURL:      "http://127.0.0.1:" + strconv.Itoa(cfg.AdminPort),
+		DB:            db,
+		Operator:      operator.PubKey(),
+		Emulator:      emu.signer,
+		BatchCosigner: batchCosigner.PubKey(),
+		Arkd:          standin,
+		Chain:         chain,
+		Emu:           emu,
+		dsn:           dsn,
+		stop:          d.Stop,
 	}
 }

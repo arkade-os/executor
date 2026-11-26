@@ -108,7 +108,7 @@ type DelegationParams struct {
 	Now               time.Time
 	MinExpiry         time.Duration // zero only refuses the past
 	Keys              template.Keys
-	Decrypt           func([]byte) ([]byte, error) // nil without an encryption key
+	Decrypt           func([]byte) ([]byte, error) // nil without a sealing key
 	Network           arklib.Network
 }
 
@@ -170,7 +170,7 @@ func (p DelegationParams) check() error {
 
 func (p DelegationParams) build(streamID int64) (*Delegation, error) {
 	if len(p.Template.Sealed()) > 0 && p.Decrypt == nil {
-		return nil, ErrNoEncryptionKey
+		return nil, ErrNoSealingKey
 	}
 	inst, err := instantiate(p.Template, p.Variables, p.Keys, p.Decrypt)
 	if err != nil {
@@ -185,10 +185,10 @@ func (p DelegationParams) build(streamID int64) (*Delegation, error) {
 			Tapscripts: inst.Tapscripts(i), Locktime: locktime,
 			Sequence: inst.Sequence(i), TxLocktime: inst.TxLocktime(),
 		}
-		if err := checkCosignerKeyLeaf(in.Tapscripts, p.Keys.Cosigner); err != nil {
+		if err := checkBatchCosignerKeyLeaf(in.Tapscripts, p.Keys.BatchCosigner); err != nil {
 			return nil, err
 		}
-		in.Address, err = addressOf(inst.PkScript(i), in.Onchain, p.Keys.Server, p.Network)
+		in.Address, err = addressOf(inst.PkScript(i), in.Onchain, p.Keys.Operator, p.Network)
 		if err != nil {
 			return nil, err
 		}
@@ -271,9 +271,8 @@ func decodeVariables(variables map[string]string) (map[string][]byte, error) {
 	return out, nil
 }
 
-// checkCosignerKeyLeaf refuses tapscripts pushing the cosigner's x-only key.
-func checkCosignerKeyLeaf(tapscripts []string, cosigner *btcec.PublicKey) error {
-	key := schnorr.SerializePubKey(cosigner)
+func checkBatchCosignerKeyLeaf(tapscripts []string, batchCosigner *btcec.PublicKey) error {
+	key := schnorr.SerializePubKey(batchCosigner)
 	for _, leaf := range tapscripts {
 		script, err := hex.DecodeString(leaf)
 		if err != nil {
@@ -284,7 +283,7 @@ func checkCosignerKeyLeaf(tapscripts []string, cosigner *btcec.PublicKey) error 
 			return err
 		}
 		if holds {
-			return ErrCosignerKeyLeaf
+			return ErrBatchCosignerKeyLeaf
 		}
 	}
 	return nil
@@ -302,7 +301,7 @@ func pushes(script, data []byte) (bool, error) {
 }
 
 func addressOf(
-	pkScript []byte, onchain bool, server *btcec.PublicKey, network arklib.Network,
+	pkScript []byte, onchain bool, operator *btcec.PublicKey, network arklib.Network,
 ) (string, error) {
 	if len(pkScript) != 34 || pkScript[0] != txscript.OP_1 || pkScript[1] != txscript.OP_DATA_32 {
 		return "", fmt.Errorf("%w: input script is not taproot", ErrInvalidArgs)
@@ -312,7 +311,7 @@ func addressOf(
 		if err != nil {
 			return "", err
 		}
-		return (&arklib.Address{HRP: network.Addr, Signer: server, VtxoTapKey: key}).EncodeV0()
+		return (&arklib.Address{HRP: network.Addr, Signer: operator, VtxoTapKey: key}).EncodeV0()
 	}
 	params, err := chainParams(network)
 	if err != nil {

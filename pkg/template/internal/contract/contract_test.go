@@ -21,17 +21,17 @@ import (
 )
 
 func TestBuildMatchesArkLib(t *testing.T) {
-	server, owner, emulator := testKey(t, 1), testKey(t, 2), testKey(t, 3)
+	operator, owner, emulator := testKey(t, 1), testKey(t, 2), testKey(t, 3)
 	def := parseDef(
 		t,
 		`{"contractName":"DelegatedVtxo","constructorInputs":[{"name":"owner","type":"pubkey"}],"functions":[
-	 {"name":"spend","leaves":[{"name":"spend","asm":["<SERVER_KEY>","OP_CHECKSIGVERIFY","<owner>","OP_CHECKSIG"],"witness":[]}]},
-	 {"name":"delayed","leaves":[{"name":"delayed","asm":["4194306","OP_CHECKSEQUENCEVERIFY","OP_DROP","<SERVER_KEY>","OP_CHECKSIG"],"witness":[]}]},
-	 {"name":"renew","arkade":{"inputs":[],"asm":["OP_1"]},"leaves":[{"name":"renew","asm":["<SERVER_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:renew>","OP_CHECKSIG"],"witness":[]}]}]}`,
+	 {"name":"spend","leaves":[{"name":"spend","asm":["<OPERATOR_KEY>","OP_CHECKSIGVERIFY","<owner>","OP_CHECKSIG"],"witness":[]}]},
+	 {"name":"delayed","leaves":[{"name":"delayed","asm":["4194306","OP_CHECKSEQUENCEVERIFY","OP_DROP","<OPERATOR_KEY>","OP_CHECKSIG"],"witness":[]}]},
+	 {"name":"renew","arkade":{"inputs":[],"asm":["OP_1"]},"leaves":[{"name":"renew","asm":["<OPERATOR_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:renew>","OP_CHECKSIG"],"witness":[]}]}]}`,
 	)
 	c, err := Build(
 		def, map[string]asm.Value{"owner": {Type: "pubkey", Raw: owner.SerializeCompressed()}},
-		Keys{Server: server, Emulator: emulator}, nil,
+		Keys{Operator: operator, Emulator: emulator}, nil,
 	)
 	require.NoError(t, err)
 
@@ -39,12 +39,12 @@ func TestBuildMatchesArkLib(t *testing.T) {
 		emulator, arkade.ArkadeScriptHash([]byte{txscript.OP_1}),
 	)
 	want := &script.TapscriptsVtxoScript{Closures: []script.Closure{
-		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{server, owner}},
+		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{operator, owner}},
 		&script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{server}},
+			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{operator}},
 			Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1024},
 		},
-		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{server, tweaked}},
+		&script.MultisigClosure{PubKeys: []*btcec.PublicKey{operator, tweaked}},
 	}}
 	tapscripts, err := want.Encode()
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestBuildTreeShapes(t *testing.T) {
 	// one to nine leaves give the root ark-lib gives
 	for n := 1; n <= 9; n++ {
 		def, closures := nLeaves(t, n)
-		c, err := Build(def, nil, Keys{Server: testKey(t, 1), Emulator: testKey(t, 3)}, nil)
+		c, err := Build(def, nil, Keys{Operator: testKey(t, 1), Emulator: testKey(t, 3)}, nil)
 		require.NoError(t, err)
 		key, _, err := (&script.TapscriptsVtxoScript{Closures: closures}).TapTree()
 		require.NoError(t, err)
@@ -82,11 +82,11 @@ func TestBuildCovenantPushesXOnlyPubkey(t *testing.T) {
 	def := parseDef(
 		t,
 		`{"contractName":"C","constructorInputs":[{"name":"owner","type":"pubkey"}],"functions":[
-	 {"name":"pay","arkade":{"inputs":[],"asm":["<owner>","OP_DROP","OP_1"]},"leaves":[{"name":"pay","asm":["<SERVER_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:pay>","OP_CHECKSIG"],"witness":[]}]}]}`,
+	 {"name":"pay","arkade":{"inputs":[],"asm":["<owner>","OP_DROP","OP_1"]},"leaves":[{"name":"pay","asm":["<OPERATOR_KEY>","OP_CHECKSIGVERIFY","<EMULATOR_KEY:pay>","OP_CHECKSIG"],"witness":[]}]}]}`,
 	)
 	c, err := Build(
 		def, map[string]asm.Value{"owner": {Type: "pubkey", Raw: owner.SerializeCompressed()}},
-		Keys{Server: testKey(t, 1), Emulator: testKey(t, 3)}, nil,
+		Keys{Operator: testKey(t, 1), Emulator: testKey(t, 3)}, nil,
 	)
 	require.NoError(t, err)
 
@@ -98,7 +98,7 @@ func TestBuildCovenantPushesXOnlyPubkey(t *testing.T) {
 }
 
 func TestBuildRejects(t *testing.T) {
-	keys := Keys{Server: testKey(t, 1), Emulator: testKey(t, 3)}
+	keys := Keys{Operator: testKey(t, 1), Emulator: testKey(t, 3)}
 	def := parseDef(t, `{"contractName":"C","constructorInputs":[],"functions":[
 	 {"name":"a","leaves":[{"name":"a","asm":["OP_1"],"witness":[]}]},
 	 {"name":"b","leaves":[{"name":"b","asm":["OP_1"],"witness":[]}]}]}`)
@@ -131,7 +131,7 @@ func TestBuildProofPerLeaf(t *testing.T) {
 	def := parseDef(t, `{"contractName":"C","constructorInputs":[],"functions":[
 	 {"name":"a/b","leaves":[{"name":"c","asm":["OP_1"],"witness":[]}]},
 	 {"name":"a","leaves":[{"name":"b/c","asm":["OP_2"],"witness":[]}]}]}`)
-	c, err := Build(def, nil, Keys{Server: testKey(t, 1), Emulator: testKey(t, 3)}, nil)
+	c, err := Build(def, nil, Keys{Operator: testKey(t, 1), Emulator: testKey(t, 3)}, nil)
 	require.NoError(t, err)
 	require.Len(t, c.Proofs, 2)
 }
@@ -155,19 +155,21 @@ func parseDef(t *testing.T, doc string) *artifact.Definition {
 
 func nLeaves(t *testing.T, n int) (*artifact.Definition, []script.Closure) {
 	t.Helper()
-	server := testKey(t, 1)
+	operator := testKey(t, 1)
 	var fns []string
 	var closures []script.Closure
 	for i := range n {
 		k := testKey(t, 10+i)
 		name := fmt.Sprintf("f%d", i)
 		fns = append(fns, fmt.Sprintf(
-			`{"name":%q,"leaves":[{"name":%q,"asm":["<SERVER_KEY>","OP_CHECKSIGVERIFY","0x%s","OP_CHECKSIG"],"witness":[]}]}`,
+			`{"name":%q,"leaves":[{"name":%q,"asm":["<OPERATOR_KEY>","OP_CHECKSIGVERIFY","0x%s","OP_CHECKSIG"],"witness":[]}]}`,
 			name,
 			name,
 			hex.EncodeToString(schnorr.SerializePubKey(k)),
 		))
-		closures = append(closures, &script.MultisigClosure{PubKeys: []*btcec.PublicKey{server, k}})
+		closures = append(
+			closures, &script.MultisigClosure{PubKeys: []*btcec.PublicKey{operator, k}},
+		)
 	}
 	def := parseDef(
 		t, `{"contractName":"C","constructorInputs":[],"functions":[`+strings.Join(fns, ",")+`]}`,

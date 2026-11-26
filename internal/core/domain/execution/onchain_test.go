@@ -45,7 +45,7 @@ func newOnchainFrom(t *testing.T, file string, vars map[string][]byte) onchain {
 		keys[i], _ = btcec.PrivKeyFromBytes(bytes.Repeat([]byte{byte(i + 1)}, 32))
 	}
 	inst, err := tmpl.Instantiate(template.Context{Keys: template.Keys{
-		Server: keys[0].PubKey(), Emulator: keys[1].PubKey(), Cosigner: keys[2].PubKey(),
+		Operator: keys[0].PubKey(), Emulator: keys[1].PubKey(), BatchCosigner: keys[2].PubKey(),
 	}, Variables: vars})
 	require.NoError(t, err)
 	source := wire.NewMsgTx(3)
@@ -78,7 +78,7 @@ func newOnchainPair(t *testing.T) (
 		keys[i], _ = btcec.PrivKeyFromBytes(bytes.Repeat([]byte{byte(i + 1)}, 32))
 	}
 	inst, err := tmpl.Instantiate(template.Context{Keys: template.Keys{
-		Server: keys[0].PubKey(), Emulator: keys[1].PubKey(), Cosigner: keys[2].PubKey(),
+		Operator: keys[0].PubKey(), Emulator: keys[1].PubKey(), BatchCosigner: keys[2].PubKey(),
 	}})
 	require.NoError(t, err)
 	require.NotEqual(t, inst.PkScript(0), inst.PkScript(1))

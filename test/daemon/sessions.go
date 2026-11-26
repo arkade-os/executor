@@ -169,7 +169,7 @@ func (a *ark) BatchEvents(ctx context.Context) (<-chan ports.BatchEvent, func(),
 func (a *ark) UpdateTopics(context.Context, []string, []string) error { return nil }
 
 func (a *ark) SubmitTreeNonces(
-	_ context.Context, id, cosigner string, nonces tree.TreeNonces,
+	_ context.Context, id, batchCosigner string, nonces tree.TreeNonces,
 ) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -177,13 +177,13 @@ func (a *ark) SubmitTreeNonces(
 	if b == nil || b.id != id {
 		return status.Errorf(codes.FailedPrecondition, "no batch %s", id)
 	}
-	b.nonces[cosigner] = nonces
+	b.nonces[batchCosigner] = nonces
 	a.sessions.calls = append(a.sessions.calls, "nonces")
 	return nil
 }
 
 func (a *ark) SubmitTreeSignatures(
-	_ context.Context, id, cosigner string, sigs tree.TreePartialSigs,
+	_ context.Context, id, batchCosigner string, sigs tree.TreePartialSigs,
 ) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -191,7 +191,7 @@ func (a *ark) SubmitTreeSignatures(
 	if b == nil || b.id != id {
 		return status.Errorf(codes.FailedPrecondition, "no batch %s", id)
 	}
-	b.sigs[cosigner] = sigs
+	b.sigs[batchCosigner] = sigs
 	a.sessions.calls = append(a.sessions.calls, "signatures")
 	return nil
 }
@@ -479,7 +479,7 @@ func (a *ark) settle(
 	if err != nil {
 		return err
 	}
-	serverKey := hex.EncodeToString(a.server.PubKey().SerializeCompressed())
+	operatorKey := hex.EncodeToString(a.operator.PubKey().SerializeCompressed())
 	var leaves []tree.Leaf
 	var boardings []boardingInput
 	vtxos := 0
@@ -503,7 +503,7 @@ func (a *ark) settle(
 				Outputs: []tree.LeafOutput{
 					{Amount: uint64(out.Value), Script: hex.EncodeToString(out.PkScript)},
 				},
-				CosignersPublicKeys: slices.Concat(r.cosigners, []string{serverKey}),
+				CosignersPublicKeys: slices.Concat(r.cosigners, []string{operatorKey}),
 			})
 		}
 		for _, c := range r.cosigners {
@@ -576,15 +576,15 @@ func (a *ark) settle(
 	if err != nil {
 		return err
 	}
-	server := tree.NewTreeSignerSession(a.server)
-	if err := server.Init(sweepRoot, batchAmount, vtxoTree); err != nil {
+	operator := tree.NewTreeSignerSession(a.operator)
+	if err := operator.Init(sweepRoot, batchAmount, vtxoTree); err != nil {
 		return err
 	}
-	serverNonces, err := server.GetNonces()
+	operatorNonces, err := operator.GetNonces()
 	if err != nil {
 		return err
 	}
-	coordinator.AddNonce(a.server.PubKey(), serverNonces)
+	coordinator.AddNonce(a.operator.PubKey(), operatorNonces)
 
 	keys := slices.Collect(maps.Keys(cosigners))
 	a.pause()
@@ -606,12 +606,12 @@ func (a *ark) settle(
 	if err != nil {
 		return err
 	}
-	server.SetAggregatedNonces(aggregated)
-	serverSigs, err := server.Sign()
+	operator.SetAggregatedNonces(aggregated)
+	operatorSigs, err := operator.Sign()
 	if err != nil {
 		return err
 	}
-	if _, err := coordinator.AddSignatures(a.server.PubKey(), serverSigs); err != nil {
+	if _, err := coordinator.AddSignatures(a.operator.PubKey(), operatorSigs); err != nil {
 		return err
 	}
 	a.pause()

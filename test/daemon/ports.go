@@ -29,13 +29,13 @@ import (
 )
 
 // ark stands in for arkd and its indexer: fixed keys on regtest, vtxos the test lands and spends,
-// arkd's cap of 1000 scripts per call, offchain transactions it signs as the server, and counters
+// arkd's cap of 1000 scripts per call, offchain transactions it signs as the operator, and counters
 // of what the daemon asked.
 type ark struct {
 	clientlib.Indexer
 
 	mu                sync.Mutex
-	server            *btcec.PrivateKey
+	operator          *btcec.PrivateKey
 	vtxos             map[string]clientlib.Vtxo
 	txs               map[string]string
 	subs              map[string]*subscription
@@ -80,7 +80,7 @@ func (a *ark) Info(context.Context) (ports.ArkInfo, error) {
 		return ports.ArkInfo{}, status.Error(codes.Unavailable, "connection refused")
 	}
 	unroll, err := (&script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{a.server.PubKey()}},
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{a.operator.PubKey()}},
 		Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144},
 	}).Script()
 	if err != nil {
@@ -94,7 +94,7 @@ func (a *ark) Info(context.Context) (ports.ArkInfo, error) {
 	defer a.mu.Unlock()
 	return ports.ArkInfo{
 		Network:             arklib.BitcoinRegTest,
-		SignerPubkey:        a.server.PubKey(),
+		SignerPubkey:        a.operator.PubKey(),
 		ForfeitPubkey:       newKey(2).PubKey(),
 		ForfeitOutputScript: forfeitScript,
 		Dust:                330,
@@ -490,7 +490,7 @@ func (a *ark) signAsServer(raw string) (string, string, error) {
 	}
 	fetcher := txscript.NewMultiPrevOutFetcher(prevouts)
 	hashes := txscript.NewTxSigHashes(ptx.UnsignedTx, fetcher)
-	xOnly := schnorr.SerializePubKey(a.server.PubKey())
+	xOnly := schnorr.SerializePubKey(a.operator.PubKey())
 	for i := range ptx.Inputs {
 		in := &ptx.Inputs[i]
 		if len(in.TaprootLeafScript) != 1 ||
@@ -504,7 +504,7 @@ func (a *ark) signAsServer(raw string) (string, string, error) {
 		if err != nil {
 			return "", "", err
 		}
-		sig, err := schnorr.Sign(a.server, sighash)
+		sig, err := schnorr.Sign(a.operator, sighash)
 		if err != nil {
 			return "", "", err
 		}
@@ -568,7 +568,7 @@ func (a *ark) spent(outpoint string) bool {
 
 func newArk() *ark {
 	return &ark{
-		server:    newKey(1),
+		operator:  newKey(1),
 		vtxos:     map[string]clientlib.Vtxo{},
 		txs:       map[string]string{},
 		subs:      map[string]*subscription{},

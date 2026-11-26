@@ -19,8 +19,8 @@ import (
 	"github.com/btcsuite/btcd/txscript/v2"
 )
 
-// Keys are the service keys a contract is resolved under; Cosigner is the daemon's cosigner.
-type Keys struct{ Server, Emulator, Cosigner *btcec.PublicKey }
+// Keys are the service keys a contract is resolved under.
+type Keys struct{ Operator, Emulator, BatchCosigner *btcec.PublicKey }
 
 // Contract is a built taproot output and the proofs of its leaves.
 type Contract struct {
@@ -58,15 +58,15 @@ func Build(
 	leafLookup := func(name string) (asm.Value, error) {
 		parts := strings.Split(name, ":")
 		switch {
-		case name == "SERVER_KEY":
-			return asm.Value{Type: "bytes32", Raw: schnorr.SerializePubKey(keys.Server)}, nil
-		case name == "COSIGNER_KEY":
-			pk, err := cosigner(keys)
+		case asm.ServiceKey(name) == asm.OperatorKey:
+			return asm.Value{Type: "bytes32", Raw: schnorr.SerializePubKey(keys.Operator)}, nil
+		case asm.ServiceKey(name) == asm.BatchCosignerKey:
+			pk, err := batchCosigner(keys)
 			if err != nil {
 				return asm.Value{}, err
 			}
 			return asm.Value{Type: "bytes32", Raw: schnorr.SerializePubKey(pk)}, nil
-		case len(parts) == 2 && parts[0] == "EMULATOR_KEY":
+		case len(parts) == 2 && parts[0] == asm.EmulatorKey:
 			return tweak(c, keys.Emulator, parts[1])
 		case len(parts) == 3 && parts[0] == "TWEAK":
 			v, err := field(args, parts[1])
@@ -167,18 +167,18 @@ func keyField(args map[string]asm.Value, name string) (asm.Value, error) {
 	return asm.Value{Type: "bytes32", Raw: schnorr.SerializePubKey(pk)}, nil
 }
 
-func cosigner(keys Keys) (*btcec.PublicKey, error) {
-	if keys.Cosigner == nil {
-		return nil, ErrNoCosigner
+func batchCosigner(keys Keys) (*btcec.PublicKey, error) {
+	if keys.BatchCosigner == nil {
+		return nil, ErrNoBatchCosigner
 	}
-	return keys.Cosigner, nil
+	return keys.BatchCosigner, nil
 }
 
 func covenantLookup(keys Keys, args map[string]asm.Value, name string) (asm.Value, error) {
-	if name != "COSIGNER_KEY" {
+	if asm.ServiceKey(name) != asm.BatchCosignerKey {
 		return keyField(args, name)
 	}
-	pk, err := cosigner(keys)
+	pk, err := batchCosigner(keys)
 	if err != nil {
 		return asm.Value{}, err
 	}
